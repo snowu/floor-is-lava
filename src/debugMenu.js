@@ -11,7 +11,7 @@ for (const key of Object.keys(config)) {
   if (!DERIVED_KEYS.has(key)) DEFAULTS[key] = config[key]
 }
 
-const ANIM_STATES = ['auto', 'idle', 'running', 'jumping', 'falling', 'landing', 'hanging', 'pullUp', 'wallrun']
+const ANIM_STATES = ['auto', 'idle', 'running', 'jumping', 'falling', 'landing', 'hanging', 'pullUp', 'wallrun', 'kick']
 
 export function createDebugMenu(animator, scene, courses, { camera, ambientLight, dirLight } = {}) {
   const gui = new GUI({ title: 'Debug (F2)', width: 400 })
@@ -187,6 +187,13 @@ export function createDebugMenu(animator, scene, courses, { camera, ambientLight
   lava.add(config, 'LAVA_GLOW_BASE', 0, 5, 0.1).name('Glow Base')
   lava.add(config, 'LAVA_GLOW_PULSE', 0, 2, 0.05).name('Glow Pulse')
   lava.close()
+
+  // ── Kick ───────────────────────────────────────────────────────────────────
+  const kick = gui.addFolder('Kick')
+  kick.add(config, 'KICK_LEG_REACH', 0.1, 5, 0.1).name('Leg Reach')
+  kick.add(config, 'KICK_LEG_HEIGHT', 0.1, 2, 0.05).name('Leg Height')
+  kick.add(config, 'KICK_HIP_Y', 0, 2, 0.1).name('Hip Y')
+  kick.close()
 
   // ── Animation ─────────────────────────────────────────────────────────────
   const anim = gui.addFolder('Animation')

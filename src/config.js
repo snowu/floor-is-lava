@@ -19,6 +19,11 @@ const config = {
   LEDGE_REACH:    0.4,
   LEDGE_H_MARGIN: 0.3,
 
+  // ── kick (E mid-air) ──────────────────────────────────────────────────────
+  KICK_LEG_REACH:   1.2,   // how far legs extend forward from player center
+  KICK_LEG_HEIGHT:  0.5,   // Y height of the leg hitbox (centered at hip level)
+  KICK_HIP_Y:       0.7,   // Y offset from feet where kick hitbox starts
+
   // ── world ─────────────────────────────────────────────────────────────────
   GROUND_Y:       0,
   SPAWN_X:        0,

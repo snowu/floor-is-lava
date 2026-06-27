@@ -94,18 +94,28 @@ function makeWireBox(w, h, d, color) {
 
 let obstacleHelpers = []
 let hitboxesVisible = false
+let kickHelper = null
 let _prevPW = config.PLAYER_WIDTH, _prevPH = config.PLAYER_HEIGHT
 
-let playerHelper = makeWireBox(config.PLAYER_WIDTH, config.PLAYER_HEIGHT, config.PLAYER_WIDTH, 0x00ff00)
-scene.add(playerHelper)
+const upperH = config.PLAYER_HEIGHT - config.KICK_HIP_Y
+let upperHelper = makeWireBox(config.PLAYER_WIDTH, upperH, config.PLAYER_WIDTH, 0x00ff00)
+let lowerHelper = makeWireBox(config.PLAYER_WIDTH, config.KICK_HIP_Y, config.PLAYER_WIDTH, 0x44ff44)
+scene.add(upperHelper)
+scene.add(lowerHelper)
 
 function rebuildPlayerHelper() {
-  const vis = playerHelper.visible
-  scene.remove(playerHelper)
-  playerHelper.geometry.dispose()
-  playerHelper = makeWireBox(config.PLAYER_WIDTH, config.PLAYER_HEIGHT, config.PLAYER_WIDTH, 0x00ff00)
-  playerHelper.visible = vis
-  scene.add(playerHelper)
+  const vis = upperHelper.visible
+  scene.remove(upperHelper)
+  scene.remove(lowerHelper)
+  upperHelper.geometry.dispose()
+  lowerHelper.geometry.dispose()
+  const uH = config.PLAYER_HEIGHT - config.KICK_HIP_Y
+  upperHelper = makeWireBox(config.PLAYER_WIDTH, uH, config.PLAYER_WIDTH, 0x00ff00)
+  lowerHelper = makeWireBox(config.PLAYER_WIDTH, config.KICK_HIP_Y, config.PLAYER_WIDTH, 0x44ff44)
+  upperHelper.visible = vis
+  lowerHelper.visible = vis
+  scene.add(upperHelper)
+  scene.add(lowerHelper)
   _prevPW = config.PLAYER_WIDTH
   _prevPH = config.PLAYER_HEIGHT
 }
@@ -130,7 +140,8 @@ window.addEventListener('keydown', (e) => {
   if (e.code === 'KeyH' && !e.shiftKey && !e.ctrlKey && !e.altKey) {
     hitboxesVisible = !hitboxesVisible
     obstacleHelpers.forEach(h => { h.visible = hitboxesVisible })
-    playerHelper.visible = hitboxesVisible
+    upperHelper.visible = hitboxesVisible
+    lowerHelper.visible = hitboxesVisible
   }
 })
 
@@ -158,16 +169,42 @@ function animate(timestamp) {
 
   const allObstacles = courses.flatMap(c => c.allObstacles)
   const allWallAABBs = courses.flatMap(c => c.allWallAABBs)
-  physics.update(humanoid, moveDir, movement.wDown, movement.sDown, jumpPressed, delta,
+  physics.update(humanoid, moveDir, movement.wDown, movement.sDown, movement.eDown, jumpPressed, delta,
     allObstacles, allWallAABBs)
   animator.update(delta)
   cameraController.update()
 
-  playerHelper.position.set(
+  const uH = config.PLAYER_HEIGHT - config.KICK_HIP_Y
+  upperHelper.position.set(
     humanoid.position.x,
-    humanoid.position.y + config.PLAYER_HEIGHT / 2,
+    humanoid.position.y + config.KICK_HIP_Y + uH / 2,
     humanoid.position.z
   )
+  lowerHelper.position.set(
+    humanoid.position.x,
+    humanoid.position.y + config.KICK_HIP_Y / 2,
+    humanoid.position.z
+  )
+  lowerHelper.visible = hitboxesVisible && !physics.legsExtended
+
+  // Show kick hitbox when legs extended
+  if (physics.legsExtended && hitboxesVisible) {
+    if (!kickHelper) {
+      kickHelper = makeWireBox(config.PLAYER_WIDTH, config.KICK_LEG_HEIGHT, config.KICK_LEG_REACH, 0xff8800)
+      kickHelper.renderOrder = 999
+      scene.add(kickHelper)
+    }
+    kickHelper.visible = true
+    const yaw = humanoid.rotation.y
+    kickHelper.position.set(
+      humanoid.position.x + (-Math.sin(yaw)) * config.KICK_LEG_REACH / 2,
+      humanoid.position.y + config.KICK_HIP_Y,
+      humanoid.position.z + (-Math.cos(yaw)) * config.KICK_LEG_REACH / 2
+    )
+    kickHelper.rotation.y = yaw
+  } else if (kickHelper) {
+    kickHelper.visible = false
+  }
 
   speedEl.textContent = physics.horizontalSpeed.toFixed(1)
   airJumpsEl.textContent = physics._airJumpsLeft

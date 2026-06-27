@@ -30,6 +30,7 @@ export class Physics {
     this._moveSpeed = config.MOVE_SPEED_MIN
     this._wallrunEntrySpeed = 0
     this._wallrunGraceTimer = 0
+    this._legsExtended = false
   }
 
   get state() { return this._state }
@@ -38,8 +39,18 @@ export class Physics {
     return Math.sqrt(this.velocity.x ** 2 + this.velocity.z ** 2)
   }
 
-  update(humanoid, moveDir, wDown, sDown, jumpPressed, delta, obstacles, wallAABBs = []) {
+  get legsExtended() { return this._legsExtended }
+
+  get activeHeight() { return config.PLAYER_HEIGHT }
+
+  get upperBodyMin() { return config.KICK_HIP_Y }
+  get upperBodyMax() { return config.PLAYER_HEIGHT }
+  get lowerBodyMin() { return 0 }
+  get lowerBodyMax() { return config.KICK_HIP_Y }
+
+  update(humanoid, moveDir, wDown, sDown, eDown, jumpPressed, delta, obstacles, wallAABBs = []) {
     this._landedOnGround = false
+    this._legsExtended = eDown && (this._state === STATE.AIRBORNE || this._state === STATE.WALLRUNNING)
 
     const wasHanging = this._state === STATE.HANGING
 
@@ -165,17 +176,90 @@ export class Physics {
               if (this.onWallRun) this.onWallRun()
             }
           } else {
-            if (this._resolveAABB(humanoid, obs.aabb)) {
+            // Upper body always collides
+            const upperH = config.PLAYER_HEIGHT - config.KICK_HIP_Y
+            if (this._resolveAABB(humanoid, obs.aabb, config.KICK_HIP_Y, upperH)) {
               supportedThisFrame = true
               if (!this._landedOnGround && this.onBoxLand) this.onBoxLand(obs)
             }
+            // Lower body only when legs not extended
+            if (!this._legsExtended) {
+              if (this._resolveAABB(humanoid, obs.aabb, 0, config.KICK_HIP_Y)) {
+                supportedThisFrame = true
+                if (!this._landedOnGround && this.onBoxLand) this.onBoxLand(obs)
+              }
+            }
+          }
+        }
+      }
+
+      // Kick hitbox — extended legs with full collision resolution
+      if (this._legsExtended) {
+        const yaw = humanoid.rotation.y
+        const fwdX = -Math.sin(yaw)
+        const fwdZ = -Math.cos(yaw)
+        const reach = config.KICK_LEG_REACH
+        const halfH = config.KICK_LEG_HEIGHT / 2
+        const hw = config.PLAYER_WIDTH / 2
+
+        // Build world-space AABB bounding the legs
+        const hipX = humanoid.position.x
+        const hipZ = humanoid.position.z
+        const tipX = hipX + fwdX * reach
+        const tipZ = hipZ + fwdZ * reach
+        const kickY = humanoid.position.y + config.KICK_HIP_Y
+
+        const kMinX = Math.min(hipX, tipX) - hw
+        const kMaxX = Math.max(hipX, tipX) + hw
+        const kMinZ = Math.min(hipZ, tipZ) - hw
+        const kMaxZ = Math.max(hipZ, tipZ) + hw
+        const kMinY = kickY - halfH
+        const kMaxY = kickY + halfH
+
+        for (const obs of obstacles) {
+          if (obs.isBillboard) continue
+          const a = obs.aabb
+          if (kMaxX <= a.min.x || kMinX >= a.max.x ||
+              kMaxY <= a.min.y || kMinY >= a.max.y ||
+              kMaxZ <= a.min.z || kMinZ >= a.max.z) continue
+
+          // Overlap on each axis
+          const ox = Math.min(kMaxX - a.min.x, a.max.x - kMinX)
+          const oy = Math.min(kMaxY - a.min.y, a.max.y - kMinY)
+          const oz = Math.min(kMaxZ - a.min.z, a.max.z - kMinZ)
+
+          // Resolve on minimum penetration axis — push player out
+          if (ox <= oy && ox <= oz) {
+            const sign = hipX < (a.min.x + a.max.x) / 2 ? -1 : 1
+            humanoid.position.x += sign * ox
+          } else if (oy <= ox && oy <= oz) {
+            const kickCenter = kickY
+            const boxCenter = (a.min.y + a.max.y) / 2
+            if (kickCenter > boxCenter) {
+              // Legs on top — push up, count as supported
+              humanoid.position.y += (a.max.y - kMinY)
+              this.velocity.y = Math.max(this.velocity.y, 0)
+              supportedThisFrame = true
+              if (!this._landedOnGround && this.onBoxLand) this.onBoxLand(obs)
+            } else {
+              // Legs under — push down
+              humanoid.position.y -= (kMaxY - a.min.y)
+              if (this.velocity.y > 0) this.velocity.y = 0
+            }
+          } else {
+            const sign = hipZ < (a.min.z + a.max.z) / 2 ? -1 : 1
+            humanoid.position.z += sign * oz
           }
         }
       }
 
       // Wall collision
       for (const aabb of wallAABBs) {
-        this._resolveAABB(humanoid, aabb)
+        const upperH = config.PLAYER_HEIGHT - config.KICK_HIP_Y
+        this._resolveAABB(humanoid, aabb, config.KICK_HIP_Y, upperH)
+        if (!this._legsExtended) {
+          this._resolveAABB(humanoid, aabb, 0, config.KICK_HIP_Y)
+        }
       }
     }
 
@@ -212,14 +296,14 @@ export class Physics {
     }
   }
 
-  _resolveAABB(humanoid, aabb) {
+  _resolveAABB(humanoid, aabb, yOff = 0, yHeight = config.PLAYER_HEIGHT) {
     const hw = config.PLAYER_WIDTH / 2
     const px = humanoid.position.x
     const py = humanoid.position.y
     const pz = humanoid.position.z
 
     const pMinX = px - hw;  const pMaxX = px + hw
-    const pMinY = py;       const pMaxY = py + config.PLAYER_HEIGHT
+    const pMinY = py + yOff; const pMaxY = py + yOff + yHeight
     const pMinZ = pz - hw;  const pMaxZ = pz + hw
 
     if (pMaxX <= aabb.min.x || pMinX >= aabb.max.x ||
@@ -233,7 +317,7 @@ export class Physics {
     const oz = Math.min(pMaxZ - aabb.min.z, aabb.max.z - pMinZ)
 
     // Bias toward Y when feet barely penetrate box top (thin box fix)
-    const feetOnTop = oyUp < oyDown && oyUp < 0.5 && py > (aabb.min.y + aabb.max.y) / 2
+    const feetOnTop = yOff === 0 && oyUp < oyDown && oyUp < 0.5 && pMinY > (aabb.min.y + aabb.max.y) / 2
 
     // Push out on axis of minimum penetration
     if (!feetOnTop && ox <= oy && ox <= oz) {
@@ -265,12 +349,13 @@ export class Physics {
 
   _resolveAABBAxis(humanoid, aabb) {
     const hw = config.PLAYER_WIDTH / 2
+    const ph = this.activeHeight
     const px = humanoid.position.x
     const py = humanoid.position.y
     const pz = humanoid.position.z
 
     const pMinX = px - hw;  const pMaxX = px + hw
-    const pMinY = py;       const pMaxY = py + config.PLAYER_HEIGHT
+    const pMinY = py;       const pMaxY = py + ph
     const pMinZ = pz - hw;  const pMaxZ = pz + hw
 
     if (pMaxX <= aabb.min.x || pMinX >= aabb.max.x ||

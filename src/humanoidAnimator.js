@@ -9,6 +9,7 @@ const ANIM_STATE = {
   HANGING:    'hanging',
   PULL_UP:    'pullUp',
   WALLRUN:    'wallrun',
+  KICK:       'kick',
 }
 
 export class HumanoidAnimator {
@@ -28,6 +29,7 @@ export class HumanoidAnimator {
     this.cameraHandLY = 0
     this.cameraHandRX = 0
     this.cameraHandRY = 0
+    this.legsVisible = false
 
     physics.onLand = () => {
       if (this._airborneTimer < 0.1) return
@@ -81,7 +83,9 @@ export class HumanoidAnimator {
           this._setState(ANIM_STATE.IDLE)
         }
       } else if (phys.state === 'airborne') {
-        if (phys.velocity.y > 0) {
+        if (phys.legsExtended) {
+          this._setState(ANIM_STATE.KICK)
+        } else if (phys.velocity.y > 0) {
           this._setState(ANIM_STATE.JUMPING)
         } else if (this._airborneTimer > 0.05) {
           this._setState(ANIM_STATE.FALLING)
@@ -96,6 +100,7 @@ export class HumanoidAnimator {
     this.cameraHandLY = 0
     this.cameraHandRX = 0
     this.cameraHandRY = 0
+    this.legsVisible = false
 
     switch (this._state) {
       case ANIM_STATE.IDLE:     this._poseIdle(); break
@@ -106,6 +111,7 @@ export class HumanoidAnimator {
       case ANIM_STATE.HANGING:  this._poseHanging(); break
       case ANIM_STATE.PULL_UP:  this._posePullUp(); break
       case ANIM_STATE.WALLRUN:  this._poseWallRun(); break
+      case ANIM_STATE.KICK:     this._poseKick(); break
     }
   }
 
@@ -244,6 +250,28 @@ export class HumanoidAnimator {
     }
 
     this.cameraYOffset = sway
+  }
+
+  _poseKick() {
+    this._resetLimbs()
+    const j = this._joints
+
+    // Legs forward and straight
+    j.hipL.rotation.x = -Math.PI / 2
+    j.hipR.rotation.x = -Math.PI / 2
+
+    // Arms back for balance
+    j.shoulderL.rotation.x = 0.5
+    j.shoulderR.rotation.x = 0.5
+    j.shoulderL.rotation.z = 0.3
+    j.shoulderR.rotation.z = -0.3
+
+    // FP — hands pull back, legs visible
+    this.cameraHandLY = 0.04
+    this.cameraHandRY = 0.04
+    this.cameraHandLX = -0.03
+    this.cameraHandRX = 0.03
+    this.legsVisible = true
   }
 
   _posePullUp() {

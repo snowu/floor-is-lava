@@ -30,6 +30,31 @@ export class CameraController {
     this._handR.position.copy(this._handBaseR)
     camera.add(this._handL)
     camera.add(this._handR)
+
+    // FP leg meshes (visible during kick)
+    const legMat = new THREE.MeshStandardMaterial({ color: 0x4488ff })
+    this._fpLegL = new THREE.Mesh(new THREE.CapsuleGeometry(0.06, 0.6, 6, 10), legMat)
+    this._fpLegR = new THREE.Mesh(new THREE.CapsuleGeometry(0.06, 0.6, 6, 10), legMat)
+    this._fpLegL.rotation.x = Math.PI / 2
+    this._fpLegR.rotation.x = Math.PI / 2
+    this._fpLegL.position.set(-0.12, -0.7, -0.8)
+    this._fpLegR.position.set(0.12, -0.7, -0.8)
+    this._fpLegL.visible = false
+    this._fpLegR.visible = false
+    camera.add(this._fpLegL)
+    camera.add(this._fpLegR)
+
+    // FP foot meshes (at end of legs)
+    const footMat = new THREE.MeshStandardMaterial({ color: 0x3366cc })
+    this._fpFootL = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.08, 0.2), footMat)
+    this._fpFootR = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.08, 0.2), footMat)
+    this._fpFootL.position.set(-0.12, -0.72, -1.15)
+    this._fpFootR.position.set(0.12, -0.72, -1.15)
+    this._fpFootL.visible = false
+    this._fpFootR.visible = false
+    camera.add(this._fpFootL)
+    camera.add(this._fpFootR)
+
     scene.add(camera)
 
     camera.position.set(0, 3, 5)
@@ -137,21 +162,32 @@ export class CameraController {
         )
       }
 
-    } else if (this.mode === 'third-person') {
-      this._handL.visible = false
-      this._handR.visible = false
-      this._camera.up.set(0, 1, 0)
-      this._camera.position.set(
-        h.position.x + config.TP_CAM_DISTANCE * Math.sin(this._yaw),
-        h.position.y + config.TP_CAM_HEIGHT,
-        h.position.z + config.TP_CAM_DISTANCE * Math.cos(this._yaw)
-      )
-      this._camera.lookAt(h.position.x, h.position.y + 1, h.position.z)
+      // FP legs visible during kick
+      const showLegs = a ? a.legsVisible : false
+      this._fpLegL.visible = showLegs
+      this._fpLegR.visible = showLegs
+      this._fpFootL.visible = showLegs
+      this._fpFootR.visible = showLegs
 
     } else {
       this._handL.visible = false
       this._handR.visible = false
-      this._orbit.update()
+      this._fpLegL.visible = false
+      this._fpLegR.visible = false
+      this._fpFootL.visible = false
+      this._fpFootR.visible = false
+
+      if (this.mode === 'third-person') {
+        this._camera.up.set(0, 1, 0)
+        this._camera.position.set(
+          h.position.x + config.TP_CAM_DISTANCE * Math.sin(this._yaw),
+          h.position.y + config.TP_CAM_HEIGHT,
+          h.position.z + config.TP_CAM_DISTANCE * Math.cos(this._yaw)
+        )
+        this._camera.lookAt(h.position.x, h.position.y + 1, h.position.z)
+      } else {
+        this._orbit.update()
+      }
     }
   }
 }

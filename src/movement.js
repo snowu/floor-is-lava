@@ -2,7 +2,7 @@ import * as THREE from 'three'
 
 export class Movement {
   constructor() {
-    this._keys = { w: false, a: false, s: false, d: false }
+    this._keys = { w: false, a: false, s: false, d: false, e: false }
     this._jumpQueued = false
 
     window.addEventListener('keydown', (e) => {
@@ -10,6 +10,7 @@ export class Movement {
       if (e.code === 'KeyA') this._keys.a = true
       if (e.code === 'KeyS') this._keys.s = true
       if (e.code === 'KeyD') this._keys.d = true
+      if (e.code === 'KeyE') this._keys.e = true
       if (e.code === 'Space') { e.preventDefault(); this._jumpQueued = true }
     })
 
@@ -18,11 +19,13 @@ export class Movement {
       if (e.code === 'KeyA') this._keys.a = false
       if (e.code === 'KeyS') this._keys.s = false
       if (e.code === 'KeyD') this._keys.d = false
+      if (e.code === 'KeyE') this._keys.e = false
     })
   }
 
   get wDown() { return this._keys.w }
   get sDown() { return this._keys.s }
+  get eDown() { return this._keys.e }
 
   // True only until clearJump() is called — gives Physics a one-frame signal
   get jumpPressed() { return this._jumpQueued }
