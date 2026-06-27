@@ -1,6 +1,7 @@
 import * as THREE from 'three'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 import config from './config.js'
+import { isMobile } from './mobile.js'
 
 const DEV_MODES = ['first-person', 'third-person', 'free']
 const PROD_MODES = ['first-person']
@@ -64,19 +65,23 @@ export class CameraController {
     this._orbit.enableDamping = true
     this._orbit.enabled = false
 
-    domElement.addEventListener('mousedown', () => this._requestLock())
-    document.addEventListener('mousemove', (e) => this._onMouseMove(e))
-    document.addEventListener('pointerlockchange', () => {
-      if (this._isLocked) {
-        this._skipWarpEvent = true
-      }
-    })
-    window.addEventListener('keydown', (e) => {
-      if (e.code === 'KeyF') this._cycleMode()
-      if (['KeyW', 'KeyA', 'KeyS', 'KeyD'].includes(e.code) && this.mode !== 'free') {
-        this._requestLock()
-      }
-    })
+    if (isMobile) {
+      this._setupTouchLook(domElement)
+    } else {
+      domElement.addEventListener('mousedown', () => this._requestLock())
+      document.addEventListener('mousemove', (e) => this._onMouseMove(e))
+      document.addEventListener('pointerlockchange', () => {
+        if (this._isLocked) {
+          this._skipWarpEvent = true
+        }
+      })
+      window.addEventListener('keydown', (e) => {
+        if (e.code === 'KeyF') this._cycleMode()
+        if (['KeyW', 'KeyA', 'KeyS', 'KeyD'].includes(e.code) && this.mode !== 'free') {
+          this._requestLock()
+        }
+      })
+    }
   }
 
   get mode() { return this._modes[this._modeIndex] }
@@ -87,9 +92,43 @@ export class CameraController {
 
   get _isLocked() { return document.pointerLockElement === this._domElement }
 
+  _setupTouchLook(domElement) {
+    this._touchPrevX = new Map()
+
+    domElement.addEventListener('touchstart', (e) => {
+      for (let i = 0; i < e.changedTouches.length; i++) {
+        const t = e.changedTouches[i]
+        this._touchPrevX.set(t.identifier, t.clientX)
+      }
+    }, { passive: true })
+
+    domElement.addEventListener('touchmove', (e) => {
+      for (let i = 0; i < e.changedTouches.length; i++) {
+        const t = e.changedTouches[i]
+        const prevX = this._touchPrevX.get(t.identifier)
+        if (prevX === undefined) continue
+        const dx = t.clientX - prevX
+        this._touchPrevX.set(t.identifier, t.clientX)
+
+        const sensitivity = config.CAMERA_SENSITIVITY * 1.5
+        this._yaw -= dx * sensitivity
+      }
+    }, { passive: true })
+
+    const endTouch = (e) => {
+      for (let i = 0; i < e.changedTouches.length; i++) {
+        this._touchPrevX.delete(e.changedTouches[i].identifier)
+      }
+    }
+    domElement.addEventListener('touchend', endTouch, { passive: true })
+    domElement.addEventListener('touchcancel', endTouch, { passive: true })
+  }
+
   _requestLock() {
     if (this.mode !== 'free') this._domElement.requestPointerLock()
   }
+
+  cycleMode() { return this._cycleMode() }
 
   _cycleMode() {
     this._modeIndex = (this._modeIndex + 1) % this._modes.length

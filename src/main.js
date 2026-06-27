@@ -9,6 +9,9 @@ import { Physics } from './physics.js'
 import { HumanoidAnimator } from './humanoidAnimator.js'
 import { createDebugMenu } from './debugMenu.js'
 import config from './config.js'
+import { isMobile } from './mobile.js'
+
+const mobileOverlay = document.getElementById('mobile-overlay')
 
 // Lights
 const ambientLight = new THREE.AmbientLight(0xffffff, config.AMBIENT_INTENSITY)
@@ -35,12 +38,32 @@ humanoid.position.set(config.SPAWN_POS.x, config.SPAWN_POS.y, config.SPAWN_POS.z
 scene.add(humanoid)
 
 // Controllers
-const movement = new Movement()
 const physics  = new Physics()
+const movement = new Movement(physics)
 const cameraController = new CameraController(camera, renderer.domElement, humanoid, scene)
 const animator = new HumanoidAnimator(joints, physics)
 cameraController.animator = animator
 createDebugMenu(animator, scene, courses, { camera, ambientLight, dirLight })
+
+const MODE_LABELS = { 'first-person': 'FP', 'third-person': 'TP', 'free': 'Free' }
+const camModeBtn = document.getElementById('cam-mode-btn')
+if (camModeBtn) {
+  const handler = (e) => {
+    e.preventDefault()
+    e.stopPropagation()
+    cameraController.cycleMode()
+    camModeBtn.textContent = MODE_LABELS[cameraController.mode] || cameraController.mode
+    if (isMobile && mobileOverlay) {
+      if (cameraController.mode === 'first-person' && !movement.started) {
+        mobileOverlay.style.display = 'flex'
+      } else {
+        mobileOverlay.style.display = 'none'
+      }
+    }
+  }
+  camModeBtn.addEventListener('click', handler)
+  camModeBtn.addEventListener('touchend', handler)
+}
 
 // HUD elements
 const scoreEl = document.getElementById('score-current')
@@ -90,6 +113,10 @@ physics.onGroundHit = () => {
   touchedBoxes.clear()
   if (cameraController.mode === 'first-person') {
     physics._respawn(humanoid)
+  }
+  if (cameraController.mode === 'first-person') {
+    movement.resetForDeath()
+    if (isMobile && mobileOverlay) mobileOverlay.style.display = 'flex'
   }
 }
 
@@ -197,6 +224,7 @@ function animate(timestamp) {
   const allWallAABBs = courses.flatMap(c => c.allWallAABBs)
   physics.update(humanoid, moveDir, movement.wDown, movement.sDown, movement.eDown, jumpPressed, delta,
     allObstacles, allWallAABBs)
+  movement.updateMobileState()
   animator.update(delta)
   cameraController.update()
 
@@ -232,6 +260,9 @@ function animate(timestamp) {
     kickHelper.visible = false
   }
 
+  if (isMobile && movement.started && mobileOverlay && mobileOverlay.style.display !== 'none') {
+    mobileOverlay.style.display = 'none'
+  }
   if (!timerStarted && physics.horizontalSpeed > 0.1) timerStarted = true
   if (timerStarted) runTime += delta
   timerEl.textContent = formatTime(runTime)
