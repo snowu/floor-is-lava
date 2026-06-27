@@ -52,8 +52,9 @@ export const WALLRUN_MIN_HEIGHT = 1.5    // min Y above ground to start wall run
 export const BILLBOARD_WIDTH    = 0.5    // thickness of billboard panels
 export const BILLBOARD_HEIGHT   = 10     // how tall they are
 export const BILLBOARD_DEPTH    = 15     // how long along Z
-export const BILLBOARD_INTERVAL = 2      // spawn billboard every N segments
-export const BILLBOARD_SKIP_FIRST = 1   // skip first N segments (warmup)
+export const BILLBOARD_GAP_EVERY  = 3    // insert a billboard gap every N platforms
+export const BILLBOARD_GAP_SIZE  = 12   // Z distance of the gap (no boxes)
+export const BILLBOARD_Y_OFFSET  = 1    // billboard bottom relative to departure platform top
 export const BILLBOARD_X_OFFSET = 8      // distance from center on X axis
 
 // ── animation ────────────────────────────────────────────────────────────────

@@ -4,7 +4,7 @@ import {
   SINGLE_JUMP_HEIGHT, DOUBLE_JUMP_HEIGHT,
   MAX_H_RANGE_SINGLE, MAX_H_RANGE_DOUBLE,
   BILLBOARD_WIDTH, BILLBOARD_HEIGHT, BILLBOARD_DEPTH,
-  BILLBOARD_INTERVAL, BILLBOARD_SKIP_FIRST, BILLBOARD_X_OFFSET,
+  BILLBOARD_X_OFFSET, BILLBOARD_GAP_EVERY, BILLBOARD_GAP_SIZE, BILLBOARD_Y_OFFSET,
 } from './config.js'
 
 const MAX_DROP = 8
@@ -48,13 +48,13 @@ function nudgeAwayFromAll(plat, allPlatforms, halfW) {
   }
 }
 
-function generateSegmentPlatforms(prevPlatform, segmentStartZ, difficulty = 'medium', isFirstSegment = false) {
+function generateSegmentPlatforms(prevPlatform, segmentStartZ, difficulty = 'medium', isFirstSegment = false, platformCounter = 0) {
   const diff = DIFFICULTY[difficulty] || DIFFICULTY.medium
   const count = randInt(diff.platformsPerSegment[0], diff.platformsPerSegment[1])
   const platforms = []
+  const billboards = []
 
   const halfW = CORRIDOR_WIDTH / 2 - 1
-  const segmentEndZ = segmentStartZ - SEGMENT_DEPTH
 
   let prev = prevPlatform
   if (!prev) {
@@ -63,13 +63,26 @@ function generateSegmentPlatforms(prevPlatform, segmentStartZ, difficulty = 'med
   }
 
   const WARMUP_COUNT = isFirstSegment ? 4 : 0
-
-  // Distribute z positions evenly across this segment, with jitter
+  let nextZ = segmentStartZ - (isFirstSegment ? FIRST_PLATFORM_GAP : 0)
   const slotDepth = SEGMENT_DEPTH / count
-  for (let i = 0; i < count; i++) {
-    const prevTopY = prev.y + prev.h / 2
+  let platIndex = platformCounter
 
-    // Warmup ramp: first N platforms in first segment are tamer
+  for (let i = 0; i < count; i++) {
+    // Insert billboard gap before this platform?
+    if (platIndex > 0 && platIndex % BILLBOARD_GAP_EVERY === 0 && !isFirstSegment) {
+      const prevTopY = prev.y + prev.h / 2
+      const side = ((platIndex / BILLBOARD_GAP_EVERY) % 2 === 0) ? -1 : 1
+      const gapMidZ = nextZ - BILLBOARD_GAP_SIZE / 2
+      billboards.push({
+        x: side * BILLBOARD_X_OFFSET,
+        y: prevTopY - BILLBOARD_Y_OFFSET,
+        z: gapMidZ,
+        side,
+      })
+      nextZ -= BILLBOARD_GAP_SIZE
+    }
+
+    const prevTopY = prev.y + prev.h / 2
     const warmupT = (isFirstSegment && i < WARMUP_COUNT) ? (i + 1) / WARMUP_COUNT : 1.0
 
     const needsDoubleJump = warmupT < 1 ? false : Math.random() < diff.doubleJumpChance
@@ -94,13 +107,9 @@ function generateSegmentPlatforms(prevPlatform, segmentStartZ, difficulty = 'med
     const h = rand(0.5, 2)
     const d = rand(1.5, 3) * sizeScale * warmupSizeBonus
 
-    // Z: evenly spaced slot with random jitter within slot
-    const zOffset = isFirstSegment ? FIRST_PLATFORM_GAP : 0
-    const slotStart = segmentStartZ - zOffset - i * slotDepth
-    const slotEnd = segmentStartZ - zOffset - (i + 1) * slotDepth
-    const pz = rand(slotEnd + d / 2 + 0.5, slotStart - d / 2 - 0.5)
+    const pz = nextZ - slotDepth / 2 + rand(-slotDepth * 0.2, slotDepth * 0.2)
+    nextZ -= slotDepth
 
-    // X: lateral offset from prev, clamped to corridor
     const baseLateralRange = Math.min(6, CORRIDOR_WIDTH / 2 - 1)
     const lateralRange = baseLateralRange * warmupT
     const px = clamp(prev.x + rand(-lateralRange, lateralRange), -halfW + w / 2, halfW - w / 2)
@@ -117,7 +126,6 @@ function generateSegmentPlatforms(prevPlatform, segmentStartZ, difficulty = 'med
       z: Math.round(pz * 10) / 10,
     }
 
-    // Height reachability check
     const platTopY = plat.y + plat.h / 2
     const heightDiff = platTopY - prevTopY
     const maxReachHeight = (needsDoubleJump ? DOUBLE_JUMP_HEIGHT : SINGLE_JUMP_HEIGHT) * diff.heightFraction
@@ -125,14 +133,14 @@ function generateSegmentPlatforms(prevPlatform, segmentStartZ, difficulty = 'med
       plat.y = Math.round(clamp(prevTopY + maxReachHeight * 0.8, h / 2 + 0.5, CORRIDOR_HEIGHT - 2) * 10) / 10
     }
 
-    // Nudge away from overlapping platforms
     nudgeAwayFromAll(plat, platforms, halfW)
 
     platforms.push(plat)
     prev = plat
+    platIndex++
   }
 
-  return { platforms, lastPlatform: prev }
+  return { platforms, billboards, lastPlatform: prev, platformCounter: platIndex }
 }
 
 export class BillboardTestCourse {
@@ -215,6 +223,7 @@ export class CourseManager {
     this._nextSegmentIndex = 0
     this._lastPlatform = null
     this._furthestZ = 0
+    this._platformCounter = 0
   }
 
   get allObstacles() {
@@ -254,10 +263,11 @@ export class CourseManager {
     const index = this._nextSegmentIndex++
     const startZ = -index * SEGMENT_DEPTH
 
-    const { platforms, lastPlatform } = generateSegmentPlatforms(
-      this._lastPlatform, startZ, this._difficulty, index === 0
+    const { platforms, billboards, lastPlatform, platformCounter } = generateSegmentPlatforms(
+      this._lastPlatform, startZ, this._difficulty, index === 0, this._platformCounter
     )
     this._lastPlatform = lastPlatform
+    this._platformCounter = platformCounter
 
     const PALETTE = [0x4fc3f7, 0x81c784, 0xff8a65, 0xffd54f, 0xce93d8]
     const meshes = []
@@ -274,23 +284,19 @@ export class CourseManager {
       obstacles.push({ mesh, aabb, isSpawn: !!b.isSpawn })
     })
 
-    // Billboards — alternating sides on a regular rhythm
-    if (index >= BILLBOARD_SKIP_FIRST && index % BILLBOARD_INTERVAL === 0) {
-      const side = ((index / BILLBOARD_INTERVAL) % 2 === 0) ? -1 : 1
-      const billboardMat = new THREE.MeshStandardMaterial({ color: 0x555566, roughness: 0.7 })
-      const midZ = startZ - SEGMENT_DEPTH / 2
-      const zPos = midZ
-      const yPos = BILLBOARD_HEIGHT / 2
-      const xPos = side * BILLBOARD_X_OFFSET
-
+    // Billboards placed in gaps between platforms
+    const billboardMat = new THREE.MeshStandardMaterial({ color: 0x555566, roughness: 0.7 })
+    for (const bb of billboards) {
+      const bbH = BILLBOARD_HEIGHT
+      const bbY = bb.y + bbH / 2
       const mesh = new THREE.Mesh(
-        new THREE.BoxGeometry(BILLBOARD_WIDTH, BILLBOARD_HEIGHT, BILLBOARD_DEPTH),
+        new THREE.BoxGeometry(BILLBOARD_WIDTH, bbH, BILLBOARD_DEPTH),
         billboardMat
       )
-      mesh.position.set(xPos, yPos, zPos)
+      mesh.position.set(bb.x, bbY, bb.z)
       const aabb = new THREE.Box3().setFromObject(mesh)
       meshes.push(mesh)
-      obstacles.push({ mesh, aabb, isBillboard: true, wallNormalX: -side })
+      obstacles.push({ mesh, aabb, isBillboard: true, wallNormalX: -bb.side })
     }
 
     return { index, startZ, platforms, meshes, obstacles }
