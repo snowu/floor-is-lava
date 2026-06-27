@@ -4,7 +4,7 @@ import { createHumanoid } from './humanoid.js'
 import { Movement } from './movement.js'
 import { CameraController } from './cameraController.js'
 import { createGround, updateGround } from './ground.js'
-import { CourseManager } from './obstacles.js'
+import { CourseManager, BillboardTestCourse } from './obstacles.js'
 import { Physics } from './physics.js'
 import { HumanoidAnimator } from './humanoidAnimator.js'
 import { PLAYER_WIDTH, PLAYER_HEIGHT, SPAWN_POS } from './config.js'
@@ -23,6 +23,11 @@ scene.add(ground)
 
 // Course manager — generates corridor + platforms on the fly
 const course = new CourseManager('medium')
+const courses = [course]
+
+if (window.DEV_MODE) {
+  courses.push(new BillboardTestCourse(30))
+}
 
 const { group: humanoid, joints } = createHumanoid()
 humanoid.position.set(SPAWN_POS.x, SPAWN_POS.y, SPAWN_POS.z)
@@ -35,9 +40,10 @@ const cameraController = new CameraController(camera, renderer.domElement, human
 const animator = new HumanoidAnimator(joints, physics)
 cameraController.animator = animator
 
-// Score tracking
+// HUD elements
 const scoreEl = document.getElementById('score-current')
 const bestEl = document.getElementById('score-best')
+const speedEl = document.getElementById('speed-meter')
 let score = 0
 let bestScore = 0
 const touchedBoxes = new Set()
@@ -81,7 +87,8 @@ scene.add(playerHelper)
 
 function rebuildObstacleHelpers() {
   obstacleHelpers.forEach(h => scene.remove(h))
-  obstacleHelpers = course.allObstacles.map(({ aabb }) => {
+  const allObs = courses.flatMap(c => c.allObstacles)
+  obstacleHelpers = allObs.map(({ aabb }) => {
     const size   = new THREE.Vector3()
     const center = new THREE.Vector3()
     aabb.getSize(size)
@@ -107,19 +114,23 @@ function animate(timestamp) {
   timer.update(timestamp)
   const delta = timer.getDelta()
 
-  // Generate corridor segments based on player position and speed
+  // Generate segments for all courses
   const currentSpeed = Math.sqrt(physics.velocity.x ** 2 + physics.velocity.z ** 2)
-  const { added, removed } = course.update(humanoid.position.z, currentSpeed, scene, THREE)
-  if (added.length > 0 || removed.length > 0) {
-    rebuildObstacleHelpers()
+  let anyAdded = false
+  for (const c of courses) {
+    const { added } = c.update(humanoid.position.z, currentSpeed, scene, THREE)
+    if (added.length > 0) anyAdded = true
   }
+  if (anyAdded) rebuildObstacleHelpers()
 
   const moveDir     = movement.getMoveDir(cameraController.cameraYaw)
   const jumpPressed = movement.jumpPressed
   movement.clearJump()
 
+  const allObstacles = courses.flatMap(c => c.allObstacles)
+  const allWallAABBs = courses.flatMap(c => c.allWallAABBs)
   physics.update(humanoid, moveDir, movement.wDown, movement.sDown, jumpPressed, delta,
-    course.allObstacles, course.allWallAABBs)
+    allObstacles, allWallAABBs)
   animator.update(delta)
   cameraController.update()
 
@@ -129,6 +140,7 @@ function animate(timestamp) {
     humanoid.position.z
   )
 
+  speedEl.textContent = physics.horizontalSpeed.toFixed(1)
   updateGround(timestamp * 0.001, humanoid.position.x, humanoid.position.z)
   updateSky(timestamp * 0.001, humanoid.position.x, humanoid.position.z)
   renderer.render(scene, camera)

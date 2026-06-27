@@ -3,6 +3,8 @@ import {
   FOG_END, GENERATE_TIME_AHEAD,
   SINGLE_JUMP_HEIGHT, DOUBLE_JUMP_HEIGHT,
   MAX_H_RANGE_SINGLE, MAX_H_RANGE_DOUBLE,
+  BILLBOARD_WIDTH, BILLBOARD_HEIGHT, BILLBOARD_DEPTH,
+  BILLBOARD_INTERVAL, BILLBOARD_SKIP_FIRST, BILLBOARD_X_OFFSET,
 } from './config.js'
 
 const MAX_DROP = 8
@@ -133,6 +135,79 @@ function generateSegmentPlatforms(prevPlatform, segmentStartZ, difficulty = 'med
   return { platforms, lastPlatform: prev }
 }
 
+export class BillboardTestCourse {
+  constructor(xOffset = 0, billboardSpacing = 4, zSpacing = 12) {
+    this._xOffset = xOffset
+    this._billboardSpacing = billboardSpacing
+    this._zSpacing = zSpacing
+    this._segments = []
+    this._nextSegmentIndex = 0
+    this._furthestZ = 0
+  }
+
+  get allObstacles() {
+    const out = []
+    for (const seg of this._segments) {
+      for (const obs of seg.obstacles) out.push(obs)
+    }
+    return out
+  }
+
+  get allWallAABBs() { return [] }
+
+  update(playerZ, currentSpeed, scene, THREE) {
+    if (playerZ < this._furthestZ) this._furthestZ = playerZ
+    const speed = Math.max(currentSpeed, MOVE_SPEED)
+    const generateDist = FOG_END + SEGMENT_DEPTH + speed * GENERATE_TIME_AHEAD
+    const targetZ = this._furthestZ - generateDist
+    const targetSegment = Math.floor(-targetZ / this._zSpacing)
+    const added = []
+
+    while (this._nextSegmentIndex <= targetSegment) {
+      const seg = this._createSegment(THREE)
+      this._segments.push(seg)
+      for (const m of seg.meshes) { scene.add(m); added.push(m) }
+    }
+    return { added, removed: [] }
+  }
+
+  _createSegment(THREE) {
+    const index = this._nextSegmentIndex++
+    const startZ = -index * this._zSpacing
+    const meshes = []
+    const obstacles = []
+    const billboardMat = new THREE.MeshStandardMaterial({ color: 0x555566, roughness: 0.7 })
+
+    // Spawn platform + bridge from main course
+    if (index === 0) {
+      const platMat = new THREE.MeshStandardMaterial({ color: 0x4fc3f7 })
+      const plat = new THREE.Mesh(new THREE.BoxGeometry(3, 1, 3), platMat)
+      plat.position.set(this._xOffset, 0.5, startZ - 3)
+      meshes.push(plat)
+      obstacles.push({ mesh: plat, aabb: new THREE.Box3().setFromObject(plat), isSpawn: true })
+
+      const bridgeMat = new THREE.MeshStandardMaterial({ color: 0x888899 })
+      const bridge = new THREE.Mesh(new THREE.BoxGeometry(this._xOffset + 2, 0.5, 3), bridgeMat)
+      bridge.position.set(this._xOffset / 2, 0.25, startZ - 3)
+      meshes.push(bridge)
+      obstacles.push({ mesh: bridge, aabb: new THREE.Box3().setFromObject(bridge), isSpawn: true })
+    }
+
+    // Billboard alternating sides
+    const side = (index % 2 === 0) ? -1 : 1
+    const midZ = startZ - this._zSpacing / 2
+    const bbMesh = new THREE.Mesh(
+      new THREE.BoxGeometry(BILLBOARD_WIDTH, BILLBOARD_HEIGHT, BILLBOARD_DEPTH),
+      billboardMat
+    )
+    bbMesh.position.set(this._xOffset + side * this._billboardSpacing, BILLBOARD_HEIGHT / 2, midZ)
+    meshes.push(bbMesh)
+    obstacles.push({ mesh: bbMesh, aabb: new THREE.Box3().setFromObject(bbMesh), isBillboard: true, wallNormalX: -side })
+
+    return { index, startZ, meshes, obstacles }
+  }
+}
+
 export class CourseManager {
   constructor(difficulty = 'medium') {
     this._difficulty = difficulty
@@ -198,6 +273,25 @@ export class CourseManager {
       meshes.push(mesh)
       obstacles.push({ mesh, aabb, isSpawn: !!b.isSpawn })
     })
+
+    // Billboards — alternating sides on a regular rhythm
+    if (index >= BILLBOARD_SKIP_FIRST && index % BILLBOARD_INTERVAL === 0) {
+      const side = ((index / BILLBOARD_INTERVAL) % 2 === 0) ? -1 : 1
+      const billboardMat = new THREE.MeshStandardMaterial({ color: 0x555566, roughness: 0.7 })
+      const midZ = startZ - SEGMENT_DEPTH / 2
+      const zPos = midZ
+      const yPos = BILLBOARD_HEIGHT / 2
+      const xPos = side * BILLBOARD_X_OFFSET
+
+      const mesh = new THREE.Mesh(
+        new THREE.BoxGeometry(BILLBOARD_WIDTH, BILLBOARD_HEIGHT, BILLBOARD_DEPTH),
+        billboardMat
+      )
+      mesh.position.set(xPos, yPos, zPos)
+      const aabb = new THREE.Box3().setFromObject(mesh)
+      meshes.push(mesh)
+      obstacles.push({ mesh, aabb, isBillboard: true, wallNormalX: -side })
+    }
 
     return { index, startZ, platforms, meshes, obstacles }
   }

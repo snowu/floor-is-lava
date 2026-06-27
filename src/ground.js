@@ -306,7 +306,8 @@ export function updateGround(time, playerX, playerZ) {
     lavaMaterial.uniforms.time.value = time
   }
   if (lavaPlane) {
-    lavaPlane.position.x = playerX
-    lavaPlane.position.z = playerZ
+    const gridSize = 2 // matches plane subdivision spacing (400 / 200)
+    lavaPlane.position.x = Math.round(playerX / gridSize) * gridSize
+    lavaPlane.position.z = Math.round(playerZ / gridSize) * gridSize
   }
 }

@@ -1,1 +1,1 @@
-export { CourseManager } from './courseGenerator.js'
+export { CourseManager, BillboardTestCourse } from './courseGenerator.js'

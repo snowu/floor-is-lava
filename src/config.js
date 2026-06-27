@@ -4,7 +4,10 @@
 // ── player physics ───────────────────────────────────────────────────────────
 export const GRAVITY       = 50    // m/s² downward acceleration
 export const JUMP_SPEED    = 18     // m/s initial upward velocity on jump
-export const MOVE_SPEED    = 10    // m/s horizontal speed
+export const MOVE_SPEED_MIN = 10    // m/s starting horizontal speed
+export const MOVE_SPEED_MAX = 15    // m/s cap after acceleration
+export const MOVE_ACCEL     = 0.5   // m/s² speed increase while moving
+export const MOVE_SPEED     = MOVE_SPEED_MIN // alias for derived calculations
 export const COYOTE_TIME   = 0.50  // seconds after walking off edge where jump still works
 export const MAX_AIR_JUMPS = 1     // extra jumps allowed while airborne (double jump)
 
@@ -37,6 +40,21 @@ export const DOUBLE_JUMP_HEIGHT = SINGLE_JUMP_HEIGHT * 2
 export const DOUBLE_JUMP_TIME   = SINGLE_JUMP_TIME * 2
 export const MAX_H_RANGE_SINGLE = MOVE_SPEED * SINGLE_JUMP_TIME
 export const MAX_H_RANGE_DOUBLE = MOVE_SPEED * DOUBLE_JUMP_TIME
+
+// ── wall run ─────────────────────────────────────────────────────────────
+export const WALLRUN_SLIDE_SPEED = 2      // constant downward slide speed
+export const WALLRUN_JUMP_SPEED = 12     // vertical kick off wall
+export const WALLRUN_KICK_SPEED = 6      // horizontal push away from wall
+export const WALLRUN_KICK_DURATION = 0.3 // seconds the kick overrides input
+export const WALLRUN_SPEED_BOOST  = 3   // extra m/s added on wall jump
+export const WALLRUN_MAX_BOOST    = 8   // cap on accumulated boost
+export const WALLRUN_MIN_HEIGHT = 1.5    // min Y above ground to start wall run
+export const BILLBOARD_WIDTH    = 0.5    // thickness of billboard panels
+export const BILLBOARD_HEIGHT   = 10     // how tall they are
+export const BILLBOARD_DEPTH    = 15     // how long along Z
+export const BILLBOARD_INTERVAL = 2      // spawn billboard every N segments
+export const BILLBOARD_SKIP_FIRST = 1   // skip first N segments (warmup)
+export const BILLBOARD_X_OFFSET = 8      // distance from center on X axis
 
 // ── animation ────────────────────────────────────────────────────────────────
 export const ANIM_IDLE_BOB_SPEED    = 2      // radians/s for idle breathing
