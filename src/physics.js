@@ -71,9 +71,11 @@ export class Physics {
     // 4. Integrate position
     humanoid.position.addScaledVector(this.velocity, delta)
 
-    // 5. Death plane — touching ground = respawn
+    // 5. Ground plane — solid floor for testing
     if (humanoid.position.y <= GROUND_Y) {
-      this._respawn(humanoid)
+      humanoid.position.y = GROUND_Y
+      this.velocity.y = 0
+      this._state = STATE.GROUNDED
       supportedThisFrame = true
     }
 
