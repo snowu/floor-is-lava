@@ -4,35 +4,55 @@ export function createHumanoid() {
   const group = new THREE.Group()
   const mat = new THREE.MeshStandardMaterial({ color: 0x4488ff })
 
-  // Head — sphere, centre at y=1.75
+  const root = new THREE.Group()
+  group.add(root)
+
+  // Head
   const head = new THREE.Mesh(new THREE.SphereGeometry(0.25, 16, 16), mat)
   head.position.y = 1.75
-  group.add(head)
+  root.add(head)
 
-  // Body — tall box, centre at y=1.125
+  // Body
   const body = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.75, 0.25), mat)
   body.position.y = 1.125
-  group.add(body)
+  root.add(body)
 
-  // Left arm — centre at y=1.1, offset left
-  const leftArm = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.6, 0.2), mat)
-  leftArm.position.set(-0.35, 1.1, 0)
-  group.add(leftArm)
+  // Left arm — pivot at shoulder
+  const shoulderL = new THREE.Group()
+  shoulderL.position.set(-0.35, 1.4, 0)
+  root.add(shoulderL)
 
-  // Right arm
-  const rightArm = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.6, 0.2), mat)
-  rightArm.position.set(0.35, 1.1, 0)
-  group.add(rightArm)
+  const armL = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.6, 0.2), mat)
+  armL.position.y = -0.3
+  shoulderL.add(armL)
 
-  // Left leg — centre at y=0.35, bottom at y=0 (ground level)
-  const leftLeg = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.7, 0.2), mat)
-  leftLeg.position.set(-0.15, 0.35, 0)
-  group.add(leftLeg)
+  // Right arm — pivot at shoulder
+  const shoulderR = new THREE.Group()
+  shoulderR.position.set(0.35, 1.4, 0)
+  root.add(shoulderR)
 
-  // Right leg
-  const rightLeg = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.7, 0.2), mat)
-  rightLeg.position.set(0.15, 0.35, 0)
-  group.add(rightLeg)
+  const armR = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.6, 0.2), mat)
+  armR.position.y = -0.3
+  shoulderR.add(armR)
 
-  return group
+  // Left leg — pivot at hip
+  const hipL = new THREE.Group()
+  hipL.position.set(-0.15, 0.7, 0)
+  root.add(hipL)
+
+  const legL = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.7, 0.2), mat)
+  legL.position.y = -0.35
+  hipL.add(legL)
+
+  // Right leg — pivot at hip
+  const hipR = new THREE.Group()
+  hipR.position.set(0.15, 0.7, 0)
+  root.add(hipR)
+
+  const legR = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.7, 0.2), mat)
+  legR.position.y = -0.35
+  hipR.add(legR)
+
+  const joints = { root, head, body, shoulderL, shoulderR, hipL, hipR }
+  return { group, joints }
 }

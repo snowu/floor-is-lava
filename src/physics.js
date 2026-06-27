@@ -18,6 +18,17 @@ export class Physics {
     this._hangTopY = 0
     this._coyoteTimer = 0
     this._airJumpsLeft = MAX_AIR_JUMPS
+
+    this.onLand = null
+    this.onGrab = null
+    this.onPullUp = null
+    this.onDoubleJump = null
+  }
+
+  get state() { return this._state }
+
+  get horizontalSpeed() {
+    return Math.sqrt(this.velocity.x ** 2 + this.velocity.z ** 2)
   }
 
   update(humanoid, moveDir, wDown, sDown, jumpPressed, delta, obstacles, wallAABBs = []) {
@@ -39,6 +50,7 @@ export class Physics {
       } else if (this._state === STATE.AIRBORNE && this._airJumpsLeft > 0) {
         this.velocity.y = JUMP_SPEED
         this._airJumpsLeft--
+        if (this.onDoubleJump) this.onDoubleJump()
       }
     }
 
@@ -69,7 +81,10 @@ export class Physics {
       if (humanoid.position.y <= GROUND_Y) {
         humanoid.position.y = GROUND_Y
         this.velocity.y = 0
-        this._state = STATE.GROUNDED
+        if (this._state !== STATE.GROUNDED) {
+          this._state = STATE.GROUNDED
+          if (this.onLand) this.onLand()
+        }
         supportedThisFrame = true
       }
 
@@ -142,7 +157,10 @@ export class Physics {
         // Feet just below box top — push up, land on top
         humanoid.position.y += oyUp
         this.velocity.y = 0
-        this._state = STATE.GROUNDED
+        if (this._state !== STATE.GROUNDED) {
+          this._state = STATE.GROUNDED
+          if (this.onLand) this.onLand()
+        }
         return true
       } else {
         // Head bump — push down
@@ -177,6 +195,7 @@ export class Physics {
       this._state    = STATE.HANGING
       this._hangTopY = topY
       this.velocity.set(0, 0, 0)
+      if (this.onGrab) this.onGrab()
       return
     }
   }
@@ -185,6 +204,7 @@ export class Physics {
     humanoid.position.y = this._hangTopY
     this.velocity.set(0, 0, 0)
     this._state = STATE.GROUNDED
+    if (this.onPullUp) this.onPullUp()
   }
 
   _respawn(humanoid) {

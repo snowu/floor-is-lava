@@ -1,10 +1,10 @@
 import * as THREE from 'three'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 
-const MODES = ['third-person', 'first-person', 'free']
+const MODES = ['first-person', 'free']
 
 const FREE_CAM_HEIGHT = 80
-const FREE_CAM_DISTANCE = 10   // slight offset so it's not perfectly top-down
+const FREE_CAM_DISTANCE = 10
 
 export class CameraController {
   constructor(camera, domElement, humanoid, scene) {
@@ -15,14 +15,8 @@ export class CameraController {
     this._modeIndex = 0
     this._yaw = 0
     this._pitch = 0
-    this._prevMouseX = null
-    this._prevMouseY = null
     this._skipWarpEvent = false
 
-    // Set a valid initial camera position before constructing OrbitControls.
-    // OrbitControls calls update() internally during construction; if the camera
-    // is at the origin (same as its default target) it corrupts camera.up,
-    // causing a rolled view on first load.
     camera.position.set(0, 3, 5)
     camera.lookAt(0, 1, 0)
 
@@ -35,9 +29,6 @@ export class CameraController {
     document.addEventListener('pointerlockchange', () => {
       if (this._isLocked) {
         this._skipWarpEvent = true
-      } else {
-        this._prevMouseX = null
-        this._prevMouseY = null
       }
     })
     window.addEventListener('keydown', (e) => {
@@ -62,8 +53,6 @@ export class CameraController {
     this._modeIndex = (this._modeIndex + 1) % MODES.length
     this._yaw = 0
     this._pitch = 0
-    this._prevMouseX = null
-    this._prevMouseY = null
     if (this.mode === 'free') {
       document.exitPointerLock()
       this._orbit.enabled = true
@@ -99,16 +88,7 @@ export class CameraController {
       if (this._skipWarpEvent) { this._skipWarpEvent = false; return }
       this._yaw -= e.movementX * sensitivity
       this._pitch -= e.movementY * sensitivity
-    } else if (this.mode === 'third-person') {
-      // No lock: delta from previous clientX position
-      if (this._prevMouseX !== null) {
-        this._yaw -= (e.clientX - this._prevMouseX) * sensitivity
-        this._pitch -= (e.clientY - this._prevMouseY) * sensitivity
-      }
-      this._prevMouseX = e.clientX
-      this._prevMouseY = e.clientY
     }
-    // first-person without lock: no-op — pointer must be locked
 
     this._pitch = Math.max(-Math.PI / 3, Math.min(Math.PI / 3, this._pitch))
   }
@@ -116,22 +96,11 @@ export class CameraController {
   update() {
     const h = this._humanoid
 
-    if (this.mode === 'third-person') {
-      this._camera.up.set(0, 1, 0)
-      this._camera.position.set(
-        h.position.x + 5 * Math.sin(this._yaw),
-        h.position.y + 3,
-        h.position.z + 5 * Math.cos(this._yaw)
-      )
-      this._camera.lookAt(h.position.x, h.position.y + 1, h.position.z)
-      h.rotation.y = this._yaw
-
-    } else if (this.mode === 'first-person') {
+    if (this.mode === 'first-person') {
       this._camera.position.set(h.position.x, h.position.y + 1.75, h.position.z)
       this._camera.rotation.order = 'YXZ'
       this._camera.rotation.set(this._pitch, this._yaw, 0)
       h.rotation.y = this._yaw
-
     } else {
       this._orbit.update()
     }

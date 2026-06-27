@@ -6,6 +6,7 @@ import { CameraController } from './cameraController.js'
 import { createGround } from './ground.js'
 import { CourseManager } from './obstacles.js'
 import { Physics } from './physics.js'
+import { HumanoidAnimator } from './humanoidAnimator.js'
 import { PLAYER_WIDTH, PLAYER_HEIGHT, SPAWN_POS } from './config.js'
 
 // Lights
@@ -23,7 +24,7 @@ scene.add(ground)
 // Course manager — generates corridor + platforms on the fly
 const course = new CourseManager('medium')
 
-const humanoid = createHumanoid()
+const { group: humanoid, joints } = createHumanoid()
 humanoid.position.set(SPAWN_POS.x, SPAWN_POS.y, SPAWN_POS.z)
 scene.add(humanoid)
 
@@ -31,6 +32,7 @@ scene.add(humanoid)
 const movement = new Movement()
 const physics  = new Physics()
 const cameraController = new CameraController(camera, renderer.domElement, humanoid, scene)
+const animator = new HumanoidAnimator(joints, physics)
 
 // Debug hitboxes — toggle with H
 
@@ -90,6 +92,7 @@ function animate(timestamp) {
 
   physics.update(humanoid, moveDir, movement.wDown, movement.sDown, jumpPressed, delta,
     course.allObstacles, course.allWallAABBs)
+  animator.update(delta)
   cameraController.update()
 
   playerHelper.position.set(
