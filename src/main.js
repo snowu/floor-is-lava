@@ -3,7 +3,7 @@ import { scene, camera, renderer, timer } from './scene.js'
 import { createHumanoid } from './humanoid.js'
 import { Movement } from './movement.js'
 import { CameraController } from './cameraController.js'
-import { createGround } from './ground.js'
+import { createGround, updateGround } from './ground.js'
 import { CourseManager } from './obstacles.js'
 import { Physics } from './physics.js'
 import { HumanoidAnimator } from './humanoidAnimator.js'
@@ -129,6 +129,7 @@ function animate(timestamp) {
     humanoid.position.z
   )
 
+  updateGround(timestamp * 0.001)
   renderer.render(scene, camera)
 }
 animate()
