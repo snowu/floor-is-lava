@@ -18,6 +18,7 @@ export class HumanoidAnimator {
     this._physics = physics
     this._state = ANIM_STATE.IDLE
     this._time = 0
+    this._runPhase = 0
     this._stateTimer = 0
     this._airborneTimer = 0
 
@@ -57,6 +58,7 @@ export class HumanoidAnimator {
 
     const phys = this._physics
     const hSpeed = phys.horizontalSpeed
+    this._runPhase += hSpeed * config.ANIM_RUN_FREQ_SCALE * delta
 
     if (phys.state === 'airborne' || phys.state === 'hanging') {
       this._airborneTimer += delta
@@ -138,8 +140,7 @@ export class HumanoidAnimator {
   _poseRunning() {
     this._resetLimbs()
     const j = this._joints
-    const freq = this._physics.horizontalSpeed * config.ANIM_RUN_FREQ_SCALE
-    const phase = this._time * freq
+    const phase = this._runPhase
 
     j.hipL.rotation.x = Math.sin(phase) * config.ANIM_RUN_LEG_AMPLITUDE
     j.hipR.rotation.x = Math.sin(phase + Math.PI) * config.ANIM_RUN_LEG_AMPLITUDE
