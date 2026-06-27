@@ -136,6 +136,10 @@ export function createDebugMenu(animator, scene, courses, { camera, ambientLight
   cam.add(config, 'FP_HAND_Z', -1, 0, 0.05).name('Hand Z Offset')
   cam.add(config, 'TP_CAM_DISTANCE', 1, 20, 0.5).name('3P Distance')
   cam.add(config, 'TP_CAM_HEIGHT', 0, 10, 0.5).name('3P Height')
+  cam.add(config, 'AUTO_AIM_LOOK_AHEAD', 5, 60, 1).name('Aim Look Ahead')
+  cam.add(config, 'AUTO_AIM_SKIP_PLATFORMS', 0, 6, 1).name('Aim Skip Plats')
+  cam.add(config, 'AUTO_AIM_LERP_SPEED', 0.2, 5, 0.1).name('Aim Lerp Speed')
+  cam.add(config, 'AUTO_AIM_STRAFE_BIAS', 0, 2, 0.05).name('Aim Strafe Bias')
   cam.close()
 
   // ── Lighting ──────────────────────────────────────────────────────────────

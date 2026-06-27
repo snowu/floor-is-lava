@@ -91,6 +91,10 @@ const config = {
   FP_HAND_Z:              -0.45,
   TP_CAM_DISTANCE:        5,
   TP_CAM_HEIGHT:          3,
+  AUTO_AIM_LOOK_AHEAD:    30,
+  AUTO_AIM_SKIP_PLATFORMS: 2,
+  AUTO_AIM_LERP_SPEED:    1.5,
+  AUTO_AIM_STRAFE_BIAS:   0.6,
 
   // ── lighting ──────────────────────────────────────────────────────────────
   AMBIENT_INTENSITY:      0.4,

@@ -105,31 +105,58 @@ export class CameraController {
     const py = this._humanoid.position.y
     const pz = this._humanoid.position.z
 
-    const lookAhead = 30
-    let cx = 0, cy = 0, cz = 0, count = 0
+    const lookAhead = config.AUTO_AIM_LOOK_AHEAD
+    const skip = config.AUTO_AIM_SKIP_PLATFORMS
+
+    // Collect platforms ahead, sorted by distance (closest Z first)
+    const ahead = []
     for (const obs of obstacles) {
+      if (obs.isSpawn) continue
       obs.aabb.getCenter(_targetCenter)
       const dz = _targetCenter.z - pz
       if (dz > -2 || dz < -lookAhead) continue
-      cx += _targetCenter.x
-      cy += _targetCenter.y
-      cz += _targetCenter.z
-      count++
+      ahead.push({ x: _targetCenter.x, y: _targetCenter.y, z: _targetCenter.z, dz })
+    }
+    if (ahead.length === 0) return
+
+    ahead.sort((a, b) => b.dz - a.dz) // closest first (dz is negative)
+
+    // Strafe direction from joystick
+    const strafeDx = this._joystick && this._joystick.active ? this._joystick.dx : 0
+    const strafeDir = Math.abs(strafeDx) > 0.15 ? Math.sign(strafeDx) : 0 // +1 right, -1 left
+
+    let target
+    if (strafeDir !== 0 && ahead.length > skip) {
+      // Find best platform at least `skip` platforms ahead, biased toward strafe side
+      const candidates = ahead.slice(skip)
+      let best = null
+      let bestScore = -Infinity
+      const bias = config.AUTO_AIM_STRAFE_BIAS
+      for (const p of candidates) {
+        const sideOffset = (p.x - px) * strafeDir // positive = platform is on strafe side
+        const closeness = 1.0 / (1.0 + Math.abs(p.dz))
+        const score = sideOffset * bias + closeness
+        if (score > bestScore) {
+          bestScore = score
+          best = p
+        }
+      }
+      target = best
+    } else {
+      // No strafe: aim at platform ~skip ahead (or last available)
+      const idx = Math.min(skip, ahead.length - 1)
+      target = ahead[idx]
     }
 
-    if (count === 0) return
-
-    cx /= count
-    cy /= count
-    cz /= count
+    if (!target) return
 
     if (!this._aimTarget) {
-      this._aimTarget = new THREE.Vector3(cx, cy, cz)
+      this._aimTarget = new THREE.Vector3(target.x, target.y, target.z)
     }
 
-    const shift = Math.sqrt((cx - this._aimTarget.x) ** 2 + (cz - this._aimTarget.z) ** 2)
+    const shift = Math.sqrt((target.x - this._aimTarget.x) ** 2 + (target.z - this._aimTarget.z) ** 2)
     if (shift > 3) {
-      this._aimTarget.set(cx, cy, cz)
+      this._aimTarget.set(target.x, target.y, target.z)
     }
 
     const dx = this._aimTarget.x - px
@@ -139,12 +166,10 @@ export class CameraController {
 
     const targetYaw = Math.atan2(-dx, -dz)
     const targetPitch = -Math.atan2(dy - 1.75, hDist)
-
     const clampedPitch = Math.max(0, Math.min(Math.PI / 3, targetPitch))
 
-    const lerpSpeed = 1.5
     const dt = 0.016
-    const t = 1 - Math.exp(-lerpSpeed * dt)
+    const t = 1 - Math.exp(-config.AUTO_AIM_LERP_SPEED * dt)
     let yawDiff = targetYaw - this._yaw
     while (yawDiff > Math.PI) yawDiff -= Math.PI * 2
     while (yawDiff < -Math.PI) yawDiff += Math.PI * 2
