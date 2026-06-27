@@ -13,7 +13,7 @@ for (const key of Object.keys(config)) {
 
 const ANIM_STATES = ['auto', 'idle', 'running', 'jumping', 'falling', 'landing', 'hanging', 'pullUp', 'wallrun']
 
-export function createDebugMenu(animator, scene, courses) {
+export function createDebugMenu(animator, scene, courses, { camera, ambientLight, dirLight } = {}) {
   const gui = new GUI({ title: 'Debug (F2)', width: 400 })
   gui.domElement.style.fontSize = '14px'
   gui.domElement.style.display = 'none'
@@ -111,7 +111,82 @@ export function createDebugMenu(animator, scene, courses) {
   plat.add(config, 'BOX_MAX_HEIGHT', 0.1, 5, 0.1).name('Box Max Height').onFinishChange(rebuildCourses)
   plat.add(config, 'BOX_MIN_DEPTH', 0.5, 10, 0.25).name('Box Min Depth').onFinishChange(rebuildCourses)
   plat.add(config, 'BOX_MAX_DEPTH', 0.5, 15, 0.25).name('Box Max Depth').onFinishChange(rebuildCourses)
+  plat.add(config, 'SPAWN_PLAT_SIZE', 1, 10, 0.5).name('Spawn Platform').onFinishChange(rebuildCourses)
+  plat.add(config, 'WARMUP_COUNT', 0, 10, 1).name('Warmup Platforms').onFinishChange(rebuildCourses)
+  plat.add(config, 'DOUBLE_JUMP_SIZE_SCALE', 0.1, 1.5, 0.05).name('DblJump Size Scale').onFinishChange(rebuildCourses)
   plat.close()
+
+  // ── Camera ────────────────────────────────────────────────────────────────
+  const cam = gui.addFolder('Camera')
+  cam.add(config, 'CAMERA_FOV', 30, 120, 1).name('FOV').onChange(v => {
+    if (camera) { camera.fov = v; camera.updateProjectionMatrix() }
+  })
+  cam.add(config, 'CAMERA_SENSITIVITY', 0.0005, 0.01, 0.0005).name('Sensitivity')
+  cam.add(config, 'FREE_CAM_HEIGHT', 10, 200, 5).name('Free Cam Height')
+  cam.add(config, 'FREE_CAM_DISTANCE', 1, 50, 1).name('Free Cam Distance')
+  cam.add(config, 'FP_HAND_X', 0, 1, 0.05).name('Hand X Offset')
+  cam.add(config, 'FP_HAND_Y', -1, 0, 0.05).name('Hand Y Offset')
+  cam.add(config, 'FP_HAND_Z', -1, 0, 0.05).name('Hand Z Offset')
+  cam.add(config, 'TP_CAM_DISTANCE', 1, 20, 0.5).name('3P Distance')
+  cam.add(config, 'TP_CAM_HEIGHT', 0, 10, 0.5).name('3P Height')
+  cam.close()
+
+  // ── Lighting ──────────────────────────────────────────────────────────────
+  const light = gui.addFolder('Lighting')
+  light.add(config, 'AMBIENT_INTENSITY', 0, 2, 0.05).name('Ambient').onChange(v => {
+    if (ambientLight) ambientLight.intensity = v
+  })
+  light.add(config, 'DIR_LIGHT_X', -50, 50, 1).name('Dir X').onChange(() => {
+    if (dirLight) dirLight.position.set(config.DIR_LIGHT_X, config.DIR_LIGHT_Y, config.DIR_LIGHT_Z)
+  })
+  light.add(config, 'DIR_LIGHT_Y', -50, 50, 1).name('Dir Y').onChange(() => {
+    if (dirLight) dirLight.position.set(config.DIR_LIGHT_X, config.DIR_LIGHT_Y, config.DIR_LIGHT_Z)
+  })
+  light.add(config, 'DIR_LIGHT_Z', -50, 50, 1).name('Dir Z').onChange(() => {
+    if (dirLight) dirLight.position.set(config.DIR_LIGHT_X, config.DIR_LIGHT_Y, config.DIR_LIGHT_Z)
+  })
+  light.close()
+
+  // ── Lava ──────────────────────────────────────────────────────────────────
+  const lava = gui.addFolder('Lava')
+  lava.add(config, 'LAVA_SPEED', 0, 0.2, 0.005).name('Speed')
+  lava.add(config, 'LAVA_UV_SCALE', 0.01, 0.3, 0.005).name('UV Scale')
+  lava.add(config, 'LAVA_HEAVE_AMP', 0, 3, 0.1).name('Heave Amp')
+  lava.add(config, 'LAVA_HEAVE_FREQ', 0, 3, 0.1).name('Heave Freq')
+  lava.add(config, 'LAVA_HEAVE_SPEED', 0, 1, 0.05).name('Heave Speed')
+  lava.add(config, 'LAVA_BUBBLE_AMP1', 0, 2, 0.05).name('Bubble Amp 1')
+  lava.add(config, 'LAVA_BUBBLE_FREQ1', 0, 10, 0.5).name('Bubble Freq 1')
+  lava.add(config, 'LAVA_BUBBLE_SPEED1', 0, 2, 0.1).name('Bubble Speed 1')
+  lava.add(config, 'LAVA_BUBBLE_AMP2', 0, 1, 0.05).name('Bubble Amp 2')
+  lava.add(config, 'LAVA_BUBBLE_FREQ2', 0, 10, 0.5).name('Bubble Freq 2')
+  lava.add(config, 'LAVA_BUBBLE_SPEED2', 0, 2, 0.1).name('Bubble Speed 2')
+  lava.add(config, 'LAVA_POP_AMP', 0, 3, 0.1).name('Pop Amp')
+  lava.add(config, 'LAVA_POP_FREQ', 0, 10, 0.5).name('Pop Freq')
+  lava.add(config, 'LAVA_POP_SPEED', 0, 3, 0.1).name('Pop Speed')
+  lava.add(config, 'LAVA_POP_EXP', 1, 10, 0.5).name('Pop Exp')
+  lava.add(config, 'LAVA_WARP_STRENGTH', 0, 10, 0.5).name('Warp Strength')
+  lava.add(config, 'LAVA_FLOW_SPEED1', 0, 1, 0.01).name('Flow 1')
+  lava.add(config, 'LAVA_FLOW_SPEED2', 0, 1, 0.01).name('Flow 2')
+  lava.add(config, 'LAVA_FLOW_SPEED3', 0, 1, 0.01).name('Flow 3')
+  lava.add(config, 'LAVA_FLOW_SPEED4', 0, 1, 0.01).name('Flow 4')
+  lava.add(config, 'LAVA_DETAIL_NEAR', 0, 30, 1).name('Detail Near')
+  lava.add(config, 'LAVA_DETAIL_RANGE', 0, 60, 1).name('Detail Range')
+  lava.add(config, 'LAVA_OCTAVES_MIN', 1, 6, 0.5).name('Octaves Min')
+  lava.add(config, 'LAVA_OCTAVES_MAX', 1, 6, 0.5).name('Octaves Max')
+  lava.add(config, 'LAVA_CRUST_THRESHOLD', 0, 1, 0.05).name('Crust Threshold')
+  lava.add(config, 'LAVA_ORANGE_THRESHOLD', 0, 1, 0.05).name('Orange Threshold')
+  lava.add(config, 'LAVA_PULSE_FREQ', 0, 5, 0.1).name('Pulse Freq')
+  lava.add(config, 'LAVA_PULSE_SPEED', 0, 3, 0.1).name('Pulse Speed')
+  lava.add(config, 'LAVA_PULSE_EXP', 1, 10, 0.5).name('Pulse Exp')
+  lava.add(config, 'LAVA_PULSE_INTENSITY', 0, 1, 0.05).name('Pulse Intensity')
+  lava.add(config, 'LAVA_CRACK_FREQ', 0, 10, 0.5).name('Crack Freq')
+  lava.add(config, 'LAVA_CRACK_WARP', 0, 5, 0.1).name('Crack Warp')
+  lava.add(config, 'LAVA_CRACK_WIDTH_NEAR', 0, 1, 0.01).name('Crack Width Near')
+  lava.add(config, 'LAVA_CRACK_WIDTH_FAR', 0, 2, 0.05).name('Crack Width Far')
+  lava.add(config, 'LAVA_CRACK_INTENSITY', 0, 2, 0.05).name('Crack Intensity')
+  lava.add(config, 'LAVA_GLOW_BASE', 0, 5, 0.1).name('Glow Base')
+  lava.add(config, 'LAVA_GLOW_PULSE', 0, 2, 0.05).name('Glow Pulse')
+  lava.close()
 
   // ── Animation ─────────────────────────────────────────────────────────────
   const anim = gui.addFolder('Animation')

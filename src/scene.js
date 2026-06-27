@@ -8,7 +8,7 @@ scene.background = new THREE.Color(FOG_COLOR)
 scene.fog = new THREE.Fog(FOG_COLOR, config.FOG_START, config.FOG_END)
 
 export const camera = new THREE.PerspectiveCamera(
-  75,
+  config.CAMERA_FOV,
   window.innerWidth / window.innerHeight,
   0.1,
   1000

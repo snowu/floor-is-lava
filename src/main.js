@@ -11,11 +11,11 @@ import { createDebugMenu } from './debugMenu.js'
 import config from './config.js'
 
 // Lights
-const ambientLight = new THREE.AmbientLight(0xffffff, 0.4)
+const ambientLight = new THREE.AmbientLight(0xffffff, config.AMBIENT_INTENSITY)
 scene.add(ambientLight)
 
 const dirLight = new THREE.DirectionalLight(0xffffff, 1)
-dirLight.position.set(10, 20, 10)
+dirLight.position.set(config.DIR_LIGHT_X, config.DIR_LIGHT_Y, config.DIR_LIGHT_Z)
 scene.add(dirLight)
 
 // Death floor
@@ -40,7 +40,7 @@ const physics  = new Physics()
 const cameraController = new CameraController(camera, renderer.domElement, humanoid, scene)
 const animator = new HumanoidAnimator(joints, physics)
 cameraController.animator = animator
-createDebugMenu(animator, scene, courses)
+createDebugMenu(animator, scene, courses, { camera, ambientLight, dirLight })
 
 // HUD elements
 const scoreEl = document.getElementById('score-current')

@@ -1,11 +1,9 @@
 import * as THREE from 'three'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
+import config from './config.js'
 
 const DEV_MODES = ['first-person', 'third-person', 'free']
 const PROD_MODES = ['first-person']
-
-const FREE_CAM_HEIGHT = 80
-const FREE_CAM_DISTANCE = 10
 
 export class CameraController {
   constructor(camera, domElement, humanoid, scene) {
@@ -26,8 +24,8 @@ export class CameraController {
     this._handR = new THREE.Mesh(new THREE.CapsuleGeometry(0.04, 0.12, 4, 8), handMat)
     this._handL.rotation.x = -0.5
     this._handR.rotation.x = -0.5
-    this._handBaseL = new THREE.Vector3(-0.3, -0.35, -0.45)
-    this._handBaseR = new THREE.Vector3(0.3, -0.35, -0.45)
+    this._handBaseL = new THREE.Vector3(-config.FP_HAND_X, config.FP_HAND_Y, config.FP_HAND_Z)
+    this._handBaseR = new THREE.Vector3(config.FP_HAND_X, config.FP_HAND_Y, config.FP_HAND_Z)
     this._handL.position.copy(this._handBaseL)
     this._handR.position.copy(this._handBaseR)
     camera.add(this._handL)
@@ -76,9 +74,9 @@ export class CameraController {
       document.exitPointerLock()
       this._orbit.enabled = true
       this._camera.position.set(
-        this._humanoid.position.x + FREE_CAM_DISTANCE,
-        this._humanoid.position.y + FREE_CAM_HEIGHT,
-        this._humanoid.position.z + FREE_CAM_DISTANCE
+        this._humanoid.position.x + config.FREE_CAM_DISTANCE,
+        this._humanoid.position.y + config.FREE_CAM_HEIGHT,
+        this._humanoid.position.z + config.FREE_CAM_DISTANCE
       )
       this._orbit.target.set(
         this._humanoid.position.x,
@@ -101,7 +99,7 @@ export class CameraController {
   _onMouseMove(e) {
     if (this.mode === 'free') return
 
-    const sensitivity = 0.002
+    const sensitivity = config.CAMERA_SENSITIVITY
 
     if (this._isLocked) {
       if (this._skipWarpEvent) { this._skipWarpEvent = false; return }
@@ -128,14 +126,14 @@ export class CameraController {
       this._handR.visible = true
       if (a) {
         this._handL.position.set(
-          this._handBaseL.x + a.cameraHandLX,
-          this._handBaseL.y + a.cameraHandLY,
-          this._handBaseL.z
+          -config.FP_HAND_X + a.cameraHandLX,
+          config.FP_HAND_Y + a.cameraHandLY,
+          config.FP_HAND_Z
         )
         this._handR.position.set(
-          this._handBaseR.x + a.cameraHandRX,
-          this._handBaseR.y + a.cameraHandRY,
-          this._handBaseR.z
+          config.FP_HAND_X + a.cameraHandRX,
+          config.FP_HAND_Y + a.cameraHandRY,
+          config.FP_HAND_Z
         )
       }
 
@@ -144,9 +142,9 @@ export class CameraController {
       this._handR.visible = false
       this._camera.up.set(0, 1, 0)
       this._camera.position.set(
-        h.position.x + 5 * Math.sin(this._yaw),
-        h.position.y + 3,
-        h.position.z + 5 * Math.cos(this._yaw)
+        h.position.x + config.TP_CAM_DISTANCE * Math.sin(this._yaw),
+        h.position.y + config.TP_CAM_HEIGHT,
+        h.position.z + config.TP_CAM_DISTANCE * Math.cos(this._yaw)
       )
       this._camera.lookAt(h.position.x, h.position.y + 1, h.position.z)
 

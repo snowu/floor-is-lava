@@ -1,64 +1,5 @@
 import * as THREE from 'three'
-
-// ── Lava tuning parameters ──────────────────────────────────────────────────
-export const LAVA = {
-  // Overall
-  speed:          0.045,   // master time scale
-  uvScale:        0.06,    // world-space UV frequency (smaller = bigger blobs)
-
-  // Vertex displacement
-  heaveAmp:       0.6,     // broad rolling hills amplitude
-  heaveFreq:      0.5,     // heave noise frequency
-  heaveSpeed:     0.15,    // heave animation speed (relative to master)
-  bubbleAmp1:     0.3,     // primary bubble layer amplitude
-  bubbleFreq1:    2.0,     // primary bubble frequency
-  bubbleSpeed1:   0.4,     // primary bubble speed
-  bubbleAmp2:     0.15,    // secondary bubble amplitude
-  bubbleFreq2:    4.0,     // secondary bubble frequency
-  bubbleSpeed2:   0.5,     // secondary bubble speed
-  popAmp:         0.8,     // sharp pop amplitude
-  popFreq:        3.0,     // pop noise frequency
-  popSpeed:       0.8,     // pop animation speed
-  popExp:         3.0,     // pop sharpness exponent
-
-  // Fragment — flow
-  warpStrength:   3.0,     // domain warp multiplier
-  flowSpeed1:     0.15,    // primary warp flow speed
-  flowSpeed2:     0.1,     // secondary warp flow speed
-  flowSpeed3:     0.05,    // tertiary warp flow speed
-  flowSpeed4:     0.04,    // quaternary warp flow speed
-
-  // Fragment — detail LOD
-  detailNear:     8.0,     // distance where full detail starts fading
-  detailRange:    25.0,    // fade distance
-  octavesMin:     2.0,     // octaves at max distance
-  octavesMax:     5.0,     // octaves up close
-
-  // Fragment — colors
-  darkCrust:      [0.08, 0.03, 0.01],
-  deepRed:        [0.6, 0.08, 0.0],
-  hotOrange:      [1.0, 0.35, 0.0],
-  brightYellow:   [1.0, 0.85, 0.2],
-  crustThreshold: 0.35,    // f boundary: crust → red
-  orangeThreshold:0.65,    // f boundary: red → orange
-
-  // Fragment — pulse
-  pulseFreq:      1.5,     // hot spot noise frequency
-  pulseSpeed:     0.6,     // hot spot animation speed
-  pulseExp:       4.0,     // hot spot sharpness
-  pulseIntensity: 0.25,    // hot spot brightness
-
-  // Fragment — cracks
-  crackFreq:      4.0,     // crack noise frequency
-  crackWarp:      1.5,     // crack warp by q
-  crackWidthNear: 0.1,     // smoothstep edge up close
-  crackWidthFar:  0.5,     // smoothstep edge at distance
-  crackIntensity: 0.4,     // crack brightness
-
-  // Fragment — glow
-  glowBase:       1.4,     // glow multiplier on f
-  glowPulse:      0.4,     // glow contribution from pulse
-}
+import config from './config.js'
 
 const LAVA_VERTEX = `
   uniform float time;
@@ -226,54 +167,47 @@ const LAVA_FRAGMENT = `
 function buildUniforms() {
   return {
     time:            { value: 0 },
-    speed:           { value: LAVA.speed },
-    uvScale:         { value: LAVA.uvScale },
-    // vertex displacement
-    heaveAmp:        { value: LAVA.heaveAmp },
-    heaveFreq:       { value: LAVA.heaveFreq },
-    heaveSpeed:      { value: LAVA.heaveSpeed },
-    bubbleAmp1:      { value: LAVA.bubbleAmp1 },
-    bubbleFreq1:     { value: LAVA.bubbleFreq1 },
-    bubbleSpeed1:    { value: LAVA.bubbleSpeed1 },
-    bubbleAmp2:      { value: LAVA.bubbleAmp2 },
-    bubbleFreq2:     { value: LAVA.bubbleFreq2 },
-    bubbleSpeed2:    { value: LAVA.bubbleSpeed2 },
-    popAmp:          { value: LAVA.popAmp },
-    popFreq:         { value: LAVA.popFreq },
-    popSpeed:        { value: LAVA.popSpeed },
-    popExp:          { value: LAVA.popExp },
-    // fragment flow
-    warpStrength:    { value: LAVA.warpStrength },
-    flowSpeed1:      { value: LAVA.flowSpeed1 },
-    flowSpeed2:      { value: LAVA.flowSpeed2 },
-    flowSpeed3:      { value: LAVA.flowSpeed3 },
-    flowSpeed4:      { value: LAVA.flowSpeed4 },
-    // detail LOD
-    detailNear:      { value: LAVA.detailNear },
-    detailRange:     { value: LAVA.detailRange },
-    octavesMin:      { value: LAVA.octavesMin },
-    octavesMax:      { value: LAVA.octavesMax },
-    // colors
-    darkCrust:       { value: new THREE.Vector3(...LAVA.darkCrust) },
-    deepRed:         { value: new THREE.Vector3(...LAVA.deepRed) },
-    hotOrange:       { value: new THREE.Vector3(...LAVA.hotOrange) },
-    brightYellow:    { value: new THREE.Vector3(...LAVA.brightYellow) },
-    crustThreshold:  { value: LAVA.crustThreshold },
-    orangeThreshold: { value: LAVA.orangeThreshold },
-    // pulse
-    pulseFreq:       { value: LAVA.pulseFreq },
-    pulseSpeed:      { value: LAVA.pulseSpeed },
-    pulseExp:        { value: LAVA.pulseExp },
-    pulseIntensity:  { value: LAVA.pulseIntensity },
-    // cracks
-    crackFreq:       { value: LAVA.crackFreq },
-    crackWarp:       { value: LAVA.crackWarp },
-    crackWidthNear:  { value: LAVA.crackWidthNear },
-    crackWidthFar:   { value: LAVA.crackWidthFar },
-    crackIntensity:  { value: LAVA.crackIntensity },
-    // glow
-    glowBase:        { value: LAVA.glowBase },
-    glowPulse:       { value: LAVA.glowPulse },
+    speed:           { value: config.LAVA_SPEED },
+    uvScale:         { value: config.LAVA_UV_SCALE },
+    heaveAmp:        { value: config.LAVA_HEAVE_AMP },
+    heaveFreq:       { value: config.LAVA_HEAVE_FREQ },
+    heaveSpeed:      { value: config.LAVA_HEAVE_SPEED },
+    bubbleAmp1:      { value: config.LAVA_BUBBLE_AMP1 },
+    bubbleFreq1:     { value: config.LAVA_BUBBLE_FREQ1 },
+    bubbleSpeed1:    { value: config.LAVA_BUBBLE_SPEED1 },
+    bubbleAmp2:      { value: config.LAVA_BUBBLE_AMP2 },
+    bubbleFreq2:     { value: config.LAVA_BUBBLE_FREQ2 },
+    bubbleSpeed2:    { value: config.LAVA_BUBBLE_SPEED2 },
+    popAmp:          { value: config.LAVA_POP_AMP },
+    popFreq:         { value: config.LAVA_POP_FREQ },
+    popSpeed:        { value: config.LAVA_POP_SPEED },
+    popExp:          { value: config.LAVA_POP_EXP },
+    warpStrength:    { value: config.LAVA_WARP_STRENGTH },
+    flowSpeed1:      { value: config.LAVA_FLOW_SPEED1 },
+    flowSpeed2:      { value: config.LAVA_FLOW_SPEED2 },
+    flowSpeed3:      { value: config.LAVA_FLOW_SPEED3 },
+    flowSpeed4:      { value: config.LAVA_FLOW_SPEED4 },
+    detailNear:      { value: config.LAVA_DETAIL_NEAR },
+    detailRange:     { value: config.LAVA_DETAIL_RANGE },
+    octavesMin:      { value: config.LAVA_OCTAVES_MIN },
+    octavesMax:      { value: config.LAVA_OCTAVES_MAX },
+    darkCrust:       { value: new THREE.Vector3(0.08, 0.03, 0.01) },
+    deepRed:         { value: new THREE.Vector3(0.6, 0.08, 0.0) },
+    hotOrange:       { value: new THREE.Vector3(1.0, 0.35, 0.0) },
+    brightYellow:    { value: new THREE.Vector3(1.0, 0.85, 0.2) },
+    crustThreshold:  { value: config.LAVA_CRUST_THRESHOLD },
+    orangeThreshold: { value: config.LAVA_ORANGE_THRESHOLD },
+    pulseFreq:       { value: config.LAVA_PULSE_FREQ },
+    pulseSpeed:      { value: config.LAVA_PULSE_SPEED },
+    pulseExp:        { value: config.LAVA_PULSE_EXP },
+    pulseIntensity:  { value: config.LAVA_PULSE_INTENSITY },
+    crackFreq:       { value: config.LAVA_CRACK_FREQ },
+    crackWarp:       { value: config.LAVA_CRACK_WARP },
+    crackWidthNear:  { value: config.LAVA_CRACK_WIDTH_NEAR },
+    crackWidthFar:   { value: config.LAVA_CRACK_WIDTH_FAR },
+    crackIntensity:  { value: config.LAVA_CRACK_INTENSITY },
+    glowBase:        { value: config.LAVA_GLOW_BASE },
+    glowPulse:       { value: config.LAVA_GLOW_PULSE },
   }
 }
 
@@ -303,7 +237,45 @@ export function createGround() {
 
 export function updateGround(time, playerX, playerZ) {
   if (lavaMaterial) {
-    lavaMaterial.uniforms.time.value = time
+    const u = lavaMaterial.uniforms
+    u.time.value = time
+    u.speed.value = config.LAVA_SPEED
+    u.uvScale.value = config.LAVA_UV_SCALE
+    u.heaveAmp.value = config.LAVA_HEAVE_AMP
+    u.heaveFreq.value = config.LAVA_HEAVE_FREQ
+    u.heaveSpeed.value = config.LAVA_HEAVE_SPEED
+    u.bubbleAmp1.value = config.LAVA_BUBBLE_AMP1
+    u.bubbleFreq1.value = config.LAVA_BUBBLE_FREQ1
+    u.bubbleSpeed1.value = config.LAVA_BUBBLE_SPEED1
+    u.bubbleAmp2.value = config.LAVA_BUBBLE_AMP2
+    u.bubbleFreq2.value = config.LAVA_BUBBLE_FREQ2
+    u.bubbleSpeed2.value = config.LAVA_BUBBLE_SPEED2
+    u.popAmp.value = config.LAVA_POP_AMP
+    u.popFreq.value = config.LAVA_POP_FREQ
+    u.popSpeed.value = config.LAVA_POP_SPEED
+    u.popExp.value = config.LAVA_POP_EXP
+    u.warpStrength.value = config.LAVA_WARP_STRENGTH
+    u.flowSpeed1.value = config.LAVA_FLOW_SPEED1
+    u.flowSpeed2.value = config.LAVA_FLOW_SPEED2
+    u.flowSpeed3.value = config.LAVA_FLOW_SPEED3
+    u.flowSpeed4.value = config.LAVA_FLOW_SPEED4
+    u.detailNear.value = config.LAVA_DETAIL_NEAR
+    u.detailRange.value = config.LAVA_DETAIL_RANGE
+    u.octavesMin.value = config.LAVA_OCTAVES_MIN
+    u.octavesMax.value = config.LAVA_OCTAVES_MAX
+    u.crustThreshold.value = config.LAVA_CRUST_THRESHOLD
+    u.orangeThreshold.value = config.LAVA_ORANGE_THRESHOLD
+    u.pulseFreq.value = config.LAVA_PULSE_FREQ
+    u.pulseSpeed.value = config.LAVA_PULSE_SPEED
+    u.pulseExp.value = config.LAVA_PULSE_EXP
+    u.pulseIntensity.value = config.LAVA_PULSE_INTENSITY
+    u.crackFreq.value = config.LAVA_CRACK_FREQ
+    u.crackWarp.value = config.LAVA_CRACK_WARP
+    u.crackWidthNear.value = config.LAVA_CRACK_WIDTH_NEAR
+    u.crackWidthFar.value = config.LAVA_CRACK_WIDTH_FAR
+    u.crackIntensity.value = config.LAVA_CRACK_INTENSITY
+    u.glowBase.value = config.LAVA_GLOW_BASE
+    u.glowPulse.value = config.LAVA_GLOW_PULSE
   }
   if (lavaPlane) {
     const gridSize = 2 // matches plane subdivision spacing (400 / 200)

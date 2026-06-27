@@ -47,11 +47,12 @@ function generateSegmentPlatforms(prevPlatform, segmentStartZ, difficulty = 'med
 
   let prev = prevPlatform
   if (!prev) {
-    prev = { w: 3, h: 1, d: 3, x: 0, y: 0.5, z: segmentStartZ - 3, isSpawn: true }
+    const sp = config.SPAWN_PLAT_SIZE
+    prev = { w: sp, h: 1, d: sp, x: 0, y: 0.5, z: segmentStartZ - 3, isSpawn: true }
     platforms.push(prev)
   }
 
-  const WARMUP_COUNT = isFirstSegment ? 4 : 0
+  const WARMUP_COUNT = isFirstSegment ? config.WARMUP_COUNT : 0
   let nextZ = segmentStartZ - (isFirstSegment ? config.FIRST_PLATFORM_GAP : 0)
   const slotDepth = config.SEGMENT_DEPTH / count
   let platIndex = platformCounter
@@ -93,7 +94,7 @@ function generateSegmentPlatforms(prevPlatform, segmentStartZ, difficulty = 'med
       dy = rand(maxUp * 0.7, maxUp)
     }
 
-    const sizeScale = needsDoubleJump ? 0.8 : 1.0
+    const sizeScale = needsDoubleJump ? config.DOUBLE_JUMP_SIZE_SCALE : 1.0
     const warmupSizeBonus = warmupT < 1 ? 1 + (1 - warmupT) * 0.5 : 1.0
     const w = rand(config.BOX_MIN_WIDTH, config.BOX_MAX_WIDTH) * sizeScale * warmupSizeBonus
     const h = rand(config.BOX_MIN_HEIGHT, config.BOX_MAX_HEIGHT)
@@ -220,7 +221,8 @@ export class BillboardTestCourse {
     // Spawn platform + bridge from main course
     if (index === 0) {
       const platMat = new THREE.MeshStandardMaterial({ color: 0x4fc3f7 })
-      const plat = new THREE.Mesh(new THREE.BoxGeometry(3, 1, 3), platMat)
+      const sp = config.SPAWN_PLAT_SIZE
+      const plat = new THREE.Mesh(new THREE.BoxGeometry(sp, 1, sp), platMat)
       plat.position.set(this._xOffset, 0.5, startZ - 3)
       meshes.push(plat)
       obstacles.push({ mesh: plat, aabb: new THREE.Box3().setFromObject(plat), isSpawn: true })
