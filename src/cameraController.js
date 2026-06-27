@@ -20,6 +20,20 @@ export class CameraController {
     this._skipWarpEvent = false
     this._animator = null
 
+    // FP hand meshes
+    const handMat = new THREE.MeshStandardMaterial({ color: 0x4488ff })
+    this._handL = new THREE.Mesh(new THREE.CapsuleGeometry(0.04, 0.12, 4, 8), handMat)
+    this._handR = new THREE.Mesh(new THREE.CapsuleGeometry(0.04, 0.12, 4, 8), handMat)
+    this._handL.rotation.x = -0.5
+    this._handR.rotation.x = -0.5
+    this._handBaseL = new THREE.Vector3(-0.3, -0.35, -0.45)
+    this._handBaseR = new THREE.Vector3(0.3, -0.35, -0.45)
+    this._handL.position.copy(this._handBaseL)
+    this._handR.position.copy(this._handBaseR)
+    camera.add(this._handL)
+    camera.add(this._handR)
+    scene.add(camera)
+
     camera.position.set(0, 3, 5)
     camera.lookAt(0, 1, 0)
 
@@ -102,13 +116,32 @@ export class CameraController {
     const h = this._humanoid
 
     if (this.mode === 'first-person') {
-      const eyeY = h.position.y + 1.75 + (this._animator ? this._animator.cameraYOffset : 0)
+      const a = this._animator
+      const eyeY = h.position.y + 1.75 + (a ? a.cameraYOffset : 0)
       this._camera.position.set(h.position.x, eyeY, h.position.z)
       this._camera.rotation.order = 'YXZ'
       this._camera.rotation.set(this._pitch, this._yaw, 0)
       h.rotation.y = this._yaw
 
+      // Animate FP hands
+      this._handL.visible = true
+      this._handR.visible = true
+      if (a) {
+        this._handL.position.set(
+          this._handBaseL.x + a.cameraHandLX,
+          this._handBaseL.y + a.cameraHandLY,
+          this._handBaseL.z
+        )
+        this._handR.position.set(
+          this._handBaseR.x + a.cameraHandRX,
+          this._handBaseR.y + a.cameraHandRY,
+          this._handBaseR.z
+        )
+      }
+
     } else if (this.mode === 'third-person') {
+      this._handL.visible = false
+      this._handR.visible = false
       this._camera.up.set(0, 1, 0)
       this._camera.position.set(
         h.position.x + 5 * Math.sin(this._yaw),
@@ -118,6 +151,8 @@ export class CameraController {
       this._camera.lookAt(h.position.x, h.position.y + 1, h.position.z)
 
     } else {
+      this._handL.visible = false
+      this._handR.visible = false
       this._orbit.update()
     }
   }

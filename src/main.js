@@ -7,7 +7,8 @@ import { createGround, updateGround } from './ground.js'
 import { CourseManager, BillboardTestCourse } from './obstacles.js'
 import { Physics } from './physics.js'
 import { HumanoidAnimator } from './humanoidAnimator.js'
-import { PLAYER_WIDTH, PLAYER_HEIGHT, SPAWN_POS } from './config.js'
+import { createDebugMenu } from './debugMenu.js'
+import config from './config.js'
 
 // Lights
 const ambientLight = new THREE.AmbientLight(0xffffff, 0.4)
@@ -30,7 +31,7 @@ if (window.DEV_MODE) {
 }
 
 const { group: humanoid, joints } = createHumanoid()
-humanoid.position.set(SPAWN_POS.x, SPAWN_POS.y, SPAWN_POS.z)
+humanoid.position.set(config.SPAWN_POS.x, config.SPAWN_POS.y, config.SPAWN_POS.z)
 scene.add(humanoid)
 
 // Controllers
@@ -39,6 +40,7 @@ const physics  = new Physics()
 const cameraController = new CameraController(camera, renderer.domElement, humanoid, scene)
 const animator = new HumanoidAnimator(joints, physics)
 cameraController.animator = animator
+createDebugMenu(animator, scene)
 
 // HUD elements
 const scoreEl = document.getElementById('score-current')
@@ -93,7 +95,7 @@ function makeWireBox(w, h, d, color) {
 let obstacleHelpers = []
 let hitboxesVisible = false
 
-const playerHelper = makeWireBox(PLAYER_WIDTH, PLAYER_HEIGHT, PLAYER_WIDTH, 0x00ff00)
+const playerHelper = makeWireBox(config.PLAYER_WIDTH, config.PLAYER_HEIGHT, config.PLAYER_WIDTH, 0x00ff00)
 scene.add(playerHelper)
 
 function rebuildObstacleHelpers() {
@@ -147,7 +149,7 @@ function animate(timestamp) {
 
   playerHelper.position.set(
     humanoid.position.x,
-    humanoid.position.y + PLAYER_HEIGHT / 2,
+    humanoid.position.y + config.PLAYER_HEIGHT / 2,
     humanoid.position.z
   )
 

@@ -1,11 +1,4 @@
-import {
-  MOVE_SPEED, CORRIDOR_WIDTH, CORRIDOR_HEIGHT, SEGMENT_DEPTH,
-  FOG_END, GENERATE_TIME_AHEAD,
-  SINGLE_JUMP_HEIGHT, DOUBLE_JUMP_HEIGHT,
-  MAX_H_RANGE_SINGLE, MAX_H_RANGE_DOUBLE,
-  BILLBOARD_WIDTH, BILLBOARD_HEIGHT, BILLBOARD_DEPTH,
-  BILLBOARD_X_OFFSET, BILLBOARD_GAP_EVERY, BILLBOARD_GAP_SIZE, BILLBOARD_Y_OFFSET, BILLBOARD_HITBOX_PAD,
-} from './config.js'
+import config from './config.js'
 
 const MAX_DROP = 8
 const MIN_PLATFORM_SPACING = 1.5
@@ -42,7 +35,7 @@ function nudgeAwayFromAll(plat, allPlatforms, halfW) {
         plat.z = Math.round((plat.z - push * 0.7) * 10) / 10
         const lateralDir = plat.x >= other.x ? 1 : -1
         plat.x = Math.round(clamp(plat.x + lateralDir * push * 0.5, -halfW, halfW) * 10) / 10
-        plat.y = Math.round(clamp(plat.y + push * 0.3, plat.h / 2 + 0.5, CORRIDOR_HEIGHT - 2) * 10) / 10
+        plat.y = Math.round(clamp(plat.y + push * 0.3, plat.h / 2 + 0.5, config.CORRIDOR_HEIGHT - 2) * 10) / 10
       }
     }
   }
@@ -54,7 +47,7 @@ function generateSegmentPlatforms(prevPlatform, segmentStartZ, difficulty = 'med
   const platforms = []
   const billboards = []
 
-  const halfW = CORRIDOR_WIDTH / 2 - 1
+  const halfW = config.CORRIDOR_WIDTH / 2 - 1
 
   let prev = prevPlatform
   if (!prev) {
@@ -64,24 +57,24 @@ function generateSegmentPlatforms(prevPlatform, segmentStartZ, difficulty = 'med
 
   const WARMUP_COUNT = isFirstSegment ? 4 : 0
   let nextZ = segmentStartZ - (isFirstSegment ? FIRST_PLATFORM_GAP : 0)
-  const slotDepth = SEGMENT_DEPTH / count
+  const slotDepth = config.SEGMENT_DEPTH / count
   let platIndex = platformCounter
 
   let afterGapSide = 0 // 0 = no constraint, -1/1 = force next platform to this side
 
   for (let i = 0; i < count; i++) {
     // Insert billboard gap before this platform?
-    if (platIndex > 0 && platIndex % BILLBOARD_GAP_EVERY === 0 && !isFirstSegment) {
+    if (platIndex > 0 && platIndex % config.BILLBOARD_GAP_EVERY === 0 && !isFirstSegment) {
       const prevTopY = prev.y + prev.h / 2
       const side = prev.x >= 0 ? 1 : -1
-      const gapMidZ = nextZ - BILLBOARD_GAP_SIZE / 2
+      const gapMidZ = nextZ - config.BILLBOARD_GAP_SIZE / 2
       billboards.push({
-        x: side * BILLBOARD_X_OFFSET,
-        y: prevTopY - BILLBOARD_Y_OFFSET,
+        x: side * config.BILLBOARD_X_OFFSET,
+        y: prevTopY - config.BILLBOARD_Y_OFFSET,
         z: gapMidZ,
         side,
       })
-      nextZ -= BILLBOARD_GAP_SIZE
+      nextZ -= config.BILLBOARD_GAP_SIZE
       afterGapSide = side
     }
 
@@ -89,7 +82,7 @@ function generateSegmentPlatforms(prevPlatform, segmentStartZ, difficulty = 'med
     const warmupT = (isFirstSegment && i < WARMUP_COUNT) ? (i + 1) / WARMUP_COUNT : 1.0
 
     const needsDoubleJump = warmupT < 1 ? false : Math.random() < diff.doubleJumpChance
-    const maxHeight = needsDoubleJump ? DOUBLE_JUMP_HEIGHT : SINGLE_JUMP_HEIGHT
+    const maxHeight = needsDoubleJump ? config.DOUBLE_JUMP_HEIGHT : config.SINGLE_JUMP_HEIGHT
 
     const maxUp   = maxHeight * diff.heightFraction * warmupT
     const maxDown = Math.min(MAX_DROP, prevTopY - 0.5) * warmupT
@@ -116,17 +109,17 @@ function generateSegmentPlatforms(prevPlatform, segmentStartZ, difficulty = 'med
     let px
     if (afterGapSide !== 0) {
       // First platform after gap: spawn on same side as billboard wall
-      const targetX = afterGapSide * (BILLBOARD_X_OFFSET - 3)
+      const targetX = afterGapSide * (config.BILLBOARD_X_OFFSET - 3)
       px = clamp(targetX + rand(-1, 1), -halfW + w / 2, halfW - w / 2)
       afterGapSide = 0
     } else {
-      const baseLateralRange = Math.min(6, CORRIDOR_WIDTH / 2 - 1)
+      const baseLateralRange = Math.min(6, config.CORRIDOR_WIDTH / 2 - 1)
       const lateralRange = baseLateralRange * warmupT
       px = clamp(prev.x + rand(-lateralRange, lateralRange), -halfW + w / 2, halfW - w / 2)
     }
 
     const newTopY = prevTopY + dy
-    const py = clamp(Math.max(h / 2, newTopY), h / 2 + 0.5, CORRIDOR_HEIGHT - h / 2 - 1)
+    const py = clamp(Math.max(h / 2, newTopY), h / 2 + 0.5, config.CORRIDOR_HEIGHT - h / 2 - 1)
 
     const plat = {
       w: Math.round(w * 10) / 10,
@@ -139,19 +132,19 @@ function generateSegmentPlatforms(prevPlatform, segmentStartZ, difficulty = 'med
 
     const platTopY = plat.y + plat.h / 2
     const heightDiff = platTopY - prevTopY
-    const maxReachHeight = (needsDoubleJump ? DOUBLE_JUMP_HEIGHT : SINGLE_JUMP_HEIGHT) * diff.heightFraction
+    const maxReachHeight = (needsDoubleJump ? config.DOUBLE_JUMP_HEIGHT : config.SINGLE_JUMP_HEIGHT) * diff.heightFraction
     if (heightDiff > maxReachHeight) {
-      plat.y = Math.round(clamp(prevTopY + maxReachHeight * 0.8, h / 2 + 0.5, CORRIDOR_HEIGHT - 2) * 10) / 10
+      plat.y = Math.round(clamp(prevTopY + maxReachHeight * 0.8, h / 2 + 0.5, config.CORRIDOR_HEIGHT - 2) * 10) / 10
     }
 
     // Prevent platform from clipping into any billboard
     for (const bb of billboards) {
-      const bbMinZ = bb.z - BILLBOARD_DEPTH / 2
-      const bbMaxZ = bb.z + BILLBOARD_DEPTH / 2
+      const bbMinZ = bb.z - config.BILLBOARD_DEPTH / 2
+      const bbMaxZ = bb.z + config.BILLBOARD_DEPTH / 2
       const platMinZ = plat.z - plat.d / 2
       const platMaxZ = plat.z + plat.d / 2
       if (platMaxZ <= bbMinZ || platMinZ >= bbMaxZ) continue
-      const bbInnerEdge = bb.side * BILLBOARD_X_OFFSET - bb.side * (BILLBOARD_WIDTH / 2 + BILLBOARD_HITBOX_PAD)
+      const bbInnerEdge = bb.side * config.BILLBOARD_X_OFFSET - bb.side * (config.BILLBOARD_WIDTH / 2 + config.BILLBOARD_HITBOX_PAD)
       const margin = 0.5
       if (bb.side > 0) {
         const limit = bbInnerEdge - margin - plat.w / 2
@@ -194,8 +187,8 @@ export class BillboardTestCourse {
 
   update(playerZ, currentSpeed, scene, THREE) {
     if (playerZ < this._furthestZ) this._furthestZ = playerZ
-    const speed = Math.max(currentSpeed, MOVE_SPEED)
-    const generateDist = FOG_END + SEGMENT_DEPTH + speed * GENERATE_TIME_AHEAD
+    const speed = Math.max(currentSpeed, config.MOVE_SPEED)
+    const generateDist = config.FOG_END + config.SEGMENT_DEPTH + speed * config.GENERATE_TIME_AHEAD
     const targetZ = this._furthestZ - generateDist
     const targetSegment = Math.floor(-targetZ / this._zSpacing)
     const added = []
@@ -234,14 +227,14 @@ export class BillboardTestCourse {
     const side = (index % 2 === 0) ? -1 : 1
     const midZ = startZ - this._zSpacing / 2
     const bbMesh = new THREE.Mesh(
-      new THREE.BoxGeometry(BILLBOARD_WIDTH, BILLBOARD_HEIGHT, BILLBOARD_DEPTH),
+      new THREE.BoxGeometry(config.BILLBOARD_WIDTH, config.BILLBOARD_HEIGHT, config.BILLBOARD_DEPTH),
       billboardMat
     )
-    bbMesh.position.set(this._xOffset + side * this._billboardSpacing, BILLBOARD_HEIGHT / 2, midZ)
+    bbMesh.position.set(this._xOffset + side * this._billboardSpacing, config.BILLBOARD_HEIGHT / 2, midZ)
     meshes.push(bbMesh)
     const bbAABB = new THREE.Box3().setFromObject(bbMesh)
-    bbAABB.min.x -= side < 0 ? 0 : BILLBOARD_HITBOX_PAD
-    bbAABB.max.x += side > 0 ? 0 : BILLBOARD_HITBOX_PAD
+    bbAABB.min.x -= side < 0 ? 0 : config.BILLBOARD_HITBOX_PAD
+    bbAABB.max.x += side > 0 ? 0 : config.BILLBOARD_HITBOX_PAD
     obstacles.push({ mesh: bbMesh, aabb: bbAABB, isBillboard: true, wallNormalX: -side })
 
     return { index, startZ, meshes, obstacles }
@@ -274,11 +267,11 @@ export class CourseManager {
     if (playerZ < this._furthestZ) this._furthestZ = playerZ
 
     // Always past fog + speed-scaled buffer so fast players don't outrun generation
-    const speed = Math.max(currentSpeed, MOVE_SPEED)
-    const generateDist = FOG_END + SEGMENT_DEPTH + speed * GENERATE_TIME_AHEAD
+    const speed = Math.max(currentSpeed, config.MOVE_SPEED)
+    const generateDist = config.FOG_END + config.SEGMENT_DEPTH + speed * config.GENERATE_TIME_AHEAD
     const targetZ = this._furthestZ - generateDist
 
-    const targetSegment = Math.floor(-targetZ / SEGMENT_DEPTH)
+    const targetSegment = Math.floor(-targetZ / config.SEGMENT_DEPTH)
     const added = []
 
     while (this._nextSegmentIndex <= targetSegment) {
@@ -293,7 +286,7 @@ export class CourseManager {
 
   _createSegment(THREE) {
     const index = this._nextSegmentIndex++
-    const startZ = -index * SEGMENT_DEPTH
+    const startZ = -index * config.SEGMENT_DEPTH
 
     const { platforms, billboards, lastPlatform, platformCounter } = generateSegmentPlatforms(
       this._lastPlatform, startZ, this._difficulty, index === 0, this._platformCounter
@@ -319,17 +312,17 @@ export class CourseManager {
     // Billboards placed in gaps between platforms
     const billboardMat = new THREE.MeshStandardMaterial({ color: 0x555566, roughness: 0.7 })
     for (const bb of billboards) {
-      const bbH = BILLBOARD_HEIGHT
+      const bbH = config.BILLBOARD_HEIGHT
       const bbY = bb.y + bbH / 2
       const mesh = new THREE.Mesh(
-        new THREE.BoxGeometry(BILLBOARD_WIDTH, bbH, BILLBOARD_DEPTH),
+        new THREE.BoxGeometry(config.BILLBOARD_WIDTH, bbH, config.BILLBOARD_DEPTH),
         billboardMat
       )
       mesh.position.set(bb.x, bbY, bb.z)
       const aabb = new THREE.Box3().setFromObject(mesh)
       // Extend hitbox toward course center
-      if (bb.side > 0) aabb.min.x -= BILLBOARD_HITBOX_PAD
-      else aabb.max.x += BILLBOARD_HITBOX_PAD
+      if (bb.side > 0) aabb.min.x -= config.BILLBOARD_HITBOX_PAD
+      else aabb.max.x += config.BILLBOARD_HITBOX_PAD
       meshes.push(mesh)
       obstacles.push({ mesh, aabb, isBillboard: true, wallNormalX: -bb.side })
     }
