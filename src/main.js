@@ -40,7 +40,7 @@ const physics  = new Physics()
 const cameraController = new CameraController(camera, renderer.domElement, humanoid, scene)
 const animator = new HumanoidAnimator(joints, physics)
 cameraController.animator = animator
-createDebugMenu(animator, scene)
+createDebugMenu(animator, scene, courses)
 
 // HUD elements
 const scoreEl = document.getElementById('score-current')
@@ -94,9 +94,21 @@ function makeWireBox(w, h, d, color) {
 
 let obstacleHelpers = []
 let hitboxesVisible = false
+let _prevPW = config.PLAYER_WIDTH, _prevPH = config.PLAYER_HEIGHT
 
-const playerHelper = makeWireBox(config.PLAYER_WIDTH, config.PLAYER_HEIGHT, config.PLAYER_WIDTH, 0x00ff00)
+let playerHelper = makeWireBox(config.PLAYER_WIDTH, config.PLAYER_HEIGHT, config.PLAYER_WIDTH, 0x00ff00)
 scene.add(playerHelper)
+
+function rebuildPlayerHelper() {
+  const vis = playerHelper.visible
+  scene.remove(playerHelper)
+  playerHelper.geometry.dispose()
+  playerHelper = makeWireBox(config.PLAYER_WIDTH, config.PLAYER_HEIGHT, config.PLAYER_WIDTH, 0x00ff00)
+  playerHelper.visible = vis
+  scene.add(playerHelper)
+  _prevPW = config.PLAYER_WIDTH
+  _prevPH = config.PLAYER_HEIGHT
+}
 
 function rebuildObstacleHelpers() {
   obstacleHelpers.forEach(h => scene.remove(h))
@@ -135,6 +147,10 @@ function animate(timestamp) {
     if (added.length > 0) anyAdded = true
   }
   if (anyAdded) rebuildObstacleHelpers()
+
+  if (config.PLAYER_WIDTH !== _prevPW || config.PLAYER_HEIGHT !== _prevPH) {
+    rebuildPlayerHelper()
+  }
 
   const moveDir     = movement.getMoveDir(cameraController.cameraYaw)
   const jumpPressed = movement.jumpPressed

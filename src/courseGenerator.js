@@ -1,15 +1,5 @@
 import config from './config.js'
 
-const MAX_DROP = 8
-const MIN_PLATFORM_SPACING = 1.5
-const FIRST_PLATFORM_GAP = 6
-
-const DIFFICULTY = {
-  easy:   { heightFraction: 0.5, rangeFraction: 0.5, minGap: 2, maxGap: 4, doubleJumpChance: 0,   platformsPerSegment: [4, 7] },
-  medium: { heightFraction: 0.7, rangeFraction: 0.7, minGap: 3, maxGap: 6, doubleJumpChance: 0.2, platformsPerSegment: [5, 8] },
-  hard:   { heightFraction: 0.9, rangeFraction: 0.9, minGap: 4, maxGap: 8, doubleJumpChance: 0.4, platformsPerSegment: [6, 10] },
-}
-
 function rand(min, max) {
   return min + Math.random() * (max - min)
 }
@@ -29,8 +19,8 @@ function nudgeAwayFromAll(plat, allPlatforms, halfW) {
       const gapZ = Math.max(0, Math.abs(plat.z - other.z) - plat.d / 2 - other.d / 2)
       const gapY = Math.max(0, Math.abs(plat.y - other.y) - plat.h / 2 - other.h / 2)
       const dist = Math.sqrt(gapX * gapX + gapZ * gapZ + gapY * gapY)
-      if (dist < MIN_PLATFORM_SPACING) {
-        const push = MIN_PLATFORM_SPACING - dist + 0.5
+      if (dist < config.MIN_PLATFORM_SPACING) {
+        const push = config.MIN_PLATFORM_SPACING - dist + 0.5
         // Push forward (-z) and laterally away
         plat.z = Math.round((plat.z - push * 0.7) * 10) / 10
         const lateralDir = plat.x >= other.x ? 1 : -1
@@ -42,8 +32,14 @@ function nudgeAwayFromAll(plat, allPlatforms, halfW) {
 }
 
 function generateSegmentPlatforms(prevPlatform, segmentStartZ, difficulty = 'medium', isFirstSegment = false, platformCounter = 0) {
-  const diff = DIFFICULTY[difficulty] || DIFFICULTY.medium
-  const count = randInt(diff.platformsPerSegment[0], diff.platformsPerSegment[1])
+  const diff = {
+    heightFraction: config.PLAT_HEIGHT_FRAC,
+    rangeFraction: config.PLAT_RANGE_FRAC,
+    minGap: config.PLAT_MIN_GAP,
+    maxGap: config.PLAT_MAX_GAP,
+    doubleJumpChance: config.PLAT_DOUBLE_JUMP_CHANCE,
+  }
+  const count = randInt(config.PLAT_MIN_PER_SEGMENT, config.PLAT_MAX_PER_SEGMENT)
   const platforms = []
   const billboards = []
 
@@ -56,7 +52,7 @@ function generateSegmentPlatforms(prevPlatform, segmentStartZ, difficulty = 'med
   }
 
   const WARMUP_COUNT = isFirstSegment ? 4 : 0
-  let nextZ = segmentStartZ - (isFirstSegment ? FIRST_PLATFORM_GAP : 0)
+  let nextZ = segmentStartZ - (isFirstSegment ? config.FIRST_PLATFORM_GAP : 0)
   const slotDepth = config.SEGMENT_DEPTH / count
   let platIndex = platformCounter
 
@@ -85,7 +81,7 @@ function generateSegmentPlatforms(prevPlatform, segmentStartZ, difficulty = 'med
     const maxHeight = needsDoubleJump ? config.DOUBLE_JUMP_HEIGHT : config.SINGLE_JUMP_HEIGHT
 
     const maxUp   = maxHeight * diff.heightFraction * warmupT
-    const maxDown = Math.min(MAX_DROP, prevTopY - 0.5) * warmupT
+    const maxDown = Math.min(config.MAX_DROP, prevTopY - 0.5) * warmupT
 
     const heightRoll = Math.random()
     let dy
@@ -99,9 +95,9 @@ function generateSegmentPlatforms(prevPlatform, segmentStartZ, difficulty = 'med
 
     const sizeScale = needsDoubleJump ? 0.8 : 1.0
     const warmupSizeBonus = warmupT < 1 ? 1 + (1 - warmupT) * 0.5 : 1.0
-    const w = rand(2, 4) * sizeScale * warmupSizeBonus
-    const h = rand(0.3, 0.8)
-    const d = rand(2, 4) * sizeScale * warmupSizeBonus
+    const w = rand(config.BOX_MIN_WIDTH, config.BOX_MAX_WIDTH) * sizeScale * warmupSizeBonus
+    const h = rand(config.BOX_MIN_HEIGHT, config.BOX_MAX_HEIGHT)
+    const d = rand(config.BOX_MIN_DEPTH, config.BOX_MAX_DEPTH) * sizeScale * warmupSizeBonus
 
     const pz = nextZ - slotDepth / 2 + rand(-slotDepth * 0.2, slotDepth * 0.2)
     nextZ -= slotDepth
@@ -185,6 +181,19 @@ export class BillboardTestCourse {
 
   get allWallAABBs() { return [] }
 
+  destroyAll(scene) {
+    for (const seg of this._segments) {
+      for (const m of seg.meshes) {
+        scene.remove(m)
+        m.geometry.dispose()
+        if (m.material.dispose) m.material.dispose()
+      }
+    }
+    this._segments = []
+    this._nextSegmentIndex = 0
+    this._furthestZ = 0
+  }
+
   update(playerZ, currentSpeed, scene, THREE) {
     if (playerZ < this._furthestZ) this._furthestZ = playerZ
     const speed = Math.max(currentSpeed, config.MOVE_SPEED)
@@ -261,6 +270,21 @@ export class CourseManager {
 
   get allWallAABBs() {
     return []
+  }
+
+  destroyAll(scene) {
+    for (const seg of this._segments) {
+      for (const m of seg.meshes) {
+        scene.remove(m)
+        m.geometry.dispose()
+        if (m.material.dispose) m.material.dispose()
+      }
+    }
+    this._segments = []
+    this._nextSegmentIndex = 0
+    this._lastPlatform = null
+    this._furthestZ = 0
+    this._platformCounter = 0
   }
 
   update(playerZ, currentSpeed, scene, THREE) {

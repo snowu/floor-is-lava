@@ -1,15 +1,28 @@
 import GUI from 'lil-gui'
 import config from './config.js'
 
-const DEFAULTS = { ...config }
+const DERIVED_KEYS = new Set()
+for (const key of Object.keys(config)) {
+  const desc = Object.getOwnPropertyDescriptor(config, key)
+  if (desc && desc.get) DERIVED_KEYS.add(key)
+}
+const DEFAULTS = {}
+for (const key of Object.keys(config)) {
+  if (!DERIVED_KEYS.has(key)) DEFAULTS[key] = config[key]
+}
 
 const ANIM_STATES = ['auto', 'idle', 'running', 'jumping', 'falling', 'landing', 'hanging', 'pullUp', 'wallrun']
 
-export function createDebugMenu(animator, scene) {
+export function createDebugMenu(animator, scene, courses) {
   const gui = new GUI({ title: 'Debug (F2)', width: 400 })
+  gui.domElement.style.fontSize = '14px'
   gui.domElement.style.display = 'none'
 
   const state = { animOverride: 'auto' }
+
+  function rebuildCourses() {
+    for (const c of courses) c.destroyAll(scene)
+  }
 
   // ── Player Physics ────────────────────────────────────────────────────────
   const physics = gui.addFolder('Player Physics')
@@ -42,9 +55,9 @@ export function createDebugMenu(animator, scene) {
 
   // ── Corridor ──────────────────────────────────────────────────────────────
   const corridor = gui.addFolder('Corridor')
-  corridor.add(config, 'CORRIDOR_WIDTH', 4, 40, 1)
-  corridor.add(config, 'CORRIDOR_HEIGHT', 4, 40, 1)
-  corridor.add(config, 'SEGMENT_DEPTH', 10, 100, 5)
+  corridor.add(config, 'CORRIDOR_WIDTH', 4, 40, 1).onFinishChange(rebuildCourses)
+  corridor.add(config, 'CORRIDOR_HEIGHT', 4, 40, 1).onFinishChange(rebuildCourses)
+  corridor.add(config, 'SEGMENT_DEPTH', 10, 100, 5).onFinishChange(rebuildCourses)
   corridor.add(config, 'WALL_THICKNESS', 0.1, 3, 0.1)
   corridor.close()
 
@@ -70,15 +83,35 @@ export function createDebugMenu(animator, scene) {
 
   // ── Billboard ─────────────────────────────────────────────────────────────
   const billboard = gui.addFolder('Billboard')
-  billboard.add(config, 'BILLBOARD_WIDTH', 0.1, 5, 0.1)
-  billboard.add(config, 'BILLBOARD_HITBOX_PAD', 0, 5, 0.1)
-  billboard.add(config, 'BILLBOARD_HEIGHT', 1, 30, 1)
-  billboard.add(config, 'BILLBOARD_DEPTH', 1, 40, 1)
-  billboard.add(config, 'BILLBOARD_GAP_EVERY', 1, 10, 1)
-  billboard.add(config, 'BILLBOARD_GAP_SIZE', 1, 30, 1)
-  billboard.add(config, 'BILLBOARD_Y_OFFSET', -5, 10, 0.5)
-  billboard.add(config, 'BILLBOARD_X_OFFSET', 1, 20, 0.5)
+  billboard.add(config, 'BILLBOARD_WIDTH', 0.1, 5, 0.1).onFinishChange(rebuildCourses)
+  billboard.add(config, 'BILLBOARD_HITBOX_PAD', 0, 5, 0.1).onFinishChange(rebuildCourses)
+  billboard.add(config, 'BILLBOARD_HEIGHT', 1, 30, 1).onFinishChange(rebuildCourses)
+  billboard.add(config, 'BILLBOARD_DEPTH', 1, 40, 1).onFinishChange(rebuildCourses)
+  billboard.add(config, 'BILLBOARD_GAP_EVERY', 1, 10, 1).onFinishChange(rebuildCourses)
+  billboard.add(config, 'BILLBOARD_GAP_SIZE', 1, 30, 1).onFinishChange(rebuildCourses)
+  billboard.add(config, 'BILLBOARD_Y_OFFSET', -5, 10, 0.5).onFinishChange(rebuildCourses)
+  billboard.add(config, 'BILLBOARD_X_OFFSET', 1, 20, 0.5).onFinishChange(rebuildCourses)
   billboard.close()
+
+  // ── Platform Generation ────────────────────────────────────────────────────
+  const plat = gui.addFolder('Platform Generation')
+  plat.add(config, 'MAX_DROP', 1, 20, 0.5).onFinishChange(rebuildCourses)
+  plat.add(config, 'MIN_PLATFORM_SPACING', 0.5, 5, 0.25).onFinishChange(rebuildCourses)
+  plat.add(config, 'FIRST_PLATFORM_GAP', 1, 20, 1).onFinishChange(rebuildCourses)
+  plat.add(config, 'PLAT_HEIGHT_FRAC', 0, 1, 0.05).name('Height Fraction').onFinishChange(rebuildCourses)
+  plat.add(config, 'PLAT_RANGE_FRAC', 0, 1, 0.05).name('Range Fraction').onFinishChange(rebuildCourses)
+  plat.add(config, 'PLAT_MIN_GAP', 1, 15, 0.5).name('Min Gap').onFinishChange(rebuildCourses)
+  plat.add(config, 'PLAT_MAX_GAP', 1, 20, 0.5).name('Max Gap').onFinishChange(rebuildCourses)
+  plat.add(config, 'PLAT_DOUBLE_JUMP_CHANCE', 0, 1, 0.05).name('Double Jump %').onFinishChange(rebuildCourses)
+  plat.add(config, 'PLAT_MIN_PER_SEGMENT', 1, 15, 1).name('Min Per Segment').onFinishChange(rebuildCourses)
+  plat.add(config, 'PLAT_MAX_PER_SEGMENT', 1, 20, 1).name('Max Per Segment').onFinishChange(rebuildCourses)
+  plat.add(config, 'BOX_MIN_WIDTH', 0.5, 10, 0.25).name('Box Min Width').onFinishChange(rebuildCourses)
+  plat.add(config, 'BOX_MAX_WIDTH', 0.5, 15, 0.25).name('Box Max Width').onFinishChange(rebuildCourses)
+  plat.add(config, 'BOX_MIN_HEIGHT', 0.1, 3, 0.05).name('Box Min Height').onFinishChange(rebuildCourses)
+  plat.add(config, 'BOX_MAX_HEIGHT', 0.1, 5, 0.1).name('Box Max Height').onFinishChange(rebuildCourses)
+  plat.add(config, 'BOX_MIN_DEPTH', 0.5, 10, 0.25).name('Box Min Depth').onFinishChange(rebuildCourses)
+  plat.add(config, 'BOX_MAX_DEPTH', 0.5, 15, 0.25).name('Box Max Depth').onFinishChange(rebuildCourses)
+  plat.close()
 
   // ── Animation ─────────────────────────────────────────────────────────────
   const anim = gui.addFolder('Animation')
@@ -110,15 +143,19 @@ export function createDebugMenu(animator, scene) {
       scene.fog.near = config.FOG_START
       scene.fog.far = config.FOG_END
     }
+    rebuildCourses()
     gui.controllersRecursive().forEach(c => c.updateDisplay())
   }}, 'reset').name('Reset All')
 
-  // F5 toggle
+  // F2 toggle
   window.addEventListener('keydown', (e) => {
     if (e.code === 'F2') {
       e.preventDefault()
-      const vis = gui.domElement.style.display === 'none'
-      gui.domElement.style.display = vis ? '' : 'none'
+      const opening = gui.domElement.style.display === 'none'
+      gui.domElement.style.display = opening ? '' : 'none'
+      if (opening && document.pointerLockElement) {
+        document.exitPointerLock()
+      }
     }
   })
 

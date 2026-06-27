@@ -5,9 +5,9 @@ const config = {
   // ── player physics ──────────────────────────────────────────────────────────
   GRAVITY:        50,
   JUMP_SPEED:     18,
-  MOVE_SPEED_MIN: 10,
+  MOVE_SPEED_MIN: 8,
   MOVE_SPEED_MAX: 15,
-  MOVE_ACCEL:     0.5,
+  MOVE_ACCEL:     0.3,
   COYOTE_TIME:    0.50,
   GROUND_STICK:   2,
   MAX_AIR_JUMPS:  1,
@@ -54,6 +54,24 @@ const config = {
   BILLBOARD_GAP_SIZE:    12,
   BILLBOARD_Y_OFFSET:    1,
   BILLBOARD_X_OFFSET:    8,
+
+  // ── platform generation ────────────────────────────────────────────────────
+  MAX_DROP:               8,
+  MIN_PLATFORM_SPACING:   1.5,
+  FIRST_PLATFORM_GAP:     6,
+  PLAT_HEIGHT_FRAC:       0.7,
+  PLAT_RANGE_FRAC:        0.7,
+  PLAT_MIN_GAP:           3,
+  PLAT_MAX_GAP:           6,
+  PLAT_DOUBLE_JUMP_CHANCE: 0.2,
+  PLAT_MIN_PER_SEGMENT:   5,
+  PLAT_MAX_PER_SEGMENT:   8,
+  BOX_MIN_WIDTH:          2,
+  BOX_MAX_WIDTH:          4,
+  BOX_MIN_HEIGHT:         0.3,
+  BOX_MAX_HEIGHT:         0.8,
+  BOX_MIN_DEPTH:          2,
+  BOX_MAX_DEPTH:          4,
 
   // ── animation ─────────────────────────────────────────────────────────────
   ANIM_IDLE_BOB_SPEED:    2,

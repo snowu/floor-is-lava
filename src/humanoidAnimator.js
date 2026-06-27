@@ -169,16 +169,18 @@ export class HumanoidAnimator {
   _poseFalling() {
     this._resetLimbs()
     const j = this._joints
+    const phase = this._time * 4
+    const sway = Math.sin(phase) * 0.015
+
     j.shoulderL.rotation.x = 0.2
     j.shoulderR.rotation.x = 0.2
-    j.shoulderL.rotation.z = 0.6
-    j.shoulderR.rotation.z = -0.6
+    j.shoulderL.rotation.z = 0.6 + Math.sin(phase) * 0.1
+    j.shoulderR.rotation.z = -0.6 + Math.sin(phase + Math.PI) * 0.1
 
-    // FP hands drop slightly
-    this.cameraHandLY = -0.02
-    this.cameraHandRY = -0.02
-    this.cameraHandLX = -0.02
-    this.cameraHandRX = 0.02
+    this.cameraHandLY = -0.02 + sway
+    this.cameraHandRY = -0.02 - sway
+    this.cameraHandLX = -0.02 + sway * 0.5
+    this.cameraHandRX = 0.02 - sway * 0.5
   }
 
   _poseLanding() {

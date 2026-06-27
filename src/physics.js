@@ -93,17 +93,14 @@ export class Physics {
       }
     }
 
-    // Ramp move speed only while on solid contact and moving
+    // Ramp move speed while moving (any state), reset when stopped
     const isMoving = moveDir.x !== 0 || moveDir.z !== 0
-    const onSolid = this._state === STATE.GROUNDED || this._state === STATE.WALLRUNNING
-    if (isMoving && onSolid) {
+    if (isMoving) {
       if (this._state === STATE.WALLRUNNING && moveDir.x * this._wallNormalX < 0 && this._wallrunGraceTimer <= 0) {
         this._moveSpeed = config.MOVE_SPEED_MIN
       } else {
         this._moveSpeed = Math.min(this._moveSpeed + config.MOVE_ACCEL * delta, config.MOVE_SPEED_MAX)
       }
-    } else if (!onSolid) {
-      // Airborne: keep current speed, don't gain or lose
     } else {
       this._moveSpeed = config.MOVE_SPEED_MIN
     }
@@ -329,6 +326,7 @@ export class Physics {
       this._state    = STATE.HANGING
       this._hangTopY = topY
       this._speedBoost = 0
+      this._moveSpeed = config.MOVE_SPEED_MIN
       this.velocity.set(0, 0, 0)
       if (this.onGrab) this.onGrab()
       return
@@ -339,6 +337,8 @@ export class Physics {
     humanoid.position.y = this._hangTopY
     this.velocity.set(0, 0, 0)
     this._state = STATE.GROUNDED
+    this._moveSpeed = config.MOVE_SPEED_MIN
+    this._speedBoost = 0
     if (this.onPullUp) this.onPullUp()
   }
 
