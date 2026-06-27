@@ -78,8 +78,8 @@ const config = {
   BOX_MAX_WIDTH:          4,
   BOX_MIN_HEIGHT:         0.3,
   BOX_MAX_HEIGHT:         0.8,
-  BOX_MIN_DEPTH:          2,
-  BOX_MAX_DEPTH:          4,
+  BOX_MIN_DEPTH:          4,
+  BOX_MAX_DEPTH:          6,
 
   // ── camera ─────────────────────────────────────────────────────────────────
   CAMERA_FOV:             90,
