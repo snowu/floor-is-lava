@@ -29,9 +29,9 @@ scene.add(ground)
 const course = new CourseManager('medium')
 const courses = [course]
 
-if (window.DEV_MODE) {
-  courses.push(new BillboardTestCourse(30))
-}
+// if (window.DEV_MODE) {
+//   courses.push(new BillboardTestCourse(30))
+// }
 
 const { group: humanoid, joints } = createHumanoid()
 humanoid.position.set(config.SPAWN_POS.x, config.SPAWN_POS.y, config.SPAWN_POS.z)
@@ -39,8 +39,8 @@ scene.add(humanoid)
 
 // Controllers
 const physics  = new Physics()
-const movement = new Movement(physics)
 const cameraController = new CameraController(camera, renderer.domElement, humanoid, scene)
+const movement = new Movement(physics, cameraController.joystick)
 const animator = new HumanoidAnimator(joints, physics)
 cameraController.animator = animator
 createDebugMenu(animator, scene, courses, { camera, ambientLight, dirLight })
@@ -113,6 +113,7 @@ physics.onGroundHit = () => {
   touchedBoxes.clear()
   if (cameraController.mode === 'first-person') {
     physics._respawn(humanoid)
+    cameraController.resetLook()
   }
   if (cameraController.mode === 'first-person') {
     movement.resetForDeath()
@@ -225,6 +226,7 @@ function animate(timestamp) {
   physics.update(humanoid, moveDir, movement.wDown, movement.sDown, movement.eDown, jumpPressed, delta,
     allObstacles, allWallAABBs)
   movement.updateMobileState()
+  cameraController.updateAutoAim(allObstacles)
   animator.update(delta)
   cameraController.update()
 

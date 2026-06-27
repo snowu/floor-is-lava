@@ -2,10 +2,11 @@ import * as THREE from 'three'
 import { isMobile } from './mobile.js'
 
 export class Movement {
-  constructor(physics) {
+  constructor(physics, joystick) {
     this._keys = { w: false, a: false, s: false, d: false, e: false }
     this._jumpQueued = false
     this._physics = physics
+    this._joystick = joystick || null
     this._started = !isMobile
     this._touching = false
 
@@ -26,6 +27,8 @@ export class Movement {
     if (!isMobile) return
     this._started = false
     this._keys.w = false
+    this._keys.a = false
+    this._keys.d = false
     this._keys.e = false
     this._jumpQueued = false
     this._touching = false
@@ -55,9 +58,20 @@ export class Movement {
     return s === 'airborne' || s === 'wallrunning'
   }
 
+  _rightSideTouches(touches) {
+    const half = window.innerWidth / 2
+    let count = 0
+    for (let i = 0; i < touches.length; i++) {
+      if (touches[i].clientX > half) count++
+    }
+    return count
+  }
+
   _setupTouch() {
     window.addEventListener('touchstart', (e) => {
-      if (e.target.closest('#fullscreen-btn, #cam-mode-btn, #joystick-left')) return
+      if (e.target.closest('#fullscreen-btn, #cam-mode-btn')) return
+      const isLeftSide = e.changedTouches[0].clientX <= window.innerWidth / 2
+      if (isLeftSide) return
       e.preventDefault()
       this._touching = true
 
@@ -68,18 +82,21 @@ export class Movement {
       }
 
       if (this._isAirState()) {
-        if (e.touches.length === 1) {
+        const rt = this._rightSideTouches(e.touches)
+        if (rt === 1) {
           this._jumpQueued = true
-        } else if (e.touches.length >= 2) {
+        } else if (rt >= 2) {
           this._keys.e = true
         }
       }
     }, { passive: false })
 
     window.addEventListener('touchend', (e) => {
-      if (e.target.closest('#fullscreen-btn, #cam-mode-btn, #joystick-left')) return
+      if (e.target.closest('#fullscreen-btn, #cam-mode-btn')) return
+      const isLeftSide = e.changedTouches[0].clientX <= window.innerWidth / 2
+      if (isLeftSide) return
       e.preventDefault()
-      if (e.touches.length > 0) return
+      if (this._rightSideTouches(e.touches) > 0) return
       this._touching = false
 
       if (!this._started) return
@@ -102,6 +119,14 @@ export class Movement {
     this._keys.w = true
     if (!this._isAirState()) {
       this._keys.e = false
+    }
+    if (this._joystick && this._joystick.active) {
+      const dx = this._joystick.dx
+      this._keys.a = dx < -0.15
+      this._keys.d = dx > 0.15
+    } else {
+      this._keys.a = false
+      this._keys.d = false
     }
   }
 

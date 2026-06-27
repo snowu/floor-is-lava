@@ -1,4 +1,5 @@
 import * as THREE from 'three'
+const _targetCenter = new THREE.Vector3()
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 import config from './config.js'
 import { isMobile } from './mobile.js'
@@ -87,8 +88,68 @@ export class CameraController {
   }
 
   get mode() { return this._modes[this._modeIndex] }
+  get joystick() { return this._joystick }
 
   get cameraYaw() { return this._yaw }
+
+  resetLook() {
+    this._yaw = 0
+    this._pitch = 0
+    this._aimTarget = null
+  }
+
+  updateAutoAim(obstacles) {
+    if (!isMobile || this.mode !== 'first-person') return
+
+    const px = this._humanoid.position.x
+    const py = this._humanoid.position.y
+    const pz = this._humanoid.position.z
+
+    const lookAhead = 30
+    let cx = 0, cy = 0, cz = 0, count = 0
+    for (const obs of obstacles) {
+      obs.aabb.getCenter(_targetCenter)
+      const dz = _targetCenter.z - pz
+      if (dz > -2 || dz < -lookAhead) continue
+      cx += _targetCenter.x
+      cy += _targetCenter.y
+      cz += _targetCenter.z
+      count++
+    }
+
+    if (count === 0) return
+
+    cx /= count
+    cy /= count
+    cz /= count
+
+    if (!this._aimTarget) {
+      this._aimTarget = new THREE.Vector3(cx, cy, cz)
+    }
+
+    const shift = Math.sqrt((cx - this._aimTarget.x) ** 2 + (cz - this._aimTarget.z) ** 2)
+    if (shift > 3) {
+      this._aimTarget.set(cx, cy, cz)
+    }
+
+    const dx = this._aimTarget.x - px
+    const dz = this._aimTarget.z - pz
+    const dy = this._aimTarget.y - py
+    const hDist = Math.sqrt(dx * dx + dz * dz)
+
+    const targetYaw = Math.atan2(-dx, -dz)
+    const targetPitch = -Math.atan2(dy - 1.75, hDist)
+
+    const lerpSpeed = 1.5
+    const dt = 0.016
+    const t = 1 - Math.exp(-lerpSpeed * dt)
+    let yawDiff = targetYaw - this._yaw
+    while (yawDiff > Math.PI) yawDiff -= Math.PI * 2
+    while (yawDiff < -Math.PI) yawDiff += Math.PI * 2
+    this._yaw += yawDiff * t
+    this._pitch += (targetPitch - this._pitch) * t
+    this._pitch = Math.max(-Math.PI / 3, Math.min(Math.PI / 3, this._pitch))
+  }
 
   set animator(a) { this._animator = a }
 
@@ -145,13 +206,6 @@ export class CameraController {
   }
 
   update() {
-    if (this._joystick && this._joystick.active && this.mode !== 'free') {
-      const speed = 2.5
-      this._yaw -= this._joystick.dx * speed * 0.016
-      this._pitch -= this._joystick.dy * speed * 0.016
-      this._pitch = Math.max(-Math.PI / 3, Math.min(Math.PI / 3, this._pitch))
-    }
-
     const h = this._humanoid
 
     if (this.mode === 'first-person') {
