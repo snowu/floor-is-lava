@@ -54,7 +54,6 @@ function generateSegmentPlatforms(prevPlatform, segmentStartZ, difficulty = 'med
 
   const WARMUP_COUNT = isFirstSegment ? config.WARMUP_COUNT : 0
   let nextZ = segmentStartZ - (isFirstSegment ? config.FIRST_PLATFORM_GAP : 0)
-  const slotDepth = config.SEGMENT_DEPTH / count
   let platIndex = platformCounter
 
   let afterGapSide = 0 // 0 = no constraint, -1/1 = force next platform to this side
@@ -105,8 +104,9 @@ function generateSegmentPlatforms(prevPlatform, segmentStartZ, difficulty = 'med
     const h = rand(config.BOX_MIN_HEIGHT, config.BOX_MAX_HEIGHT)
     const d = rand(config.BOX_MIN_DEPTH, config.BOX_MAX_DEPTH) * sizeScale * warmupSizeBonus
 
-    const pz = nextZ - slotDepth / 2 + rand(-slotDepth * 0.2, slotDepth * 0.2)
-    nextZ -= slotDepth
+    const gap = rand(diff.minGap, diff.maxGap)
+    const pz = nextZ - gap
+    nextZ = pz
 
     let px
     if (afterGapSide !== 0) {
