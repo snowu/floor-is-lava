@@ -15,24 +15,28 @@ function clamp(v, lo, hi) {
   return Math.max(lo, Math.min(hi, v))
 }
 
+function hasOverlap(plat, other) {
+  const overlapX = (plat.w / 2 + other.w / 2) - Math.abs(plat.x - other.x)
+  const overlapZ = (plat.d / 2 + other.d / 2) - Math.abs(plat.z - other.z)
+  const overlapY = (plat.h / 2 + other.h / 2) - Math.abs(plat.y - other.y)
+  return overlapX > 0 && overlapZ > 0 && overlapY > 0
+}
+
 function nudgeAwayFromAll(plat, allPlatforms, neighborPlatforms, halfW) {
   const checkList = neighborPlatforms ? allPlatforms.concat(neighborPlatforms) : allPlatforms
   for (let pass = 0; pass < 5; pass++) {
     for (const other of checkList) {
       if (other === plat) continue
-      // Direct AABB overlap check — resolve overlap completely
       const overlapX = (plat.w / 2 + other.w / 2) - Math.abs(plat.x - other.x)
       const overlapZ = (plat.d / 2 + other.d / 2) - Math.abs(plat.z - other.z)
       const overlapY = (plat.h / 2 + other.h / 2) - Math.abs(plat.y - other.y)
       if (overlapX > 0 && overlapZ > 0 && overlapY > 0) {
-        // Push apart along Z (primary movement axis) + add spacing
         const pushZ = overlapZ + config.MIN_PLATFORM_SPACING * 0.5
         plat.z = Math.round((plat.z - pushZ) * 10) / 10
         const lateralDir = plat.x >= other.x ? 1 : -1
         plat.x = Math.round(clamp(plat.x + lateralDir * overlapX * 0.5, -halfW, halfW) * 10) / 10
         continue
       }
-      // Spacing check for non-overlapping platforms
       const gapX = Math.max(0, Math.abs(plat.x - other.x) - plat.w / 2 - other.w / 2)
       const gapZ = Math.max(0, Math.abs(plat.z - other.z) - plat.d / 2 - other.d / 2)
       const gapY = Math.max(0, Math.abs(plat.y - other.y) - plat.h / 2 - other.h / 2)
@@ -43,6 +47,22 @@ function nudgeAwayFromAll(plat, allPlatforms, neighborPlatforms, halfW) {
         const lateralDir = plat.x >= other.x ? 1 : -1
         plat.x = Math.round(clamp(plat.x + lateralDir * push * 0.5, -halfW, halfW) * 10) / 10
         plat.y = Math.round(clamp(plat.y + push * 0.3, plat.h / 2 + 0.5, config.CORRIDOR_HEIGHT - 2) * 10) / 10
+      }
+    }
+  }
+  // Final guarantee: if any overlap remains, find the furthest-back
+  // conflicting platform and clear past all of them in one shot
+  let needsClear = true
+  while (needsClear) {
+    needsClear = false
+    for (const other of checkList) {
+      if (other === plat) continue
+      if (hasOverlap(plat, other)) {
+        const clearZ = other.z - other.d / 2 - plat.d / 2 - config.MIN_PLATFORM_SPACING
+        if (clearZ < plat.z) {
+          plat.z = Math.round(clearZ * 10) / 10
+          needsClear = true
+        }
       }
     }
   }
@@ -184,18 +204,34 @@ function generateSegmentPlatforms(prevPlatform, segmentStartZ, difficulty = 'med
   return { platforms, billboards, lastPlatform: prev, platformCounter: platIndex, lastBillboardZ: lastBillboardZ }
 }
 
-export function validateSegment(platforms, billboards) {
+export function validateSegment(platforms, billboards, neighborPlatforms) {
   const issues = []
 
   for (let i = 0; i < platforms.length; i++) {
     const a = platforms[i]
     for (let j = i + 1; j < platforms.length; j++) {
       const b = platforms[j]
-      const overlapX = (a.w / 2 + b.w / 2) - Math.abs(a.x - b.x)
-      const overlapZ = (a.d / 2 + b.d / 2) - Math.abs(a.z - b.z)
-      const overlapY = (a.h / 2 + b.h / 2) - Math.abs(a.y - b.y)
-      if (overlapX > 0 && overlapZ > 0 && overlapY > 0) {
+      if (hasOverlap(a, b)) {
+        const overlapX = (a.w / 2 + b.w / 2) - Math.abs(a.x - b.x)
+        const overlapZ = (a.d / 2 + b.d / 2) - Math.abs(a.z - b.z)
+        const overlapY = (a.h / 2 + b.h / 2) - Math.abs(a.y - b.y)
         issues.push({ type: 'overlap', platIndices: [i, j], msg: `OVERLAP plat ${i} & ${j} (${overlapX.toFixed(1)}x ${overlapZ.toFixed(1)}z ${overlapY.toFixed(1)}y)` })
+      }
+    }
+  }
+
+  // Cross-segment overlap check
+  if (neighborPlatforms) {
+    for (let i = 0; i < platforms.length; i++) {
+      const a = platforms[i]
+      for (let j = 0; j < neighborPlatforms.length; j++) {
+        const b = neighborPlatforms[j]
+        if (hasOverlap(a, b)) {
+          const overlapX = (a.w / 2 + b.w / 2) - Math.abs(a.x - b.x)
+          const overlapZ = (a.d / 2 + b.d / 2) - Math.abs(a.z - b.z)
+          const overlapY = (a.h / 2 + b.h / 2) - Math.abs(a.y - b.y)
+          issues.push({ type: 'overlap', platIndices: [i], msg: `CROSS-SEG OVERLAP plat ${i} & neighbor ${j} (${overlapX.toFixed(1)}x ${overlapZ.toFixed(1)}z ${overlapY.toFixed(1)}y)` })
+        }
       }
     }
   }
@@ -208,10 +244,10 @@ export function validateSegment(platforms, billboards) {
       const bbH = config.BILLBOARD_HEIGHT
       const bbD = config.BILLBOARD_DEPTH
       const bbY = bb.y + bbH / 2
-      const overlapX = (p.w / 2 + bbW / 2) - Math.abs(p.x - bb.x)
-      const overlapZ = (p.d / 2 + bbD / 2) - Math.abs(p.z - bb.z)
-      const overlapY = (p.h / 2 + bbH / 2) - Math.abs(p.y - bbY)
-      if (overlapX > 0 && overlapZ > 0 && overlapY > 0) {
+      if (hasOverlap(p, { w: bbW, d: bbD, h: bbH, x: bb.x, z: bb.z, y: bbY })) {
+        const overlapX = (p.w / 2 + bbW / 2) - Math.abs(p.x - bb.x)
+        const overlapZ = (p.d / 2 + bbD / 2) - Math.abs(p.z - bb.z)
+        const overlapY = (p.h / 2 + bbH / 2) - Math.abs(p.y - bbY)
         issues.push({ type: 'clip', platIndices: [i], msg: `CLIP plat ${i} into billboard ${j}` })
       }
     }
@@ -411,13 +447,9 @@ export class CourseManager {
       obstacles.push({ mesh: result.mainMesh, aabb, isBillboard: true, wallNormalX: -bb.side })
     }
 
-    const issues = this._validateSegment(index, platforms, billboards)
+    const issues = validateSegment(platforms, billboards, this._prevSegmentPlatforms)
 
     return { index, startZ, platforms, meshes, obstacles, issues }
-  }
-
-  _validateSegment(segIndex, platforms, billboards) {
-    return validateSegment(platforms, billboards)
   }
 
   segmentBoundaries() {
