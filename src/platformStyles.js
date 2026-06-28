@@ -286,20 +286,20 @@ function buildRuins(b) {
     const seed = b.x * 7.3 + b.z * 11.1
     const hash = (n) => (Math.sin(seed + n * 13.7) * 43758.5453 % 1 + 1) % 1
 
-    const addCrackSeg = (x, z, nx, nz) => {
+    const addCrackSeg = (x, z, nx, nz, widthMul) => {
       const dx = nx - x, dz = nz - z
       const len = Math.sqrt(dx * dx + dz * dz)
       if (len < 0.001) return
       const angle = Math.atan2(dz, dx)
-      const w = 0.013 + hash(x * 10 + z * 7) * 0.008
-      const seg = new THREE.Mesh(unitBoxGeo, ruinsCrackMat)
-      seg.scale.set(w, 0.02, len)
-      seg.position.set((x + nx) / 2, topY + 0.008, (z + nz) / 2)
+      const w = (0.02 + hash(x * 10 + z * 7) * 0.015) * (widthMul || 1)
+      const seg = new THREE.Mesh(unitBoxGeo, volcanicMat)
+      seg.scale.set(w, 0.025, len)
+      seg.position.set((x + nx) / 2, topY + 0.006, (z + nz) / 2)
       seg.rotation.y = -angle + Math.PI / 2
       meshes.push(seg)
     }
 
-    const walkCrack = (startX, startZ, endX, endZ, steps, jitter) => {
+    const walkCrack = (startX, startZ, endX, endZ, steps, jitter, wStart, wEnd) => {
       let cx = startX, cz = startZ
       for (let i = 0; i < steps; i++) {
         const t = (i + 1) / steps
@@ -309,30 +309,39 @@ function buildRuins(b) {
         const jz = (hash(i * 5 + jitter + 20) - 0.5) * b.d * 0.08
         const nx = goalX + (i < steps - 1 ? jx : 0)
         const nz = goalZ + (i < steps - 1 ? jz : 0)
-        addCrackSeg(cx, cz, nx, nz)
+        const wMul = wStart + (wEnd - wStart) * (i / steps)
+        addCrackSeg(cx, cz, nx, nz, wMul)
         cx = nx
         cz = nz
       }
       return { x: cx, z: cz }
     }
 
-    // Start: lower-right corner
-    const startX = b.x + halfW * 0.85
-    const startZ = b.z + halfD * 0.85
-    // Split point: 60% depth, near center X
-    const splitX = b.x + halfW * 0.1
-    const splitZ = b.z + halfD * 0.85 - b.d * 0.6
+    // Start left edge near bottom
+    const p0x = b.x - halfW * 0.9
+    const p0z = b.z + halfD * 0.8
+    const p1x = b.x - halfW * 0.7
+    const p1z = b.z + halfD * 0.7
+    // Sharp right turn across to 60% width
+    const p2x = b.x + halfW * 0.2
+    const p2z = b.z + halfD * 0.65
+    // Up to 60-70% depth — split point
+    const p3x = b.x + halfW * 0.25
+    const p3z = b.z - halfD * 0.4
 
-    const trunkSegs = 4
-    const sp = walkCrack(startX, startZ, splitX, splitZ, trunkSegs, 0)
+    const s1 = walkCrack(p0x, p0z, p1x, p1z, 1, 0, 0.5, 0.7)
+    const s2 = walkCrack(s1.x, s1.z, p2x, p2z, 3, 10, 0.7, 1.0)
+    const sp = walkCrack(s2.x, s2.z, p3x, p3z, 2, 20, 1.0, 1.3)
 
-    const endAX = b.x - halfW * 0.3
-    const endAZ = b.z - halfD * 0.85
-    walkCrack(sp.x, sp.z, endAX, endAZ, 3, 100)
+    // Branch A: continues up to far end of platform, finishes wide
+    const endAX = b.x + halfW * 0.1
+    const endAZ = b.z - halfD * 0.9
+    walkCrack(sp.x, sp.z, endAX, endAZ, 3, 100, 1.2, 1.8)
 
-    const endBX = b.x + halfW * 0.5
-    const endBZ = b.z - halfD * 0.2
-    walkCrack(sp.x, sp.z, endBX, endBZ, 2, 200)
+    // Branch B: turns right to right edge of platform, finishes wide
+    const endBX = b.x + halfW * 0.9
+    const endBZ = b.z - halfD * 0.35
+    walkCrack(sp.x, sp.z, endBX, endBZ, 3, 200, 1.0, 1.6)
   }
 
   for (let i = 0; i < 5; i++) {
