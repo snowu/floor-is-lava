@@ -386,12 +386,10 @@ export function createMountains(scene) {
 
   // ── Instanced spectators — small capsule shapes in the stands ──────────
   crowdCount = TIER_COUNT * SPECTATORS_PER_TIER
-  const spectatorGeo = new THREE.CapsuleGeometry(0.15, 0.4, 2, 4)
-  const spectatorMat = new THREE.MeshStandardMaterial({
-    roughness: 0.9,
-    metalness: 0.1,
-  })
+  const spectatorGeo = new THREE.CapsuleGeometry(0.6, 1.4, 2, 4)
+  const spectatorMat = new THREE.MeshBasicMaterial()
 
+  spectatorMat.fog = false
   crowdInstances = new THREE.InstancedMesh(spectatorGeo, spectatorMat, crowdCount)
   crowdInstances.instanceColor = new THREE.InstancedBufferAttribute(
     new Float32Array(crowdCount * 3), 3
@@ -414,15 +412,15 @@ export function createMountains(scene) {
         tierY + Math.random() * 0.3,
         Math.sin(angle) * (tierR + rJitter)
       )
-      dummy.scale.setScalar(0.8 + Math.random() * 0.5)
+      dummy.scale.setScalar(1.2 + Math.random() * 0.6)
       dummy.rotation.y = -angle + Math.PI + (Math.random() - 0.5) * 0.3
       dummy.updateMatrix()
       crowdInstances.setMatrixAt(idx, dummy.matrix)
 
       // Random crowd colors — clothes
       const hue = Math.random()
-      const sat = 0.3 + Math.random() * 0.5
-      const light = 0.08 + Math.random() * 0.12
+      const sat = 0.5 + Math.random() * 0.4
+      const light = 0.25 + Math.random() * 0.25
       color.setHSL(hue, sat, light)
       crowdInstances.setColorAt(idx, color)
       idx++

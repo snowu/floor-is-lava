@@ -40,8 +40,8 @@ const config = {
   WALL_THICKNESS:  0.5,
 
   // ── fog / generation ──────────────────────────────────────────────────────
-  FOG_START:            60,
-  FOG_END:              100,
+  FOG_START:            80,
+  FOG_END:              200,
   GENERATE_TIME_AHEAD:  2,
 
   // ── wall run ──────────────────────────────────────────────────────────────
@@ -155,7 +155,7 @@ const config = {
 
   // ── distant mountains ─────────────────────────────────────────────────────
   MOUNTAIN_LAYER_COUNT:    3,
-  MOUNTAIN_RADIUS_INNER:   400,
+  MOUNTAIN_RADIUS_INNER:   120,
   MOUNTAIN_RADIUS_STEP:    30,
   MOUNTAIN_HEIGHT_MIN:     80,
   MOUNTAIN_HEIGHT_MAX:     140,

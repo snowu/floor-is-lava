@@ -1,6 +1,6 @@
 import config from './config.js'
 import { createPlatformMeshes } from './platformStyles.js'
-import { createBillboardMeshes, BILLBOARD_STYLE_COUNT, isProductAdStyle, registerProductAdMaterial } from './billboardStyles.js'
+import { createBillboardMeshes, BILLBOARD_STYLE_COUNT, PRODUCT_AD_STYLE_INDEX, isProductAdStyle, registerProductAdMaterial } from './billboardStyles.js'
 import { buildPlatformAABBs } from './hitboxes.js'
 import * as THREE from 'three'
 
@@ -534,7 +534,9 @@ export class CourseManager {
 
     // Billboards placed in gaps between platforms
     for (const bb of billboards) {
-      const styleIdx = Math.floor(Math.random() * BILLBOARD_STYLE_COUNT)
+      const styleIdx = Math.random() < 0.75
+        ? PRODUCT_AD_STYLE_INDEX
+        : Math.floor(Math.random() * (BILLBOARD_STYLE_COUNT - 1))
       const result = createBillboardMeshes(bb, config, styleIdx)
       for (const m of result.meshes) meshes.push(m)
       const aabb = new THREE.Box3().setFromObject(result.mainMesh)
