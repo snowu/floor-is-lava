@@ -569,13 +569,9 @@ function makeSurvScreen(w, h) {
 }
 
 export function createSkyScreens(scene) {
-  const left = makeSurvScreen(12, 7)
-  skyScreens.push({ ...left, type: 'left', rngSeed: Math.random() })
-  scene.add(left.mesh)
-
-  const right = makeSurvScreen(12, 7)
-  skyScreens.push({ ...right, type: 'right', rngSeed: Math.random() })
-  scene.add(right.mesh)
+  const screen = makeSurvScreen(18, 10)
+  skyScreens.push({ ...screen, type: 'center', rngSeed: Math.random() })
+  scene.add(screen.mesh)
 }
 
 function getCameraAngle(mode, time, playerPos, side) {
@@ -634,12 +630,13 @@ export function updateSkyScreens(time, playerPos, score, gameTime) {
       s.lastEpoch = epoch
     }
 
-    const side = s.type === 'left' ? -1 : 1
-    const cam = getCameraAngle(s.currentView, time, playerPos, side)
+    const side = s.type === 'left' ? -1 : s.type === 'right' ? 1 : 0
+    const camSide = side === 0 ? 1 : side
+    const cam = getCameraAngle(s.currentView, time, playerPos, camSide)
 
     const screenX = playerPos.x + side * 20
-    const screenY = 21
-    const screenZ = playerPos.z - 30
+    const screenY = 25
+    const screenZ = playerPos.z - 35
 
     s.mesh.position.set(screenX, screenY, screenZ)
     s.mesh.lookAt(playerPos.x, playerPos.y + 1, playerPos.z)

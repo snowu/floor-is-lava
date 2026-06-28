@@ -223,7 +223,10 @@ export class Physics {
       // AABB collision vs obstacles
       touchingWall = false
       if (this._state !== STATE.HANGING && this._state !== STATE.PULLING_UP) {
+        const px = humanoid.position.x, pz = humanoid.position.z
         for (const obs of obstacles) {
+          const a = obs.aabb
+          if (pz - 3 > a.max.z || pz + 3 < a.min.z || px - 3 > a.max.x || px + 3 < a.min.x) continue
           if (obs.isBillboard) {
             if (this._wallKickTimer > 0) continue
             const hitAxis = this._resolveAABBAxis(humanoid, obs.aabb)
@@ -289,8 +292,8 @@ export class Physics {
           if (obs.isBillboard) continue
           const a = obs.aabb
           if (kMaxX <= a.min.x || kMinX >= a.max.x ||
-              kMaxY <= a.min.y || kMinY >= a.max.y ||
-              kMaxZ <= a.min.z || kMinZ >= a.max.z) continue
+              kMaxZ <= a.min.z || kMinZ >= a.max.z ||
+              kMaxY <= a.min.y || kMinY >= a.max.y) continue
 
           // Overlap on each axis
           const ox = Math.min(kMaxX - a.min.x, a.max.x - kMinX)
@@ -327,6 +330,7 @@ export class Physics {
 
       // Wall collision
       for (const aabb of wallAABBs) {
+        if (humanoid.position.z - 3 > aabb.max.z || humanoid.position.z + 3 < aabb.min.z) continue
         const upperH = config.PLAYER_HEIGHT - config.KICK_HIP_Y
         this._resolveAABB(humanoid, aabb, config.KICK_HIP_Y, upperH)
         if (!this._legsExtended) {

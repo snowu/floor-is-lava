@@ -96,6 +96,9 @@ let runTime = 0
 let timerStarted = false
 let chainDisplayTimer = 0
 const touchedBoxes = new Set()
+let cachedObstacles = []
+let cachedWallAABBs = []
+let cachedRails = []
 
 // Tony Hawk-style scoring: points accumulate during grinds/wall runs,
 // multiplier increases with each grind/wall run without touching a platform
@@ -243,7 +246,7 @@ function rebuildObstacleHelpers() {
   obstacleHelpers.forEach(disposeHelper)
   ledgeHelpers.forEach(disposeHelper)
   seamHelpers.forEach(disposeHelper)
-  const allObs = courses.flatMap(c => c.allObstacles)
+  const allObs = cachedObstacles
   obstacleHelpers = allObs.map(({ aabb }) => {
     const h = createObstacleHitboxHelper(aabb, 0xffffff)
     h.visible = hitboxesVisible
@@ -281,7 +284,7 @@ function rebuildObstacleHelpers() {
   railHelpers.forEach(h => { scene.remove(h); h.geometry.dispose() })
   railHelpers = []
   const railSnapMat = new THREE.MeshBasicMaterial({ color: 0xffff00, wireframe: true, transparent: true, opacity: 0.25, depthWrite: false })
-  for (const railData of courses.flatMap(c => c.allRails)) {
+  for (const railData of cachedRails) {
     const rd = railData.railDef
     const segments = Math.max(8, Math.floor(rd.length))
     const snapTube = new THREE.TubeGeometry(rd.spline, segments, config.RAIL_SNAP_RADIUS, 8, false)
@@ -341,7 +344,12 @@ function animate(timestamp) {
     const { added, visChanged } = c.update(humanoid.position.z, currentSpeed, scene, THREE)
     if (added.length > 0 || visChanged) anyChanged = true
   }
-  if (anyChanged) rebuildObstacleHelpers()
+  if (anyChanged) {
+    cachedObstacles = courses.flatMap(c => c.allObstacles)
+    cachedWallAABBs = courses.flatMap(c => c.allWallAABBs)
+    cachedRails = courses.flatMap(c => c.allRails)
+    rebuildObstacleHelpers()
+  }
 
   if (config.PLAYER_WIDTH !== _prevPW || config.PLAYER_HEIGHT !== _prevPH) {
     rebuildPlayerHelper()
@@ -351,8 +359,8 @@ function animate(timestamp) {
   const jumpPressed = movement.jumpPressed
   movement.clearJump()
 
-  const allObstacles = courses.flatMap(c => c.allObstacles)
-  const allWallAABBs = courses.flatMap(c => c.allWallAABBs)
+  const allObstacles = cachedObstacles
+  const allWallAABBs = cachedWallAABBs
   physics.update(humanoid, moveDir, movement.wDown, movement.sDown, movement.eDown, jumpPressed, delta,
     allObstacles, allWallAABBs)
 
@@ -387,7 +395,7 @@ function animate(timestamp) {
     }
   } else if (physics.state === 'airborne' && physics.velocity.y <= 0) {
     // Try to mount a rail
-    for (const railData of courses.flatMap(c => c.allRails)) {
+    for (const railData of cachedRails) {
       if (railGrinder.tryMount(railData, humanoid.position, physics.velocity.y, physics.velocity)) {
         physics.enterGrinding()
         break

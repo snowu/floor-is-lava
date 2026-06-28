@@ -194,13 +194,10 @@ export function getRockHazards() {
 // ── Neon Colosseum ──────────────────────────────────────────────────────────
 
 const colosseumGroup = new THREE.Group()
-let crowdInstances = null
-let crowdCount = 0
 let searchlightPivots = []
 
 const TIER_COUNT = 8
 const PILLAR_COUNT = 32
-const SPECTATORS_PER_TIER = 200
 const SEARCHLIGHT_COUNT = 6
 
 export function createMountains(scene) {
@@ -384,53 +381,6 @@ export function createMountains(scene) {
     colosseumGroup.add(window)
   }
 
-  // ── Instanced spectators — small capsule shapes in the stands ──────────
-  crowdCount = TIER_COUNT * SPECTATORS_PER_TIER
-  const spectatorGeo = new THREE.CapsuleGeometry(0.6, 1.4, 2, 4)
-  const spectatorMat = new THREE.MeshBasicMaterial()
-
-  spectatorMat.fog = false
-  crowdInstances = new THREE.InstancedMesh(spectatorGeo, spectatorMat, crowdCount)
-  crowdInstances.instanceColor = new THREE.InstancedBufferAttribute(
-    new Float32Array(crowdCount * 3), 3
-  )
-
-  const dummy = new THREE.Object3D()
-  const color = new THREE.Color()
-  let idx = 0
-
-  for (let t = 0; t < TIER_COUNT; t++) {
-    const tierR = baseRadius + t * rakePerTier + rakePerTier * 0.5
-    const tierY = t * tierHeight + 0.5
-
-    for (let s = 0; s < SPECTATORS_PER_TIER; s++) {
-      const angle = (s / SPECTATORS_PER_TIER) * Math.PI * 2 + (Math.random() - 0.5) * 0.02
-      const rJitter = (Math.random() - 0.5) * (rakePerTier * 0.6)
-
-      dummy.position.set(
-        Math.cos(angle) * (tierR + rJitter),
-        tierY + Math.random() * 0.3,
-        Math.sin(angle) * (tierR + rJitter)
-      )
-      dummy.scale.setScalar(1.2 + Math.random() * 0.6)
-      dummy.rotation.y = -angle + Math.PI + (Math.random() - 0.5) * 0.3
-      dummy.updateMatrix()
-      crowdInstances.setMatrixAt(idx, dummy.matrix)
-
-      // Random crowd colors — clothes
-      const hue = Math.random()
-      const sat = 0.5 + Math.random() * 0.4
-      const light = 0.25 + Math.random() * 0.25
-      color.setHSL(hue, sat, light)
-      crowdInstances.setColorAt(idx, color)
-      idx++
-    }
-  }
-
-  crowdInstances.instanceMatrix.needsUpdate = true
-  crowdInstances.instanceColor.needsUpdate = true
-  colosseumGroup.add(crowdInstances)
-
   // ── Searchlights — cone geometry from rim ──────────────────────────────
   const beamGeo = new THREE.ConeGeometry(8, 60, 16, 1, true)
   const beamMat = new THREE.MeshBasicMaterial({
@@ -525,33 +475,4 @@ export function updateMountains(time, playerX, playerZ) {
     sl.pivot.rotation.z = Math.sin(time * sl.speed * 0.7 + sl.baseAngle) * 0.15
   }
 
-  // Animate crowd — wave effect via instance matrices
-  if (crowdInstances) {
-    const dummy = new THREE.Object3D()
-    const matrix = new THREE.Matrix4()
-    const pos = new THREE.Vector3()
-    const quat = new THREE.Quaternion()
-    const scale = new THREE.Vector3()
-
-    for (let i = 0; i < crowdCount; i++) {
-      crowdInstances.getMatrixAt(i, matrix)
-      matrix.decompose(pos, quat, scale)
-
-      // Stadium wave — sinusoidal Y offset based on angle and time
-      const angle = Math.atan2(pos.z, pos.x)
-      const wavePhase = angle * 2 + time * 2.5
-      const waveHeight = Math.max(0, Math.sin(wavePhase)) * 0.6
-
-      // Arms-up effect by scaling Y when in wave
-      const scaleBoost = 1.0 + waveHeight * 0.3
-      dummy.position.copy(pos)
-      dummy.position.y = pos.y + waveHeight
-      dummy.quaternion.copy(quat)
-      dummy.scale.set(scale.x, scale.y * scaleBoost, scale.z)
-      dummy.updateMatrix()
-
-      crowdInstances.setMatrixAt(i, dummy.matrix)
-    }
-    crowdInstances.instanceMatrix.needsUpdate = true
-  }
 }

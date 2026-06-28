@@ -282,7 +282,7 @@ function generateSegmentPlatforms(prevPlatform, segmentStartZ, difficulty = 'med
     if (startPlat.isSpawn || endPlat.isSpawn) continue
 
     const gap = Math.abs(startPlat.z - endPlat.z) - startPlat.d / 2 - endPlat.d / 2
-    if (gap < 6) continue
+    if (gap < 8) continue
 
     const startY = startPlat.y + startPlat.h / 2 + 1.0
     const endY = endPlat.y + endPlat.h / 2 + 1.0
