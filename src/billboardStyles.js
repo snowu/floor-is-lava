@@ -602,20 +602,41 @@ function getCameraAngle(mode, time, playerPos, side) {
   return camPos
 }
 
+const VIEW_COUNT = 3
+const viewPool = []
+for (let i = 0; i < VIEW_COUNT; i++) viewPool.push(i)
+
+function pickFromPool() {
+  if (viewPool.length === 0) return 0
+  const idx = Math.floor(Math.random() * viewPool.length)
+  return viewPool.splice(idx, 1)[0]
+}
+
+function releaseToPool(mode) {
+  if (!viewPool.includes(mode)) viewPool.push(mode)
+}
+
 export function updateSkyScreens(time, playerPos, score, gameTime) {
   if (!mainRenderer || !mainScene || skyScreens.length === 0) return
 
   const currentTarget = mainRenderer.getRenderTarget()
 
   for (const s of skyScreens) {
-    // Switch angle every 5-10 seconds with per-screen RNG
     const switchInterval = 5 + s.rngSeed * 5
-    const currentMode = Math.floor(time / switchInterval + s.rngSeed * 100) % 3
+    const epoch = Math.floor(time / switchInterval + s.rngSeed * 100)
+
+    if (s.lastEpoch === undefined) {
+      s.currentView = pickFromPool()
+      s.lastEpoch = epoch
+    } else if (epoch !== s.lastEpoch) {
+      releaseToPool(s.currentView)
+      s.currentView = pickFromPool()
+      s.lastEpoch = epoch
+    }
 
     const side = s.type === 'left' ? -1 : 1
-    const cam = getCameraAngle(currentMode, time, playerPos, side)
+    const cam = getCameraAngle(s.currentView, time, playerPos, side)
 
-    // Screen stays fixed on the side
     const screenX = playerPos.x + side * 20
     const screenY = 21
     const screenZ = playerPos.z - 30
