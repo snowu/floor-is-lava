@@ -102,10 +102,9 @@ export class Physics {
     if (this._wallKickTimer > 0) this._wallKickTimer -= delta
     if (this._wallrunGraceTimer > 0) this._wallrunGraceTimer -= delta
 
-    // Recover speed floor once speed reaches MOVE_SPEED_MIN
-    if (this._speedFloor < config.MOVE_SPEED_MIN && this._moveSpeed >= config.MOVE_SPEED_MIN) {
-      this._speedFloor = config.MOVE_SPEED_MIN
-    }
+    // Keep speed bounds in sync with config (debug menu changes)
+    this._speedFloor = THREE.MathUtils.clamp(this._speedFloor, config.MOVE_SPEED_MIN, config.MOVE_SPEED_MAX)
+    this._moveSpeed = THREE.MathUtils.clamp(this._moveSpeed, this._speedFloor, config.MOVE_SPEED_MAX)
 
     // Sync _moveSpeed to actual horizontal speed so any drop is reflected
     // Skip during wall run — forced velocity.x=0 would artificially reduce it

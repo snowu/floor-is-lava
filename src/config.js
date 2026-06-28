@@ -62,6 +62,7 @@ const config = {
   BILLBOARD_GAP_SIZE:    12,
   BILLBOARD_Y_OFFSET:    1,
   BILLBOARD_X_OFFSET:    8,
+  BILLBOARD_MIN_CLEARANCE: 2,
 
   // ── platform generation ────────────────────────────────────────────────────
   MAX_DROP:               8,

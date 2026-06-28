@@ -22,19 +22,44 @@ function hasOverlap(plat, other) {
   return overlapX > 0 && overlapZ > 0 && overlapY > 0
 }
 
-function nudgeAwayFromAll(plat, allPlatforms, neighborPlatforms, halfW) {
+function clampXAwayFromBillboards(plat, billboards, halfW) {
+  let xMin = -halfW
+  let xMax = halfW
+  for (const bb of billboards) {
+    const bbHalfD = config.BILLBOARD_DEPTH / 2
+    const bbHalfH = config.BILLBOARD_HEIGHT / 2
+    const bbY = bb.y + bbHalfH
+    const zOvlp = (plat.d / 2 + bbHalfD) - Math.abs(plat.z - bb.z)
+    const yOvlp = (plat.h / 2 + bbHalfH) - Math.abs(plat.y - bbY)
+    if (zOvlp > 0 && yOvlp > 0) {
+      const bbHalfW = config.BILLBOARD_WIDTH / 2
+      const innerEdge = bb.side * config.BILLBOARD_X_OFFSET - bb.side * (bbHalfW + config.BILLBOARD_HITBOX_PAD)
+      if (bb.side > 0) {
+        xMax = Math.min(xMax, innerEdge - config.BILLBOARD_MIN_CLEARANCE - plat.w / 2)
+      } else {
+        xMin = Math.max(xMin, innerEdge + config.BILLBOARD_MIN_CLEARANCE + plat.w / 2)
+      }
+    }
+  }
+  if (xMin > xMax) return // Can't satisfy both — leave X alone, Z push will handle it
+  plat.x = Math.round(clamp(plat.x, xMin, xMax) * 10) / 10
+}
+
+function nudgeAwayFromAll(plat, allPlatforms, neighborPlatforms, halfW, billboards) {
   const checkList = neighborPlatforms ? allPlatforms.concat(neighborPlatforms) : allPlatforms
   for (let pass = 0; pass < 5; pass++) {
+    let moved = false
     for (const other of checkList) {
       if (other === plat) continue
-      const overlapX = (plat.w / 2 + other.w / 2) - Math.abs(plat.x - other.x)
-      const overlapZ = (plat.d / 2 + other.d / 2) - Math.abs(plat.z - other.z)
-      const overlapY = (plat.h / 2 + other.h / 2) - Math.abs(plat.y - other.y)
-      if (overlapX > 0 && overlapZ > 0 && overlapY > 0) {
-        const pushZ = overlapZ + config.MIN_PLATFORM_SPACING * 0.5
-        plat.z = Math.round((plat.z - pushZ) * 10) / 10
+      if (hasOverlap(plat, other)) {
+        const overlapX = (plat.w / 2 + other.w / 2) - Math.abs(plat.x - other.x)
         const lateralDir = plat.x >= other.x ? 1 : -1
         plat.x = Math.round(clamp(plat.x + lateralDir * overlapX * 0.5, -halfW, halfW) * 10) / 10
+        if (billboards) clampXAwayFromBillboards(plat, billboards, halfW)
+        if (!hasOverlap(plat, other)) { moved = true; continue }
+        const clearZ = other.z - other.d / 2 - plat.d / 2 - config.MIN_PLATFORM_SPACING
+        plat.z = Math.round(Math.min(plat.z, clearZ) * 10) / 10
+        moved = true
         continue
       }
       const gapX = Math.max(0, Math.abs(plat.x - other.x) - plat.w / 2 - other.w / 2)
@@ -46,25 +71,25 @@ function nudgeAwayFromAll(plat, allPlatforms, neighborPlatforms, halfW) {
         plat.z = Math.round((plat.z - push * 0.7) * 10) / 10
         const lateralDir = plat.x >= other.x ? 1 : -1
         plat.x = Math.round(clamp(plat.x + lateralDir * push * 0.5, -halfW, halfW) * 10) / 10
+        if (billboards) clampXAwayFromBillboards(plat, billboards, halfW)
         plat.y = Math.round(clamp(plat.y + push * 0.3, plat.h / 2 + 0.5, config.CORRIDOR_HEIGHT - 2) * 10) / 10
+        moved = true
       }
     }
+    if (!moved) break
   }
-  // Final guarantee: if any overlap remains, find the furthest-back
-  // conflicting platform and clear past all of them in one shot
-  let needsClear = true
-  while (needsClear) {
-    needsClear = false
+  // Final guarantee: keep pushing Z backward until no overlaps remain
+  for (let safetyIter = 0; safetyIter < 20; safetyIter++) {
+    let worstClearZ = plat.z
     for (const other of checkList) {
       if (other === plat) continue
       if (hasOverlap(plat, other)) {
         const clearZ = other.z - other.d / 2 - plat.d / 2 - config.MIN_PLATFORM_SPACING
-        if (clearZ < plat.z) {
-          plat.z = Math.round(clearZ * 10) / 10
-          needsClear = true
-        }
+        worstClearZ = Math.min(worstClearZ, clearZ)
       }
     }
+    if (worstClearZ >= plat.z) break
+    plat.z = Math.round(worstClearZ * 10) / 10
   }
 }
 
@@ -175,30 +200,99 @@ function generateSegmentPlatforms(prevPlatform, segmentStartZ, difficulty = 'med
     if (heightDiff > maxReachHeight) {
       plat.y = Math.round(clamp(prevTopY + maxReachHeight * 0.8, h / 2 + 0.5, config.CORRIDOR_HEIGHT - 2) * 10) / 10
     }
+    // Hard cap: platform must always be reachable via double jump
+    const absMaxReach = config.DOUBLE_JUMP_HEIGHT * diff.heightFraction
+    const finalTopY = plat.y + plat.h / 2
+    if (finalTopY - prevTopY > absMaxReach) {
+      plat.y = Math.round(clamp(prevTopY + absMaxReach * 0.8, h / 2 + 0.5, config.CORRIDOR_HEIGHT - 2) * 10) / 10
+    }
 
-    // Prevent platform from clipping into any billboard
+    // Prevent platform from being too close to any billboard
+    const clearance = config.BILLBOARD_MIN_CLEARANCE
     for (const bb of billboards) {
-      const bbMinZ = bb.z - config.BILLBOARD_DEPTH / 2
-      const bbMaxZ = bb.z + config.BILLBOARD_DEPTH / 2
-      const platMinZ = plat.z - plat.d / 2
-      const platMaxZ = plat.z + plat.d / 2
-      if (platMaxZ <= bbMinZ || platMinZ >= bbMaxZ) continue
-      const bbInnerEdge = bb.side * config.BILLBOARD_X_OFFSET - bb.side * (config.BILLBOARD_WIDTH / 2 + config.BILLBOARD_HITBOX_PAD)
-      const margin = 0.5
-      if (bb.side > 0) {
-        const limit = bbInnerEdge - margin - plat.w / 2
-        if (plat.x > limit) plat.x = Math.round(limit * 10) / 10
-      } else {
-        const limit = bbInnerEdge + margin + plat.w / 2
-        if (plat.x < limit) plat.x = Math.round(limit * 10) / 10
+      const bbHalfD = config.BILLBOARD_DEPTH / 2
+      const bbHalfW = config.BILLBOARD_WIDTH / 2
+      const bbHalfH = config.BILLBOARD_HEIGHT / 2
+      const bbY = bb.y + bbHalfH
+      const zOverlap = (plat.d / 2 + bbHalfD + clearance) - Math.abs(plat.z - bb.z)
+      const xOverlap = (plat.w / 2 + bbHalfW + config.BILLBOARD_HITBOX_PAD + clearance) - Math.abs(plat.x - bb.x)
+      const yOverlap = (plat.h / 2 + bbHalfH) - Math.abs(plat.y - bbY)
+      if (zOverlap > 0 && xOverlap > 0 && yOverlap > 0) {
+        const bbInnerEdge = bb.side * config.BILLBOARD_X_OFFSET - bb.side * (bbHalfW + config.BILLBOARD_HITBOX_PAD)
+        if (bb.side > 0) {
+          plat.x = Math.round(Math.min(plat.x, bbInnerEdge - clearance - plat.w / 2) * 10) / 10
+        } else {
+          plat.x = Math.round(Math.max(plat.x, bbInnerEdge + clearance + plat.w / 2) * 10) / 10
+        }
+        const xStillOverlap = (plat.w / 2 + bbHalfW + config.BILLBOARD_HITBOX_PAD + clearance) - Math.abs(plat.x - bb.x)
+        if (xStillOverlap > 0) {
+          plat.z = Math.round((bb.z - bbHalfD - plat.d / 2 - clearance) * 10) / 10
+          nextZ = plat.z
+        }
       }
     }
 
-    nudgeAwayFromAll(plat, platforms, neighborPlatforms, halfW)
+    nudgeAwayFromAll(plat, platforms, neighborPlatforms, halfW, billboards)
 
     platforms.push(plat)
     prev = plat
     platIndex++
+  }
+
+  // Unified post-processing: billboard clearance → overlap resolution → reachability clamp
+  // Iterate until stable (max 10 passes)
+  const absMaxReach = config.DOUBLE_JUMP_HEIGHT * config.PLAT_HEIGHT_FRAC
+  const finalClearance = config.BILLBOARD_MIN_CLEARANCE
+  for (let pass = 0; pass < 10; pass++) {
+    let anyChange = false
+
+    // 1. Push platforms out of billboard hitboxes
+    for (const plat of platforms) {
+      if (plat.isSpawn) continue
+      for (const bb of billboards) {
+        const bbHalfD = config.BILLBOARD_DEPTH / 2
+        const bbHalfW = config.BILLBOARD_WIDTH / 2
+        const bbHalfH = config.BILLBOARD_HEIGHT / 2
+        const bbY = bb.y + bbHalfH
+        const padded = { w: config.BILLBOARD_WIDTH + config.BILLBOARD_HITBOX_PAD * 2, d: config.BILLBOARD_DEPTH, h: config.BILLBOARD_HEIGHT, x: bb.x, z: bb.z, y: bbY }
+        if (hasOverlap(plat, padded)) {
+          const oldX = plat.x, oldZ = plat.z
+          const bbInnerEdge = bb.side * config.BILLBOARD_X_OFFSET - bb.side * (bbHalfW + config.BILLBOARD_HITBOX_PAD)
+          if (bb.side > 0) {
+            plat.x = Math.round(Math.min(plat.x, bbInnerEdge - finalClearance - plat.w / 2) * 10) / 10
+          } else {
+            plat.x = Math.round(Math.max(plat.x, bbInnerEdge + finalClearance + plat.w / 2) * 10) / 10
+          }
+          if (hasOverlap(plat, padded)) {
+            plat.z = Math.round((bb.z - bbHalfD - plat.d / 2 - finalClearance) * 10) / 10
+          }
+          if (plat.x !== oldX || plat.z !== oldZ) anyChange = true
+        }
+      }
+    }
+
+    // 2. Resolve platform-platform overlaps (nudge respects billboard zones via clampX)
+    for (const plat of platforms) {
+      if (plat.isSpawn) continue
+      const oldZ = plat.z
+      nudgeAwayFromAll(plat, platforms, neighborPlatforms, halfW, billboards)
+      if (plat.z !== oldZ) anyChange = true
+    }
+
+    // 3. Reachability clamp (only lower Y, never raise — so won't create new billboard issues)
+    for (let i = 1; i < platforms.length; i++) {
+      const prevP = platforms[i - 1]
+      const curP = platforms[i]
+      if (curP.isSpawn) continue
+      const prevTopY = prevP.y + prevP.h / 2
+      const curTopY = curP.y + curP.h / 2
+      if (curTopY - prevTopY > absMaxReach) {
+        const newY = Math.round(clamp(prevTopY + absMaxReach * 0.8, curP.h / 2 + 0.5, config.CORRIDOR_HEIGHT - 2) * 10) / 10
+        if (newY !== curP.y) { curP.y = newY; anyChange = true }
+      }
+    }
+
+    if (!anyChange) break
   }
 
   return { platforms, billboards, lastPlatform: prev, platformCounter: platIndex, lastBillboardZ: lastBillboardZ }
@@ -245,10 +339,12 @@ export function validateSegment(platforms, billboards, neighborPlatforms) {
       const bbD = config.BILLBOARD_DEPTH
       const bbY = bb.y + bbH / 2
       if (hasOverlap(p, { w: bbW, d: bbD, h: bbH, x: bb.x, z: bb.z, y: bbY })) {
-        const overlapX = (p.w / 2 + bbW / 2) - Math.abs(p.x - bb.x)
-        const overlapZ = (p.d / 2 + bbD / 2) - Math.abs(p.z - bb.z)
-        const overlapY = (p.h / 2 + bbH / 2) - Math.abs(p.y - bbY)
         issues.push({ type: 'clip', platIndices: [i], msg: `CLIP plat ${i} into billboard ${j}` })
+      }
+      // Check actual geometric overlap with billboard (including hitbox pad)
+      const padded = { w: bbW + config.BILLBOARD_HITBOX_PAD * 2, d: bbD, h: bbH, x: bb.x, z: bb.z, y: bbY }
+      if (hasOverlap(p, padded)) {
+        issues.push({ type: 'too_close_billboard', platIndices: [i], msg: `TOO CLOSE plat ${i} to billboard ${j}` })
       }
     }
   }
@@ -419,6 +515,7 @@ export class CourseManager {
     this._lastPlatform = lastPlatform
     this._platformCounter = platformCounter
     this._lastBillboardZ = lastBillboardZ
+    const prevNeighbors = this._prevSegmentPlatforms
     this._prevSegmentPlatforms = platforms.slice(-3)
 
     const meshes = []
@@ -447,7 +544,8 @@ export class CourseManager {
       obstacles.push({ mesh: result.mainMesh, aabb, isBillboard: true, wallNormalX: -bb.side })
     }
 
-    const issues = validateSegment(platforms, billboards, this._prevSegmentPlatforms)
+    const allIssues = validateSegment(platforms, billboards, prevNeighbors)
+    const issues = allIssues.filter(i => i.type === 'overlap' || i.type === 'clip')
 
     return { index, startZ, platforms, meshes, obstacles, issues }
   }
