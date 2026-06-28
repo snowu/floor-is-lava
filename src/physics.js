@@ -16,6 +16,7 @@ export class Physics {
     this._state   = STATE.GROUNDED
     this._hangTopY = 0
     this._coyoteTimer = 0
+    this._grindCoyoteTimer = 0
     this._airJumpsLeft = config.MAX_AIR_JUMPS
 
     this.onLand = null
@@ -70,12 +71,14 @@ export class Physics {
     this._state = STATE.GRINDING
     this.velocity.set(0, 0, 0)
     this._airJumpsLeft = config.MAX_AIR_JUMPS
+    this._grindCoyoteTimer = 0
     this.addChainBoost(config.GRIND_SPEED_BOOST)
     if (this.onGrind) this.onGrind()
   }
 
   exitGrinding(tangent) {
     this._state = STATE.AIRBORNE
+    this._grindCoyoteTimer = config.COYOTE_TIME
     if (tangent) {
       const exitY = tangent.y * this._momentum
       this.velocity.set(
@@ -126,6 +129,10 @@ export class Physics {
         this._state = STATE.AIRBORNE
         this._coyoteTimer = 0
         this._airJumpsLeft = config.MAX_AIR_JUMPS
+      } else if (this._state === STATE.AIRBORNE && this._grindCoyoteTimer > 0) {
+        this.velocity.y = config.JUMP_SPEED
+        this._grindCoyoteTimer = 0
+        this._airJumpsLeft = config.MAX_AIR_JUMPS
       } else if (this._state === STATE.AIRBORNE && this._airJumpsLeft > 0) {
         this.velocity.y = config.JUMP_SPEED
         this._airJumpsLeft--
@@ -139,6 +146,7 @@ export class Physics {
     } else if (this._state === STATE.AIRBORNE) {
       this.velocity.y -= config.GRAVITY * delta
       if (this._coyoteTimer > 0) this._coyoteTimer -= delta
+      if (this._grindCoyoteTimer > 0) this._grindCoyoteTimer -= delta
     } else if (this._state === STATE.WALLRUNNING) {
       this.velocity.y -= config.WALLRUN_GRAVITY * delta
       this._wallrunTimer -= delta

@@ -67,6 +67,13 @@ export function createDebugMenu(animator, scene, courses, { camera, ambientLight
 
   // ── Rails ─────────────────────────────────────────────────────────────────
   const rails = gui.addFolder('Rails')
+  rails.add(config, 'RAILS_FIRST_MODE').name('Rails-First Mode').onFinishChange(rebuildCourses)
+  rails.add(config, 'RAILS_PER_SEGMENT', 3, 15, 1).name('Rails/Segment').onFinishChange(rebuildCourses)
+  rails.add(config, 'RAIL_GAP_MIN', 3, 15, 1).name('Gap Min').onFinishChange(rebuildCourses)
+  rails.add(config, 'RAIL_GAP_MAX', 5, 25, 1).name('Gap Max').onFinishChange(rebuildCourses)
+  rails.add(config, 'RAIL_HEIGHT_VAR', 0, 8, 0.5).name('Height Var').onFinishChange(rebuildCourses)
+  rails.add(config, 'RAIL_LANDING_PAD_SIZE', 1, 6, 0.5).name('Landing Pad').onFinishChange(rebuildCourses)
+  rails.add(config, 'RAIL_MIN_LENGTH', 3, 20, 1).name('Min Length').onFinishChange(rebuildCourses)
   rails.add(config, 'RAIL_RADIUS', 0.01, 0.2, 0.01).name('Radius').onFinishChange(rebuildCourses)
   rails.add(config, 'RAIL_SNAP_RADIUS', 0.1, 3, 0.1).name('Snap Radius')
   rails.add(config, 'RAIL_SNAP_Y_TOLERANCE', 0.1, 3, 0.1).name('Snap Y Tolerance')

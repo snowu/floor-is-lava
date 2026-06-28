@@ -94,6 +94,167 @@ function nudgeAwayFromAll(plat, allPlatforms, neighborPlatforms, halfW, billboar
   }
 }
 
+function generateRailsFirstSegment(prevPlatform, segmentStartZ, isFirstSegment, platformCounter, lastBillboardZ) {
+  const platforms = []
+  const billboards = []
+  const rails = []
+  const halfW = config.CORRIDOR_WIDTH / 2 - 1
+
+  let prev = prevPlatform
+  if (!prev) {
+    const sp = config.SPAWN_PLAT_SIZE
+    prev = { w: sp, h: 1, d: sp, x: 0, y: 0.5, z: segmentStartZ - 3, isSpawn: true }
+    platforms.push(prev)
+  }
+
+  const count = config.RAILS_PER_SEGMENT
+  let nextZ = segmentStartZ - (isFirstSegment ? config.FIRST_PLATFORM_GAP : 0)
+  let platIndex = platformCounter
+  let afterGapSide = 0
+
+  // Generate rail waypoints — these are potential rail positions, not all connected
+  const waypoints = []
+  for (let i = 0; i < count; i++) {
+    // Billboard walls
+    if (platIndex > 0 && platIndex % config.FACADE_GAP_EVERY === 0 && (!isFirstSegment || i >= config.WARMUP_COUNT)) {
+      const gapMidZ = nextZ - config.BILLBOARD_GAP_SIZE / 2
+      const tooClose = lastBillboardZ !== null &&
+        Math.abs(gapMidZ - lastBillboardZ) < config.FACADE_DEPTH + config.MIN_PLATFORM_SPACING
+      if (!tooClose) {
+        const prevTopY = prev.y + prev.h / 2
+        const side = prev.x >= 0 ? 1 : -1
+        const facadeHeight = rand(config.FACADE_HEIGHT_MIN, config.FACADE_HEIGHT_MAX)
+        billboards.push({
+          x: side * config.FACADE_X_OFFSET,
+          y: prevTopY - 1,
+          z: gapMidZ,
+          side,
+          height: facadeHeight,
+          width: config.FACADE_WIDTH,
+        })
+        lastBillboardZ = gapMidZ
+        nextZ -= config.BILLBOARD_GAP_SIZE
+        afterGapSide = side
+      }
+    }
+
+    const prevTopY = prev.y + prev.h / 2
+    const gap = rand(config.RAIL_GAP_MIN, config.RAIL_GAP_MAX)
+    const dy = rand(-config.RAIL_HEIGHT_VAR, config.RAIL_HEIGHT_VAR)
+    const wpY = clamp(prevTopY + dy, 1.5, config.CORRIDOR_HEIGHT - 3)
+    const wpZ = nextZ - gap
+
+    let wpX
+    if (afterGapSide !== 0) {
+      wpX = clamp(afterGapSide * (config.FACADE_X_OFFSET - 3) + rand(-1, 1), -halfW, halfW)
+      afterGapSide = 0
+    } else if (Math.random() < 0.35) {
+      // Force opposite side — break same-side tendency
+      wpX = clamp(-prev.x + rand(-2, 2), -halfW, halfW)
+    } else {
+      wpX = clamp(prev.x + rand(-halfW * 0.6, halfW * 0.6), -halfW, halfW)
+    }
+
+    waypoints.push({ x: Math.round(wpX * 10) / 10, y: Math.round(wpY * 10) / 10, z: Math.round(wpZ * 10) / 10 })
+    nextZ = wpZ
+
+    // Landing pad under this waypoint
+    const padSize = config.RAIL_LANDING_PAD_SIZE
+    const pad = {
+      w: padSize, h: config.BOX_HEIGHT, d: padSize,
+      x: Math.round(wpX * 10) / 10,
+      y: Math.round((wpY - 0.5) * 10) / 10,
+      z: Math.round(wpZ * 10) / 10,
+    }
+    platforms.push(pad)
+    prev = pad
+    platIndex++
+  }
+
+  // Helper to push a curved rail between two points
+  function pushCurvedRail(a, b, yOffset) {
+    const dist = Math.abs(a.z - b.z)
+    const midX = (a.x + b.x) / 2 + rand(-1.5, 1.5)
+    const avgY = (a.y + b.y) / 2
+    const arcHeight = rand(1.5, 3) * Math.min(1, dist / 12)
+    const midY = avgY + arcHeight + yOffset
+    const midZ = (a.z + b.z) / 2
+    const sz = a.z, ez = b.z
+    const startRY = a.y + yOffset, endRY = b.y + yOffset
+    rails.push({
+      points: [
+        { x: a.x, y: startRY, z: sz },
+        { x: a.x + (midX - a.x) * 0.35, y: startRY + (midY - startRY) * 0.35, z: sz + (ez - sz) * 0.25 },
+        { x: midX, y: midY, z: midZ },
+        { x: midX + (b.x - midX) * 0.65, y: endRY + (midY - endRY) * 0.35, z: sz + (ez - sz) * 0.75 },
+        { x: b.x, y: endRY, z: ez },
+      ],
+      isCurved: true,
+    })
+  }
+
+  // Only connect ~50% of consecutive pairs — rest are airborne gaps
+  // But never leave more than 2 consecutive gaps (unfair)
+  let gapStreak = 0
+  for (let i = 0; i < waypoints.length - 1; i++) {
+    const forceRail = gapStreak >= 2 || (isFirstSegment && i === 0)
+    const makeRail = forceRail || Math.random() < 0.45
+
+    if (makeRail) {
+      gapStreak = 0
+      const a = waypoints[i]
+      const b = waypoints[i + 1]
+      const dist = Math.abs(a.z - b.z)
+      const heightDiff = Math.abs(a.y - b.y)
+
+      if (dist < 16 && heightDiff < 2) {
+        rails.push({
+          points: [
+            { x: a.x, y: a.y + 0.8, z: a.z },
+            { x: b.x, y: b.y + 0.8, z: b.z },
+          ],
+          isCurved: false,
+        })
+      } else {
+        pushCurvedRail(a, b, 0.8)
+      }
+    } else {
+      gapStreak++
+    }
+  }
+
+  // Standalone rails — scattered at offset positions for discovery
+  for (let i = 1; i < waypoints.length - 1; i++) {
+    if (Math.random() > 0.45) continue
+    const wp = waypoints[i]
+    // Push far from waypoint X — opposite side or far lateral
+    const side = Math.random() < 0.5 ? 1 : -1
+    const offsetX = clamp(side * rand(3, halfW), -halfW, halfW)
+    const railLen = rand(6, 12)
+    const rY = wp.y + rand(-1, 2) + 0.8
+    rails.push({
+      points: [
+        { x: offsetX, y: rY, z: wp.z + railLen / 2 },
+        { x: offsetX, y: rY, z: wp.z - railLen / 2 },
+      ],
+      isCurved: false,
+    })
+    // 30% chance of parallel rail nearby
+    if (Math.random() < 0.3) {
+      const pX = clamp(offsetX + rand(-3, 3), -halfW, halfW)
+      rails.push({
+        points: [
+          { x: pX, y: rY + rand(-0.5, 0.5), z: wp.z + railLen / 2 },
+          { x: pX, y: rY + rand(-0.5, 0.5), z: wp.z - railLen / 2 },
+        ],
+        isCurved: false,
+      })
+    }
+  }
+
+  return { platforms, billboards, rails, lastPlatform: prev, platformCounter: platIndex, lastBillboardZ }
+}
+
 function generateSegmentPlatforms(prevPlatform, segmentStartZ, difficulty = 'medium', isFirstSegment = false, platformCounter = 0, neighborPlatforms = null, lastBillboardZ = null) {
   const diff = {
     heightFraction: config.PLAT_HEIGHT_FRAC,
@@ -319,7 +480,7 @@ function generateSegmentPlatforms(prevPlatform, segmentStartZ, difficulty = 'med
   // Iterate until stable (max 10 passes)
   const absMaxReach = config.DOUBLE_JUMP_HEIGHT * config.PLAT_HEIGHT_FRAC
   const finalClearance = config.FACADE_MIN_CLEARANCE
-  for (let pass = 0; pass < 20; pass++) {
+  for (let pass = 0; pass < 8; pass++) {
     let anyChange = false
 
     // 1. Push platforms out of billboard hitboxes
@@ -607,10 +768,18 @@ export class CourseManager {
     const index = this._nextSegmentIndex++
     const startZ = -index * config.SEGMENT_DEPTH
 
-    const { platforms, billboards, rails, lastPlatform, platformCounter, lastBillboardZ } = generateSegmentPlatforms(
-      this._lastPlatform, startZ, this._difficulty, index === 0, this._platformCounter,
-      this._prevSegmentPlatforms, this._lastBillboardZ
-    )
+    let result
+    if (config.RAILS_FIRST_MODE) {
+      result = generateRailsFirstSegment(
+        this._lastPlatform, startZ, index === 0, this._platformCounter, this._lastBillboardZ
+      )
+    } else {
+      result = generateSegmentPlatforms(
+        this._lastPlatform, startZ, this._difficulty, index === 0, this._platformCounter,
+        this._prevSegmentPlatforms, this._lastBillboardZ
+      )
+    }
+    const { platforms, billboards, rails, lastPlatform, platformCounter, lastBillboardZ } = result
     this._lastPlatform = lastPlatform
     this._platformCounter = platformCounter
     this._lastBillboardZ = lastBillboardZ
@@ -650,6 +819,7 @@ export class CourseManager {
     const segmentRails = []
     for (const railData of rails) {
       const railDef = new RailDefinition(railData.points, railData.isCurved)
+      if (railDef.isCurved && railDef.length < config.RAIL_MIN_LENGTH) continue
       const result = createRailMeshes(railDef)
       meshes.push(result.group)
       segmentRails.push(result)
