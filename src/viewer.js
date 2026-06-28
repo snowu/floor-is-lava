@@ -3,7 +3,7 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 import { createHumanoid } from './humanoid.js'
 import { createPlatformMeshes, updatePlatformMaterials } from './platformStyles.js'
 import { createGround, updateGround } from './ground.js'
-import { createBillboardMeshes, updateBillboardMaterials } from './billboardStyles.js'
+import { createBillboardMeshes, updateBillboardMaterials, BILLBOARD_STYLE_COUNT, getBillboardStyleName } from './billboardStyles.js'
 import { createPlayerHitboxHelpers, updatePlayerHitboxPositions, createObstacleHitboxHelper, makeWireBox, buildPlatformAABBs } from './hitboxes.js'
 import config from './config.js'
 
@@ -97,23 +97,26 @@ const assets = {
     camTarget: [0, 0.5, 0],
     buildHitboxes(ctx) { return platformHitboxes(ctx.mainMesh) },
   },
-  'Billboard': {
-    create() {
-      const result = createBillboardMeshes({ x: 0, y: 0, z: 0 }, config)
-      const group = new THREE.Group()
-      result.meshes.forEach(m => group.add(m))
-      return { group, update: (t) => updateBillboardMaterials(t), mainMesh: result.mainMesh }
-    },
-    camDist: 15,
-    camTarget: [0, 5, 0],
-    buildHitboxes(ctx) {
-      const aabb = new THREE.Box3().setFromObject(ctx.mainMesh)
-      aabb.min.x -= config.BILLBOARD_HITBOX_PAD
-      const h = createObstacleHitboxHelper(aabb, 0xffffff)
-      h.visible = true
-      return [h]
-    },
-  },
+  ...Object.fromEntries(Array.from({ length: BILLBOARD_STYLE_COUNT }, (_, i) => {
+    const styleName = getBillboardStyleName(i)
+    return [`Billboard — ${styleName}`, {
+      create() {
+        const result = createBillboardMeshes({ x: 0, y: 0, z: 0 }, config, i)
+        const group = new THREE.Group()
+        result.meshes.forEach(m => group.add(m))
+        return { group, update: (t) => updateBillboardMaterials(t), mainMesh: result.mainMesh }
+      },
+      camDist: 15,
+      camTarget: [0, 5, 0],
+      buildHitboxes(ctx) {
+        const aabb = new THREE.Box3().setFromObject(ctx.mainMesh)
+        aabb.min.x -= config.BILLBOARD_HITBOX_PAD
+        const h = createObstacleHitboxHelper(aabb, 0xffffff)
+        h.visible = true
+        return [h]
+      },
+    }]
+  })),
   'Lava Ground': {
     create() {
       const group = createGround()

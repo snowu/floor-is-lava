@@ -1,6 +1,6 @@
 import config from './config.js'
 import { createPlatformMeshes } from './platformStyles.js'
-import { createBillboardMeshes } from './billboardStyles.js'
+import { createBillboardMeshes, BILLBOARD_STYLE_COUNT, isSurveillanceStyle, registerSurveillanceBillboard } from './billboardStyles.js'
 import { buildPlatformAABBs } from './hitboxes.js'
 import * as THREE from 'three'
 
@@ -534,12 +534,16 @@ export class CourseManager {
 
     // Billboards placed in gaps between platforms
     for (const bb of billboards) {
-      const result = createBillboardMeshes(bb, config)
+      const styleIdx = Math.floor(Math.random() * BILLBOARD_STYLE_COUNT)
+      const result = createBillboardMeshes(bb, config, styleIdx)
       for (const m of result.meshes) meshes.push(m)
       const aabb = new THREE.Box3().setFromObject(result.mainMesh)
       if (bb.side > 0) aabb.min.x -= config.BILLBOARD_HITBOX_PAD
       else aabb.max.x += config.BILLBOARD_HITBOX_PAD
       obstacles.push({ mesh: result.mainMesh, aabb, isBillboard: true, wallNormalX: -bb.side })
+      if (isSurveillanceStyle(styleIdx)) {
+        registerSurveillanceBillboard(result.mainMesh, new THREE.Vector3(bb.x, bb.y + config.BILLBOARD_HEIGHT / 2, bb.z))
+      }
     }
 
     const allIssues = validateSegment(platforms, billboards, prevNeighbors)
