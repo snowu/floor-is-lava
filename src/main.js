@@ -391,7 +391,10 @@ function animate(timestamp) {
   }
   if (surfer.active && surfer._riding) {
     surfer.grow(cameraController.cameraYaw, cameraController.cameraPitch, physics.momentum, delta)
-    humanoid.position.copy(surfer.tipPos)
+    // Player rides behind the tip — surfer rail extends ahead
+    const rideT = Math.max(0, Math.min(1, 1 - (4 / Math.max(4, surfer.totalLength))))
+    const ridePos = surfer.getPointAt(rideT)
+    humanoid.position.copy(ridePos)
     humanoid.position.y += 0.3
   }
   surfer.update(delta)

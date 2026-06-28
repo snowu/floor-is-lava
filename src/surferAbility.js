@@ -20,6 +20,12 @@ export class SurferAbility {
   get active() { return this._active }
   get railData() { return this._railData }
   get tipPos() { return this._tipPos }
+  get totalLength() { return this._railData ? this._railData.railDef.length : 0 }
+
+  getPointAt(t) {
+    if (!this._railData) return this._tipPos.clone()
+    return this._railData.railDef.getPointAt(t)
+  }
 
   activate(playerPos, cameraYaw, cameraPitch) {
     if (this._active) return
