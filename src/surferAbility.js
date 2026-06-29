@@ -11,6 +11,7 @@ export class SurferAbility {
     this._points = []
     this._despawnTimer = 0
     this._tipPos = new THREE.Vector3()
+    this._riding = false
     this._tubeMesh = null
     this._stripMesh = null
     this._tubeMat = null
@@ -212,6 +213,7 @@ export class SurferAbility {
 
   reset() {
     this._active = false
+    this._riding = false
     this._cleanup()
   }
 }

@@ -105,10 +105,8 @@ let cachedRails = []
 
 // Tony Hawk-style scoring: points accumulate during grinds/wall runs,
 // multiplier increases with each grind/wall run without touching a platform
-let trickScore = 0
 let trickMultiplier = 1
 let inTrick = false
-let trickScoreTimer = 0
 const TRICK_POINTS_PER_SEC_GRIND = 50
 const TRICK_POINTS_PER_SEC_WALLRUN = 30
 
@@ -121,12 +119,6 @@ function updateScoreDisplay() {
 }
 
 function bankTrickScore() {
-  if (trickScore > 0) {
-    const banked = Math.floor(trickScore * trickMultiplier)
-    score += banked
-    updateScoreDisplay()
-    trickScore = 0
-  }
   trickMultiplier = 1
   inTrick = false
 }
@@ -144,9 +136,9 @@ physics.onBoxLand = (obs) => {
   updateScoreDisplay()
 }
 
-const _originalOnLand = physics.onLand
+const _animatorOnLand = physics.onLand
 physics.onLand = () => {
-  if (_originalOnLand) _originalOnLand()
+  if (_animatorOnLand) _animatorOnLand()
   bankTrickScore()
   trickMultiplier = 1
   inTrick = false
@@ -186,10 +178,9 @@ physics.onGroundHit = () => {
   score = 0
   runTime = 0
   timerStarted = false
-  trickScore = 0
   trickMultiplier = 1
   inTrick = false
-  scoreEl.textContent = score
+  scoreEl.textContent = '0'
   timerEl.textContent = formatTime(0)
   touchedBoxes.clear()
   chainDisplayTimer = 0
@@ -382,7 +373,10 @@ function animate(timestamp) {
       surfer._riding = false
       animator.isSurfing = false
       if (physics.state === 'grinding') {
-        physics.exitGrinding(null)
+        // Restore forward velocity in facing direction so player doesn't drop straight into lava
+        const yaw = cameraController.cameraYaw
+        const fwd = new THREE.Vector3(-Math.sin(yaw), 0, -Math.cos(yaw))
+        physics.exitGrinding(fwd)
       }
     }
   }
@@ -489,19 +483,20 @@ function animate(timestamp) {
   if (isMobile && movement.started && mobileOverlay && mobileOverlay.style.display !== 'none') {
     mobileOverlay.style.display = 'none'
   }
-  // Trick score accumulation during grinds/wall runs
+  // Trick score accumulation during grinds/wall runs — bank in real time
   if (physics.state === 'grinding') {
-    trickScore += TRICK_POINTS_PER_SEC_GRIND * delta
+    score += Math.round(TRICK_POINTS_PER_SEC_GRIND * delta * trickMultiplier)
     inTrick = true
+    updateScoreDisplay()
   } else if (physics.state === 'wallrunning') {
-    trickScore += TRICK_POINTS_PER_SEC_WALLRUN * delta
+    score += Math.round(TRICK_POINTS_PER_SEC_WALLRUN * delta * trickMultiplier)
     inTrick = true
+    updateScoreDisplay()
   }
 
-  // Show active trick score + multiplier
-  if (inTrick && trickScore > 0) {
-    const pending = Math.floor(trickScore * trickMultiplier)
-    chainCounterEl.textContent = `${Math.floor(trickScore)} x${trickMultiplier} = +${pending}`
+  // Show multiplier during tricks
+  if (inTrick) {
+    chainCounterEl.textContent = `x${trickMultiplier}`
     chainCounterEl.style.opacity = '1'
     chainDisplayTimer = 2.0
   }
