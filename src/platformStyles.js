@@ -564,7 +564,7 @@ export function updatePlatformMaterials(time) {
   }
 
   for (const d of activeDrips) {
-    if (!d.drip.parent) continue
+    if (!d.drip.parent || !d.drip.visible) continue
     const t = ((time * d.speed + d.phase) % 1 + 1) % 1
     if (t < 0.6) {
       const grow = t / 0.6

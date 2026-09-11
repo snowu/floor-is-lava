@@ -710,7 +710,7 @@ export class CourseManager {
       else aabb.max.x += config.FACADE_HITBOX_PAD
       obstacles.push({ mesh: result.mainMesh, aabb, isBillboard: true, wallNormalX: -bb.side })
       if (isProductAdStyle(styleIdx)) {
-        registerProductAdMaterial(result.mainMesh.material)
+        registerProductAdMaterial(result.mainMesh.material, result.mainMesh)
       }
     }
 

@@ -15,6 +15,7 @@ import { makeWireBox, createPlayerHitboxHelpers, updatePlayerHitboxPositions, cr
 import { createDebugMenu } from './debugMenu.js'
 import config from './config.js'
 import { isMobile } from './mobile.js'
+import { GameSession } from './gameSession.js'
 
 const mobileOverlay = document.getElementById('mobile-overlay')
 
@@ -90,44 +91,18 @@ const timerEl = document.getElementById('timer')
 const momentumBar = document.getElementById('momentum-bar')
 const chainCounterEl = document.getElementById('chain-counter')
 const bestMultEl = document.getElementById('best-multiplier')
-let score = 0
-let bestScore = 0
-let bestMultiplier = 1
-let runTime = 0
-let timerStarted = false
+const gameSession = new GameSession()
 let chainDisplayTimer = 0
-const touchedBoxes = new Set()
 let cachedObstacles = []
 let cachedWallAABBs = []
 let cachedRails = []
 
-// Tony Hawk-style scoring: points accumulate during grinds/wall runs,
-// multiplier increases with each grind/wall run without touching a platform
-let trickScore = 0
-let trickMultiplier = 1
-let inTrick = false
-let trickScoreTimer = 0
-const TRICK_POINTS_PER_SEC_GRIND = 50
-const TRICK_POINTS_PER_SEC_WALLRUN = 30
-
 function updateScoreDisplay() {
-  scoreEl.textContent = score
-  if (score > bestScore) {
-    bestScore = score
-    bestEl.textContent = bestScore
-  }
+  scoreEl.textContent = gameSession.score
+  bestEl.textContent = gameSession.bestScore
+  bestMultEl.textContent = gameSession.bestMultiplier
 }
-
-function bankTrickScore() {
-  if (trickScore > 0) {
-    const banked = Math.floor(trickScore * trickMultiplier)
-    score += banked
-    updateScoreDisplay()
-    trickScore = 0
-  }
-  trickMultiplier = 1
-  inTrick = false
-}
+updateScoreDisplay()
 
 function formatTime(seconds) {
   const m = Math.floor(seconds / 60)
@@ -136,42 +111,29 @@ function formatTime(seconds) {
 }
 
 physics.onBoxLand = (obs) => {
-  if (obs.isSpawn || touchedBoxes.has(obs)) return
-  touchedBoxes.add(obs)
-  score++
-  updateScoreDisplay()
+  if (gameSession.landOn(obs)) updateScoreDisplay()
 }
 
 const _originalOnLand = physics.onLand
 physics.onLand = () => {
   if (_originalOnLand) _originalOnLand()
-  bankTrickScore()
-  trickMultiplier = 1
-  inTrick = false
+  gameSession.land()
+  updateScoreDisplay()
   railGrinder.resetCooldown()
 }
 
-function updateBestMultiplier() {
-  if (trickMultiplier > bestMultiplier) {
-    bestMultiplier = trickMultiplier
-    bestMultEl.textContent = bestMultiplier
-  }
-}
-
 physics.onWallRun = () => {
-  trickMultiplier++
-  inTrick = true
-  updateBestMultiplier()
-  chainCounterEl.textContent = `x${trickMultiplier}`
+  gameSession.startTrick()
+  updateScoreDisplay()
+  chainCounterEl.textContent = `x${gameSession.trickMultiplier}`
   chainCounterEl.style.opacity = '1'
   chainDisplayTimer = 2.0
 }
 
 physics.onGrind = () => {
-  trickMultiplier++
-  inTrick = true
-  updateBestMultiplier()
-  chainCounterEl.textContent = `x${trickMultiplier}`
+  gameSession.startTrick()
+  updateScoreDisplay()
+  chainCounterEl.textContent = `x${gameSession.trickMultiplier}`
   chainCounterEl.style.opacity = '1'
   chainDisplayTimer = 2.0
 }
@@ -181,15 +143,9 @@ physics.onChain = (combo) => {
 }
 
 physics.onGroundHit = () => {
-  score = 0
-  runTime = 0
-  timerStarted = false
-  trickScore = 0
-  trickMultiplier = 1
-  inTrick = false
-  scoreEl.textContent = score
+  gameSession.reset()
+  updateScoreDisplay()
   timerEl.textContent = formatTime(0)
-  touchedBoxes.clear()
   chainDisplayTimer = 0
   chainCounterEl.style.opacity = '0'
   if (railGrinder.isGrinding) railGrinder.dismount()
@@ -450,26 +406,16 @@ function animate(timestamp) {
   if (isMobile && movement.started && mobileOverlay && mobileOverlay.style.display !== 'none') {
     mobileOverlay.style.display = 'none'
   }
-  // Trick score accumulation during grinds/wall runs
-  if (physics.state === 'grinding') {
-    trickScore += TRICK_POINTS_PER_SEC_GRIND * delta
-    inTrick = true
-  } else if (physics.state === 'wallrunning') {
-    trickScore += TRICK_POINTS_PER_SEC_WALLRUN * delta
-    inTrick = true
-  }
+  gameSession.update(delta, physics.state, physics.horizontalSpeed)
 
   // Show active trick score + multiplier
-  if (inTrick && trickScore > 0) {
-    const pending = Math.floor(trickScore * trickMultiplier)
-    chainCounterEl.textContent = `${Math.floor(trickScore)} x${trickMultiplier} = +${pending}`
+  if (gameSession.inTrick && gameSession.trickScore > 0) {
+    chainCounterEl.textContent = `${Math.floor(gameSession.trickScore)} x${gameSession.trickMultiplier} = +${gameSession.pendingTrickPoints}`
     chainCounterEl.style.opacity = '1'
     chainDisplayTimer = 2.0
   }
 
-  if (!timerStarted && physics.horizontalSpeed > 0.1) timerStarted = true
-  if (timerStarted) runTime += delta
-  timerEl.textContent = formatTime(runTime)
+  timerEl.textContent = formatTime(gameSession.runTime)
   speedEl.textContent = physics.horizontalSpeed.toFixed(1)
   airJumpsEl.textContent = physics._airJumpsLeft
   stateEl.textContent = physics.state
@@ -488,8 +434,8 @@ function animate(timestamp) {
   updateRocks(delta, timestamp * 0.001, humanoid.position.x, humanoid.position.z, allObstacles)
   updateMountains(timestamp * 0.001, humanoid.position.x, humanoid.position.z)
   updatePlatformMaterials(timestamp * 0.001)
-  updateBillboardMaterials(timestamp * 0.001, score, runTime)
-  updateSkyScreens(timestamp * 0.001, humanoid.position, score, runTime)
+  updateBillboardMaterials(timestamp * 0.001, gameSession.score, gameSession.runTime)
+  updateSkyScreens(timestamp * 0.001, humanoid.position, gameSession.score, gameSession.runTime)
 
   // Rock hazard collision
   const halfW = config.PLAYER_WIDTH / 2

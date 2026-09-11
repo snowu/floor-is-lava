@@ -1,6 +1,6 @@
 # Floor Is Lava
 
-An endless first-person parkour score attack built with Three.js. Chain jumps, ledge grabs, wall runs, and rail grinds across a procedurally generated course above the lava. Works on desktop and mobile.
+An endless first-person parkour score attack built with Three.js. Chain jumps, ledge grabs, wall runs, and rail grinds across a procedurally generated course above the lava. Personal bests persist locally, and the game works on desktop and mobile.
 
 ## Setup
 

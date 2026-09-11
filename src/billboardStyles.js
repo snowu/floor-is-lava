@@ -534,6 +534,7 @@ const unitBoxGeo = new THREE.BoxGeometry(1, 1, 1)
 // ── Surveillance camera system ──────────────────────────────────────────────
 
 const FEED_RESOLUTION = 256
+const FEED_FRAME_INTERVAL = 1 / 10
 
 let mainRenderer = null
 let mainScene = null
@@ -638,8 +639,6 @@ export function updateSkyScreens(time, playerPos, score, gameTime) {
 
     const side = s.type === 'left' ? -1 : s.type === 'right' ? 1 : 0
     const camSide = side === 0 ? 1 : side
-    const cam = getCameraAngle(s.currentView, time, playerPos, camSide)
-
     const screenX = playerPos.x + side * 20
     const screenY = 25
     const screenZ = playerPos.z - 35
@@ -647,13 +646,19 @@ export function updateSkyScreens(time, playerPos, score, gameTime) {
     s.mesh.position.set(screenX, screenY, screenZ)
     s.mesh.lookAt(playerPos.x, playerPos.y + 1, playerPos.z)
 
-    s.camera.position.set(cam.x, cam.y, cam.z)
-    s.camera.lookAt(playerPos.x, playerPos.y + 1, playerPos.z)
+    const shouldRenderFeed = s.lastRenderTime === undefined ||
+      time < s.lastRenderTime || time - s.lastRenderTime >= FEED_FRAME_INTERVAL
+    if (shouldRenderFeed) {
+      const cam = getCameraAngle(s.currentView, time, playerPos, camSide)
+      s.camera.position.set(cam.x, cam.y, cam.z)
+      s.camera.lookAt(playerPos.x, playerPos.y + 1, playerPos.z)
 
-    s.mesh.visible = false
-    mainRenderer.setRenderTarget(s.renderTarget)
-    mainRenderer.render(mainScene, s.camera)
-    s.mesh.visible = true
+      s.mesh.visible = false
+      mainRenderer.setRenderTarget(s.renderTarget)
+      mainRenderer.render(mainScene, s.camera)
+      s.mesh.visible = true
+      s.lastRenderTime = time
+    }
 
     s.mat.uniforms.time.value = time
     s.mat.uniforms.gameScore.value = score
@@ -712,9 +717,9 @@ export function createBillboardMeshes(bb, config, styleIndex = 0, productVariant
 
 let productAdMaterials = []
 
-export function registerProductAdMaterial(mat) {
+export function registerProductAdMaterial(mat, mesh) {
   mat.addEventListener('dispose', () => { mat._disposed = true })
-  productAdMaterials.push(mat)
+  productAdMaterials.push({ mat, mesh })
 }
 
 export function updateBillboardMaterials(time, score, gameTime) {
@@ -723,10 +728,10 @@ export function updateBillboardMaterials(time, score, gameTime) {
   }
   // Prune disposed materials periodically
   if (productAdMaterials.length > 50) {
-    productAdMaterials = productAdMaterials.filter(m => !m._disposed)
+    productAdMaterials = productAdMaterials.filter(({ mat, mesh }) => !mat._disposed && mesh.parent)
   }
-  for (const mat of productAdMaterials) {
-    if (mat._disposed) continue
+  for (const { mat, mesh } of productAdMaterials) {
+    if (mat._disposed || !mesh.visible || !mesh.parent) continue
     mat.uniforms.time.value = time
   }
 }
