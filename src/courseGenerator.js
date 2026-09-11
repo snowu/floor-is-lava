@@ -5,6 +5,73 @@ import { buildPlatformAABBs } from './hitboxes.js'
 import { createRailMeshes, RailDefinition } from './railSystem.js'
 import * as THREE from 'three'
 
+const courseObstacleGeometry = new THREE.BoxGeometry(1, 1, 1)
+const hurdleMaterial = new THREE.MeshStandardMaterial({
+  color: 0xffb000,
+  emissive: 0xff5500,
+  emissiveIntensity: 0.35,
+  roughness: 0.55,
+  metalness: 0.45,
+})
+const overheadMaterial = new THREE.MeshStandardMaterial({
+  color: 0x00d8ff,
+  emissive: 0x0066ff,
+  emissiveIntensity: 0.4,
+  roughness: 0.4,
+  metalness: 0.65,
+})
+const obstaclePostMaterial = new THREE.MeshStandardMaterial({
+  color: 0x303844,
+  roughness: 0.6,
+  metalness: 0.7,
+})
+
+function createCourseObstacleMeshes(descriptor, platform) {
+  const material = descriptor.type === 'hurdle' ? hurdleMaterial : overheadMaterial
+  const mainMesh = new THREE.Mesh(courseObstacleGeometry, material)
+  mainMesh.scale.set(descriptor.w, descriptor.h, descriptor.d)
+  mainMesh.position.set(descriptor.x, descriptor.y, descriptor.z)
+  const meshes = [mainMesh]
+
+  if (descriptor.type === 'overhead') {
+    const platformTop = platform.y + platform.h / 2
+    const postHeight = descriptor.y - descriptor.h / 2 - platformTop
+    for (const side of [-1, 1]) {
+      const post = new THREE.Mesh(courseObstacleGeometry, obstaclePostMaterial)
+      post.scale.set(0.18, postHeight, descriptor.d)
+      post.position.set(
+        descriptor.x + side * (descriptor.w / 2 - 0.09),
+        platformTop + postHeight / 2,
+        descriptor.z,
+      )
+      meshes.push(post)
+    }
+  }
+
+  return { meshes, mainMesh }
+}
+
+function isLongRailValid(points, intermediatePlatforms) {
+  const rail = new RailDefinition(points, true, true)
+  const radius = config.RAIL_RADIUS * 1.25
+  let previousZ = Infinity
+  for (let i = 0; i <= 100; i++) {
+    const point = rail.getPointAt(i / 100)
+    if (point.z > previousZ + 0.001) return false
+    previousZ = point.z
+    for (const platform of intermediatePlatforms) {
+      if (point.x < platform.x - platform.w / 2 - radius ||
+          point.x > platform.x + platform.w / 2 + radius ||
+          point.y < platform.y - platform.h / 2 - radius ||
+          point.y > platform.y + platform.h / 2 + radius ||
+          point.z < platform.z - platform.d / 2 - radius ||
+          point.z > platform.z + platform.d / 2 + radius) continue
+      return false
+    }
+  }
+  return true
+}
+
 export function createSeededRandom(seed) {
   let state = seed >>> 0 || 0x6d2b79f5
   return () => {
@@ -36,7 +103,7 @@ function hasOverlap(plat, other) {
 }
 
 function bbOverlapsZRange(plat, bb) {
-  const bbHalfD = config.FACADE_DEPTH / 2
+  const bbHalfD = (bb.depth || config.FACADE_DEPTH) / 2
   return (plat.d / 2 + bbHalfD) - Math.abs(plat.z - bb.z) > 0
 }
 
@@ -117,6 +184,7 @@ function generateSegmentPlatforms(prevPlatform, segmentStartZ, difficulty = 'med
   const count = randInt(config.PLAT_MIN_PER_SEGMENT, config.PLAT_MAX_PER_SEGMENT, rng)
   const platforms = []
   const billboards = []
+  const courseObstacles = []
 
   const halfW = config.CORRIDOR_WIDTH / 2 - 1
 
@@ -135,8 +203,10 @@ function generateSegmentPlatforms(prevPlatform, segmentStartZ, difficulty = 'med
   let afterGapSide = 0 // 0 = no constraint, -1/1 = force next platform to this side
 
   for (let i = 0; i < count; i++) {
-    // Insert billboard gap before this platform?
-    if (platIndex > 0 && platIndex % config.FACADE_GAP_EVERY === 0 && i >= WARMUP_COUNT) {
+    const isTraversalGap = i >= WARMUP_COUNT && rng() < config.PLAT_GAP_CHANCE
+    const hasFacade = isTraversalGap && rng() < config.FACADE_GAP_CHANCE
+
+    if (hasFacade) {
       const gapMidZ = nextZ - config.BILLBOARD_GAP_SIZE / 2
       const tooClose = lastBillboardZ !== null &&
         Math.abs(gapMidZ - lastBillboardZ) < config.FACADE_DEPTH + config.MIN_PLATFORM_SPACING
@@ -152,8 +222,8 @@ function generateSegmentPlatforms(prevPlatform, segmentStartZ, difficulty = 'med
           height: facadeHeight,
           width: config.FACADE_WIDTH,
         })
+        billboards.at(-1).beforePlatformId = platIndex
         lastBillboardZ = gapMidZ
-        nextZ -= config.BILLBOARD_GAP_SIZE
         afterGapSide = side
       }
     }
@@ -169,7 +239,9 @@ function generateSegmentPlatforms(prevPlatform, segmentStartZ, difficulty = 'med
 
     const heightRoll = rng()
     let dy
-    if (heightRoll < 0.3) {
+    if (!isTraversalGap) {
+      dy = 0
+    } else if (heightRoll < 0.3) {
       dy = rand(-maxDown * 0.5, -maxDown * 0.1, rng)
     } else if (heightRoll < 0.7) {
       dy = rand(maxUp * 0.2, maxUp * 0.7, rng)
@@ -185,7 +257,9 @@ function generateSegmentPlatforms(prevPlatform, segmentStartZ, difficulty = 'med
     const h = config.BOX_HEIGHT
     const d = baseDepth * sizeScale * warmupSizeBonus
 
-    const edgeGap = rand(diff.minGap, diff.maxGap, rng)
+    const edgeGap = isTraversalGap
+      ? rand(diff.minGap, diff.maxGap, rng)
+      : rand(config.PLAT_SEAM_GAP_MIN, config.PLAT_SEAM_GAP_MAX, rng)
     const prevHalfD = prev.d / 2
     const pz = nextZ - prevHalfD - edgeGap - d / 2
     nextZ = pz
@@ -212,6 +286,9 @@ function generateSegmentPlatforms(prevPlatform, segmentStartZ, difficulty = 'med
       x: Math.round(px * 10) / 10,
       y: Math.round(py * 10) / 10,
       z: Math.round(pz * 10) / 10,
+      platformId: platIndex,
+      isTraversalGap,
+      gapBefore: edgeGap,
     }
 
     const platTopY = plat.y + plat.h / 2
@@ -318,8 +395,12 @@ function generateSegmentPlatforms(prevPlatform, segmentStartZ, difficulty = 'med
   let previous = isFirstSegment ? null : entryPlatform
   for (const current of platforms) {
     if (previous && current !== previous) {
-      const minGap = config.MIN_PLATFORM_SPACING + 0.2
-      const maxGap = config.PLAT_MAX_GAP + config.BILLBOARD_GAP_SIZE
+      const minGap = current.isTraversalGap
+        ? config.PLAT_MIN_GAP
+        : config.PLAT_SEAM_GAP_MIN + 0.1
+      const maxGap = current.isTraversalGap
+        ? config.PLAT_MAX_GAP
+        : config.PLAT_SEAM_GAP_MAX
       const nearestZ = previous.z - previous.d / 2 - minGap - current.d / 2
       const furthestZ = previous.z - previous.d / 2 - maxGap - current.d / 2
       current.z = Math.round(clamp(current.z, furthestZ, nearestZ) * 10) / 10
@@ -331,12 +412,33 @@ function generateSegmentPlatforms(prevPlatform, segmentStartZ, difficulty = 'med
     }
     const previousTopY = previous.y + previous.h / 2
     const currentTopY = current.y + current.h / 2
-    if (currentTopY - previousTopY > absMaxReach) {
+    if (!current.isTraversalGap) {
+      current.y = previousTopY - current.h / 2
+    } else if (currentTopY - previousTopY > absMaxReach) {
       current.y = Math.round(clamp(previousTopY + absMaxReach * 0.8, current.h / 2 + 0.5, config.CORRIDOR_HEIGHT - 2) * 10) / 10
     }
     previous = current
   }
   prev = platforms.at(-1)
+
+  for (const bb of billboards) {
+    const endIndex = platforms.findIndex(platform => platform.platformId === bb.beforePlatformId)
+    if (endIndex < 0) continue
+    const startPlatform = endIndex === 0 ? entryPlatform : platforms[endIndex - 1]
+    const endPlatform = platforms[endIndex]
+    const startEdge = startPlatform.z - startPlatform.d / 2
+    const endEdge = endPlatform.z + endPlatform.d / 2
+    bb.z = (startEdge + endEdge) / 2
+    bb.y = Math.min(
+      startPlatform.y + startPlatform.h / 2,
+      endPlatform.y + endPlatform.h / 2,
+    ) - 1
+    bb.depth = Math.max(2, startEdge - endEdge + 1)
+    const wallOffset = config.FACADE_HITBOX_PAD + bb.width / 2 + 0.5
+    bb.x = bb.side > 0
+      ? Math.max(startPlatform.x + startPlatform.w / 2, endPlatform.x + endPlatform.w / 2) + wallOffset
+      : Math.min(startPlatform.x - startPlatform.w / 2, endPlatform.x - endPlatform.w / 2) - wallOffset
+  }
 
   // Facades are optional traversal features. Drop one when platform correction
   // leaves no safe placement rather than moving the required path out of reach.
@@ -346,17 +448,60 @@ function generateSegmentPlatforms(prevPlatform, segmentStartZ, difficulty = 'med
       x: bb.x,
       y: bb.y + bb.height / 2,
       z: bb.z,
-      w: bb.width + (config.FACADE_HITBOX_PAD + config.FACADE_MIN_CLEARANCE) * 2,
+      w: bb.width + config.FACADE_HITBOX_PAD * 2 + 0.4,
       h: bb.height,
-      d: config.FACADE_DEPTH + config.FACADE_MIN_CLEARANCE * 2,
+      d: (bb.depth || config.FACADE_DEPTH) + 0.4,
     }
     if (platforms.some(platform => hasOverlap(platform, clearanceBox))) billboards.splice(i, 1)
   }
   lastBillboardZ = billboards.at(-1)?.z ?? previousBillboardZ
 
+  for (let platformIndex = 0; platformIndex < platforms.length; platformIndex++) {
+    const platform = platforms[platformIndex]
+    if (platform.isSpawn || platform.d < config.COURSE_OBSTACLE_EDGE_MARGIN * 2 + 2) continue
+    if (rng() > config.COURSE_OBSTACLE_CHANCE) continue
+
+    const obstacleCount = rng() < config.COURSE_SECOND_OBSTACLE_CHANCE ? 2 : 1
+    const usedZ = []
+    for (let obstacleIndex = 0; obstacleIndex < obstacleCount; obstacleIndex++) {
+      let z = 0
+      let placed = false
+      for (let attempt = 0; attempt < 8; attempt++) {
+        z = rand(
+          platform.z - platform.d / 2 + config.COURSE_OBSTACLE_EDGE_MARGIN,
+          platform.z + platform.d / 2 - config.COURSE_OBSTACLE_EDGE_MARGIN,
+          rng,
+        )
+        if (usedZ.every(otherZ => Math.abs(z - otherZ) >= config.COURSE_OBSTACLE_MIN_SPACING)) {
+          placed = true
+          break
+        }
+      }
+      if (!placed) continue
+      usedZ.push(z)
+
+      const type = rng() < 0.5 ? 'hurdle' : 'overhead'
+      const platformTop = platform.y + platform.h / 2
+      const height = type === 'hurdle' ? config.HURDLE_HEIGHT : config.OVERHEAD_BEAM_HEIGHT
+      const bottom = type === 'hurdle' ? platformTop : platformTop + config.OVERHEAD_BEAM_BOTTOM
+      courseObstacles.push({
+        type,
+        platformIndex,
+        x: platform.x,
+        y: bottom + height / 2,
+        z: Math.round(z * 10) / 10,
+        w: Math.max(2, platform.w - 0.8),
+        h: height,
+        d: type === 'hurdle' ? config.HURDLE_DEPTH : config.OVERHEAD_BEAM_DEPTH,
+      })
+    }
+  }
+
   // Rails depend on final platform transforms and must be generated last.
   const rails = []
-  for (const plat of platforms) {
+  for (let platformIndex = 0; platformIndex < platforms.length; platformIndex++) {
+    const plat = platforms[platformIndex]
+    if (courseObstacles.some(obstacle => obstacle.platformIndex === platformIndex)) continue
     if (plat.isSpawn || plat.d < 10 || rng() > config.RAIL_EDGE_CHANCE) continue
     const railY = plat.y + plat.h / 2 + 0.3
     rails.push({
@@ -371,8 +516,12 @@ function generateSegmentPlatforms(prevPlatform, segmentStartZ, difficulty = 'med
   const curvedCount = Math.floor(config.CURVED_RAILS_PER_SEGMENT + (rng() < (config.CURVED_RAILS_PER_SEGMENT % 1) ? 1 : 0))
   const usedPairs = new Set()
   for (let c = 0; c < curvedCount && platforms.length > 2; c++) {
-    const startIdx = randInt(0, platforms.length - 2, rng)
-    const endIdx = startIdx + 1
+    const wantsLongRail = platforms.length > 3 && rng() < config.RAIL_LONG_CHANCE
+    const span = wantsLongRail
+      ? randInt(2, Math.min(config.RAIL_LONG_MAX_SPAN, platforms.length - 1), rng)
+      : 1
+    const startIdx = randInt(0, platforms.length - 1 - span, rng)
+    const endIdx = startIdx + span
     const pairKey = `${startIdx}-${endIdx}`
     if (usedPairs.has(pairKey)) continue
     usedPairs.add(pairKey)
@@ -380,29 +529,68 @@ function generateSegmentPlatforms(prevPlatform, segmentStartZ, difficulty = 'med
     const startPlat = platforms[startIdx]
     const endPlat = platforms[endIdx]
     if (startPlat.isSpawn || endPlat.isSpawn) continue
+    if (!platforms.slice(startIdx + 1, endIdx + 1).some(platform => platform.isTraversalGap)) continue
     const gap = Math.abs(startPlat.z - endPlat.z) - startPlat.d / 2 - endPlat.d / 2
     if (gap < 8) continue
 
     const startY = startPlat.y + startPlat.h / 2 + 1
     const endY = endPlat.y + endPlat.h / 2 + 1
-    const midY = (startY + endY) / 2 + rand(1.5, 3, rng) * Math.min(1, gap / 12)
+    const intermediateTopY = span > 1
+      ? Math.max(...platforms.slice(startIdx + 1, endIdx).map(p => p.y + p.h / 2))
+      : -Infinity
+    const arcHeight = wantsLongRail ? rand(4, 7, rng) : rand(1.5, 3, rng)
+    const midY = Math.max(
+      (startY + endY) / 2 + arcHeight * Math.min(1, gap / 12),
+      intermediateTopY + 2,
+    )
     const midX = (startPlat.x + endPlat.x) / 2 + rand(-1, 1, rng)
     const sz = startPlat.z - startPlat.d / 2
     const ez = endPlat.z + endPlat.d / 2
+    const midZ = sz + (ez - sz) * 0.5
 
-    rails.push({
-      points: [
+    let points
+    if (wantsLongRail) {
+      const bridgeY = Math.max(midY, intermediateTopY + 3)
+      const lateralOffset = midX - (startPlat.x + endPlat.x) / 2
+      const bridgePoint = (z, y = bridgeY) => {
+        const fraction = (sz - z) / (sz - ez)
+        return {
+          x: startPlat.x + (endPlat.x - startPlat.x) * fraction + Math.sin(fraction * Math.PI) * lateralOffset,
+          y,
+          z,
+        }
+      }
+      points = [{ x: startPlat.x, y: startY, z: sz }]
+      for (const intermediate of platforms.slice(startIdx + 1, endIdx)) {
+        const clearance = config.RAIL_RADIUS * 1.25 + 0.3
+        points.push(bridgePoint(intermediate.z + intermediate.d / 2 + clearance))
+        points.push(bridgePoint(intermediate.z, bridgeY + 1))
+        points.push(bridgePoint(intermediate.z - intermediate.d / 2 - clearance))
+      }
+      points.push({ x: endPlat.x, y: endY, z: ez })
+    } else {
+      points = [
         { x: startPlat.x, y: startY, z: sz },
         { x: startPlat.x + (midX - startPlat.x) * 0.35, y: startY + (midY - startY) * 0.35, z: sz + (ez - sz) * 0.25 },
-        { x: midX, y: midY, z: (startPlat.z + endPlat.z) / 2 },
+        { x: midX, y: midY, z: midZ },
         { x: midX + (endPlat.x - midX) * 0.65, y: endY + (midY - endY) * 0.35, z: sz + (ez - sz) * 0.75 },
         { x: endPlat.x, y: endY, z: ez },
-      ],
+      ]
+    }
+
+    if (wantsLongRail && !isLongRailValid(points, platforms.slice(startIdx + 1, endIdx))) continue
+
+    rails.push({
+      points,
       isCurved: true,
+      isLong: wantsLongRail,
+      platformSpan: span,
+      startPlatformIndex: startIdx,
+      endPlatformIndex: endIdx,
     })
   }
 
-  return { platforms, billboards, rails, lastPlatform: prev, platformCounter: platIndex, lastBillboardZ: lastBillboardZ }
+  return { platforms, billboards, courseObstacles, rails, lastPlatform: prev, platformCounter: platIndex, lastBillboardZ: lastBillboardZ }
 }
 
 export function validateSegment(platforms, billboards, neighborPlatforms) {
@@ -443,7 +631,7 @@ export function validateSegment(platforms, billboards, neighborPlatforms) {
       const bb = billboards[j]
       const bbW = bb.width || config.FACADE_WIDTH
       const bbH = bb.height || config.FACADE_HEIGHT_MIN
-      const bbD = config.FACADE_DEPTH
+      const bbD = bb.depth || config.FACADE_DEPTH
       const bbY = bb.y + bbH / 2
       if (hasOverlap(p, { w: bbW, d: bbD, h: bbH, x: bb.x, z: bb.z, y: bbY })) {
         issues.push({ type: 'clip', platIndices: [i], msg: `CLIP plat ${i} into billboard ${j}` })
@@ -674,7 +862,7 @@ export class CourseManager {
     const startZ = -index * config.SEGMENT_DEPTH
     const rng = createSeededRandom(this._seed + index)
 
-    const { platforms, billboards, rails, lastPlatform, platformCounter, lastBillboardZ } = generateSegmentPlatforms(
+    const { platforms, billboards, courseObstacles, rails, lastPlatform, platformCounter, lastBillboardZ } = generateSegmentPlatforms(
       this._lastPlatform, startZ, this._difficulty, index === 0, this._platformCounter,
       this._prevSegmentPlatforms, this._lastBillboardZ, rng
     )
@@ -697,6 +885,20 @@ export class CourseManager {
       obstacles.push({ mesh: result.mainMesh, aabb, ledgeAABB, isSpawn: !!b.isSpawn })
     })
 
+    for (const descriptor of courseObstacles) {
+      const result = createCourseObstacleMeshes(descriptor, platforms[descriptor.platformIndex])
+      for (const mesh of result.meshes) meshes.push(mesh)
+      for (const mesh of result.meshes) {
+        obstacles.push({
+          mesh,
+          aabb: new THREE.Box3().setFromObject(mesh),
+          isCourseObstacle: true,
+          obstacleType: descriptor.type,
+          noLedgeGrab: true,
+        })
+      }
+    }
+
     // Billboards placed in gaps between platforms
     for (const bb of billboards) {
       const styleIdx = rng() < 0.75
@@ -717,7 +919,7 @@ export class CourseManager {
     // Rails
     const segmentRails = []
     for (const railData of rails) {
-      const railDef = new RailDefinition(railData.points, railData.isCurved)
+      const railDef = new RailDefinition(railData.points, railData.isCurved, railData.isLong)
       const result = createRailMeshes(railDef)
       meshes.push(result.group)
       segmentRails.push(result)
@@ -728,7 +930,7 @@ export class CourseManager {
 
     const minZ = Math.min(...platforms.map(p => p.z - p.d / 2))
     const maxZ = Math.max(...platforms.map(p => p.z + p.d / 2))
-    return { index, startZ, minZ, maxZ, platforms, meshes, obstacles, issues, railData: segmentRails }
+    return { index, startZ, minZ, maxZ, platforms, courseObstacles, meshes, obstacles, issues, railData: segmentRails }
   }
 
   segmentBoundaries() {

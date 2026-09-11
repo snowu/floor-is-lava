@@ -29,7 +29,7 @@ export class GameSession {
   }
 
   landOn(obstacle) {
-    if (obstacle.isSpawn || this._touchedObstacles.has(obstacle)) return false
+    if (obstacle.isSpawn || obstacle.isCourseObstacle || this._touchedObstacles.has(obstacle)) return false
     this._touchedObstacles.add(obstacle)
     this.score++
     this._updateBestScore()

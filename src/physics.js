@@ -46,6 +46,8 @@ export class Physics {
     this.onChain = null
     this.onGrind = null
     this._wallrunTimer = 0
+    this._sliding = false
+    this._slideTimer = 0
   }
 
   get state() { return this._state }
@@ -58,8 +60,9 @@ export class Physics {
   get chainCombo() { return this._chainCombo }
 
   get legsExtended() { return this._legsExtended }
+  get sliding() { return this._sliding }
 
-  get activeHeight() { return config.PLAYER_HEIGHT }
+  get activeHeight() { return this._sliding ? config.SLIDE_HEIGHT : config.PLAYER_HEIGHT }
 
   get upperBodyMin() { return config.KICK_HIP_Y }
   get upperBodyMax() { return config.PLAYER_HEIGHT }
@@ -99,7 +102,7 @@ export class Physics {
     this._chainTimer = config.CHAIN_WINDOW
   }
 
-  update(humanoid, moveDir, wDown, sDown, eDown, jumpPressed, delta, obstacles, wallAABBs = []) {
+  update(humanoid, moveDir, wDown, sDown, eDown, jumpPressed, slidePressed, delta, obstacles, wallAABBs = []) {
     this._landedOnGround = false
     this._legsExtended = eDown && this._state === STATE.AIRBORNE
 
@@ -108,6 +111,21 @@ export class Physics {
     // Reset each frame; set in ground/collision steps. If GROUNDED at end
     // of frame but never set, the player walked off a box edge and must fall.
     let supportedThisFrame = false
+
+    if (slidePressed && this._state === STATE.GROUNDED) {
+      this._sliding = true
+      this._slideTimer = config.SLIDE_DURATION
+    }
+
+    if (this._sliding) {
+      this._slideTimer -= delta
+      if (jumpPressed) {
+        if (this._canStand(humanoid, obstacles)) this._sliding = false
+        else jumpPressed = false
+      } else if (this._slideTimer <= 0 && this._canStand(humanoid, obstacles)) {
+        this._sliding = false
+      }
+    }
 
     // 1. Jump — grounded, coyote time, air jump, or wall jump
     if (jumpPressed) {
@@ -251,17 +269,24 @@ export class Physics {
               this.addChainBoost(config.WALLRUN_SPEED_BOOST)
             }
           } else {
-            // Upper body always collides
-            const upperH = config.PLAYER_HEIGHT - config.KICK_HIP_Y
-            if (this._resolveAABB(humanoid, obs.aabb, config.KICK_HIP_Y, upperH)) {
-              supportedThisFrame = true
-              if (!this._landedOnGround && this.onBoxLand) this.onBoxLand(obs)
-            }
-            // Lower body only when legs not extended
-            if (!this._legsExtended) {
-              if (this._resolveAABB(humanoid, obs.aabb, 0, config.KICK_HIP_Y)) {
+            if (this._sliding) {
+              if (this._resolveAABB(humanoid, obs.aabb, 0, config.SLIDE_HEIGHT)) {
                 supportedThisFrame = true
                 if (!this._landedOnGround && this.onBoxLand) this.onBoxLand(obs)
+              }
+            } else {
+              // Upper body always collides
+              const upperH = config.PLAYER_HEIGHT - config.KICK_HIP_Y
+              if (this._resolveAABB(humanoid, obs.aabb, config.KICK_HIP_Y, upperH)) {
+                supportedThisFrame = true
+                if (!this._landedOnGround && this.onBoxLand) this.onBoxLand(obs)
+              }
+              // Lower body only when legs not extended
+              if (!this._legsExtended) {
+                if (this._resolveAABB(humanoid, obs.aabb, 0, config.KICK_HIP_Y)) {
+                  supportedThisFrame = true
+                  if (!this._landedOnGround && this.onBoxLand) this.onBoxLand(obs)
+                }
               }
             }
           }
@@ -334,9 +359,13 @@ export class Physics {
       // Wall collision
       for (const aabb of wallAABBs) {
         if (humanoid.position.z - 3 > aabb.max.z || humanoid.position.z + 3 < aabb.min.z) continue
-        const upperH = config.PLAYER_HEIGHT - config.KICK_HIP_Y
-        this._resolveAABB(humanoid, aabb, config.KICK_HIP_Y, upperH)
-        if (!this._legsExtended) {
+        if (this._sliding) {
+          this._resolveAABB(humanoid, aabb, 0, config.SLIDE_HEIGHT)
+        } else {
+          const upperH = config.PLAYER_HEIGHT - config.KICK_HIP_Y
+          this._resolveAABB(humanoid, aabb, config.KICK_HIP_Y, upperH)
+        }
+        if (!this._sliding && !this._legsExtended) {
           this._resolveAABB(humanoid, aabb, 0, config.KICK_HIP_Y)
         }
       }
@@ -452,6 +481,21 @@ export class Physics {
     return false
   }
 
+  _canStand(humanoid, obstacles) {
+    const hw = config.PLAYER_WIDTH / 2
+    const minY = humanoid.position.y + config.SLIDE_HEIGHT
+    const maxY = humanoid.position.y + config.PLAYER_HEIGHT
+    for (const obs of obstacles) {
+      if (obs.isBillboard) continue
+      const a = obs.aabb
+      if (humanoid.position.x + hw <= a.min.x || humanoid.position.x - hw >= a.max.x ||
+          maxY <= a.min.y || minY >= a.max.y ||
+          humanoid.position.z + hw <= a.min.z || humanoid.position.z - hw >= a.max.z) continue
+      return false
+    }
+    return true
+  }
+
   _resolveAABBAxis(humanoid, aabb) {
     const hw = config.PLAYER_WIDTH / 2
     const ph = this.activeHeight
@@ -500,7 +544,7 @@ export class Physics {
     const pz     = humanoid.position.z
 
     for (const obs of obstacles) {
-      if (obs.isBillboard) continue
+      if (obs.isBillboard || obs.noLedgeGrab) continue
       const grabBox = obs.ledgeAABB || obs.aabb
       const topY = obs.aabb.max.y
 
@@ -541,6 +585,8 @@ export class Physics {
     this._chainCombo = 0
     this._wallrunTimer = 0
     this._wallrunGraceTimer = 0
+    this._sliding = false
+    this._slideTimer = 0
   }
 
   static spawnPosition() {

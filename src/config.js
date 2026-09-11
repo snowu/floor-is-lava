@@ -33,6 +33,10 @@ const config = {
   LEDGE_PULLUP_TIME: 1.0,
   LEDGE_PULLUP_SPEED: 7,
 
+  // ── slide ────────────────────────────────────────────────────────────────
+  SLIDE_HEIGHT:    0.65,
+  SLIDE_DURATION:  0.85,
+
   // ── kick (E mid-air) ──────────────────────────────────────────────────────
   KICK_LEG_REACH:   1.2,   // how far legs extend forward from player center
   KICK_LEG_HEIGHT:  0.5,   // Y height of the leg hitbox (centered at hip level)
@@ -56,15 +60,18 @@ const config = {
   GENERATE_TIME_AHEAD:  2,
 
   // ── rails ───────────────────────────────────────────────────────────────
-  RAIL_RADIUS:             0.15,
+  RAIL_RADIUS:             0.18,
   RAIL_SNAP_RADIUS:        1.2,
   RAIL_SNAP_Y_TOLERANCE:   1.5,
   RAIL_TRACK_SPACING:      0.3,
   RAIL_TIE_SPACING:        1.5,
-  RAIL_EDGE_CHANCE:        0.5,
-  CURVED_RAILS_PER_SEGMENT: 2.5,
+  RAIL_EDGE_CHANCE:        0.25,
+  CURVED_RAILS_PER_SEGMENT: 3.5,
+  RAIL_LONG_CHANCE:         0.2,
+  RAIL_LONG_MAX_SPAN:       3,
   RAIL_COLOR_STRAIGHT:     0x00ffcc,
   RAIL_COLOR_CURVED:       0x00ccff,
+  RAIL_COLOR_LONG:         0xff66cc,
   RAIL_EMISSIVE_INTENSITY: 0.4,
 
   // ── wall run ──────────────────────────────────────────────────────────
@@ -100,24 +107,28 @@ const config = {
   FACADE_DEPTH:            15,
   FACADE_HITBOX_PAD:       1.0,
   FACADE_MIN_CLEARANCE:    2,
+  FACADE_GAP_CHANCE:       0.45,
 
   // ── platform generation ────────────────────────────────────────────────────
   MAX_DROP:               6,
-  MIN_PLATFORM_SPACING:   5,
+  MIN_PLATFORM_SPACING:   0.2,
   FIRST_PLATFORM_GAP:     3,
   PLAT_HEIGHT_FRAC:       0.5,
   PLAT_RANGE_FRAC:        0.5,
-  PLAT_MIN_GAP:           4,
+  PLAT_MIN_GAP:           6,
   PLAT_MAX_GAP:           10,
+  PLAT_GAP_CHANCE:        0.18,
+  PLAT_SEAM_GAP_MIN:      0.2,
+  PLAT_SEAM_GAP_MAX:      0.6,
   PLAT_DOUBLE_JUMP_CHANCE: 0.1,
   PLAT_MIN_PER_SEGMENT:   6,
   PLAT_MAX_PER_SEGMENT:   10,
-  BOX_WIDTH_MIN:          3,
-  BOX_WIDTH_MAX:          6,
+  BOX_WIDTH_MIN:          7,
+  BOX_WIDTH_MAX:          12,
   BOX_WIDTH:              4,
   BOX_HEIGHT:             1.1,
-  BOX_DEPTH_MIN:          8,
-  BOX_DEPTH_MAX:          30,
+  BOX_DEPTH_MIN:          24,
+  BOX_DEPTH_MAX:          45,
   BOX_DEPTH:              15,
 
   // ── camera ─────────────────────────────────────────────────────────────────
@@ -211,6 +222,17 @@ const config = {
   WARMUP_COUNT:           2,
   DOUBLE_JUMP_SIZE_SCALE: 0.8,
 
+  // ── rooftop obstacles ────────────────────────────────────────────────────
+  COURSE_OBSTACLE_CHANCE: 0.72,
+  COURSE_SECOND_OBSTACLE_CHANCE: 0.28,
+  COURSE_OBSTACLE_EDGE_MARGIN: 5,
+  COURSE_OBSTACLE_MIN_SPACING: 8,
+  HURDLE_HEIGHT:          0.9,
+  HURDLE_DEPTH:           0.65,
+  OVERHEAD_BEAM_BOTTOM:   0.82,
+  OVERHEAD_BEAM_HEIGHT:   0.5,
+  OVERHEAD_BEAM_DEPTH:    0.8,
+
   // ── animation ─────────────────────────────────────────────────────────────
   ANIM_IDLE_BOB_SPEED:    2,
   ANIM_IDLE_BOB_AMOUNT:   0.02,
@@ -220,6 +242,7 @@ const config = {
   ANIM_RUN_FREQ_SCALE:    1.2,
   ANIM_LANDING_DURATION:  0.15,
   ANIM_PULLUP_DURATION:   0.3,
+  ANIM_SLIDE_CAMERA_DROP: 1.0,
 }
 
 // Derived values — recalculated on access

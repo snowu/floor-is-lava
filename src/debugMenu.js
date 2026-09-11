@@ -11,7 +11,7 @@ for (const key of Object.keys(config)) {
   if (!DERIVED_KEYS.has(key)) DEFAULTS[key] = config[key]
 }
 
-const ANIM_STATES = ['auto', 'idle', 'running', 'jumping', 'falling', 'landing', 'hanging', 'pullUp', 'wallrun', 'kick']
+const ANIM_STATES = ['auto', 'idle', 'running', 'jumping', 'falling', 'landing', 'hanging', 'pullUp', 'wallrun', 'kick', 'sliding']
 
 export function createDebugMenu(animator, scene, courses, { camera, ambientLight, dirLight } = {}) {
   const gui = new GUI({ title: 'Debug (F2)', width: 400 })
@@ -28,7 +28,9 @@ export function createDebugMenu(animator, scene, courses, { camera, ambientLight
     for (const c of courses) {
       for (const rail of c.allRails) {
         if (!rail.railMaterials) continue
-        const color = rail.railDef.isCurved ? config.RAIL_COLOR_CURVED : config.RAIL_COLOR_STRAIGHT
+        const color = rail.railDef.isLong
+          ? config.RAIL_COLOR_LONG
+          : rail.railDef.isCurved ? config.RAIL_COLOR_CURVED : config.RAIL_COLOR_STRAIGHT
         for (const mat of rail.railMaterials) {
           if (mat.emissive) {
             mat.emissive.setHex(color)
@@ -67,16 +69,19 @@ export function createDebugMenu(animator, scene, courses, { camera, ambientLight
 
   // ── Rails ─────────────────────────────────────────────────────────────────
   const rails = gui.addFolder('Rails')
-  rails.add(config, 'RAIL_RADIUS', 0.01, 0.2, 0.01).name('Radius').onFinishChange(rebuildCourses)
+  rails.add(config, 'RAIL_RADIUS', 0.01, 0.3, 0.01).name('Radius').onFinishChange(rebuildCourses)
   rails.add(config, 'RAIL_SNAP_RADIUS', 0.1, 3, 0.1).name('Snap Radius')
   rails.add(config, 'RAIL_SNAP_Y_TOLERANCE', 0.1, 3, 0.1).name('Snap Y Tolerance')
   rails.add(config, 'RAIL_TRACK_SPACING', 0.1, 1, 0.05).name('Track Spacing').onFinishChange(rebuildCourses)
   rails.add(config, 'RAIL_TIE_SPACING', 0.5, 5, 0.25).name('Tie Spacing').onFinishChange(rebuildCourses)
   rails.add(config, 'RAIL_EDGE_CHANCE', 0, 1, 0.05).name('Edge Chance').onFinishChange(rebuildCourses)
-  rails.add(config, 'CURVED_RAILS_PER_SEGMENT', 0, 5, 0.5).name('Curved/Segment').onFinishChange(rebuildCourses)
+  rails.add(config, 'CURVED_RAILS_PER_SEGMENT', 0, 8, 0.5).name('Curved/Segment').onFinishChange(rebuildCourses)
+  rails.add(config, 'RAIL_LONG_CHANCE', 0, 0.5, 0.01).name('Long Chance').onFinishChange(rebuildCourses)
+  rails.add(config, 'RAIL_LONG_MAX_SPAN', 2, 3, 1).name('Long Max Span').onFinishChange(rebuildCourses)
   rails.add(config, 'RAIL_EMISSIVE_INTENSITY', 0, 2, 0.05).name('Emissive Intensity').onChange(() => updateRailColors(courses))
   rails.addColor(config, 'RAIL_COLOR_STRAIGHT').name('Straight Color').onChange(() => updateRailColors(courses))
   rails.addColor(config, 'RAIL_COLOR_CURVED').name('Curved Color').onChange(() => updateRailColors(courses))
+  rails.addColor(config, 'RAIL_COLOR_LONG').name('Long Color').onChange(() => updateRailColors(courses))
   rails.close()
 
   // ── Facade ────────────────────────────────────────────────────────────────
@@ -85,7 +90,7 @@ export function createDebugMenu(animator, scene, courses, { camera, ambientLight
   facade.add(config, 'FACADE_HEIGHT_MAX', 4, 30, 1).name('Height Max').onFinishChange(rebuildCourses)
   facade.add(config, 'FACADE_WIDTH', 0.1, 5, 0.1).name('Width').onFinishChange(rebuildCourses)
   facade.add(config, 'FACADE_X_OFFSET', 2, 20, 0.5).name('X Offset').onFinishChange(rebuildCourses)
-  facade.add(config, 'FACADE_GAP_EVERY', 1, 10, 1).name('Gap Every').onFinishChange(rebuildCourses)
+  facade.add(config, 'FACADE_GAP_CHANCE', 0, 1, 0.05).name('Gap Chance').onFinishChange(rebuildCourses)
   facade.add(config, 'FACADE_DEPTH', 1, 40, 1).name('Depth').onFinishChange(rebuildCourses)
   facade.add(config, 'FACADE_HITBOX_PAD', 0, 5, 0.1).name('Hitbox Pad').onFinishChange(rebuildCourses)
   facade.add(config, 'FACADE_MIN_CLEARANCE', 0, 5, 0.5).name('Min Clearance').onFinishChange(rebuildCourses)
@@ -96,6 +101,12 @@ export function createDebugMenu(animator, scene, courses, { camera, ambientLight
   dims.add(config, 'PLAYER_WIDTH', 0.1, 3, 0.05)
   dims.add(config, 'PLAYER_HEIGHT', 0.5, 5, 0.1)
   dims.close()
+
+  const slide = gui.addFolder('Slide')
+  slide.add(config, 'SLIDE_HEIGHT', 0.3, 1.2, 0.05).name('Collider Height')
+  slide.add(config, 'SLIDE_DURATION', 0.2, 2, 0.05).name('Duration')
+  slide.add(config, 'ANIM_SLIDE_CAMERA_DROP', 0.3, 1.4, 0.05).name('Camera Drop')
+  slide.close()
 
   // ── Ledge Grab ────────────────────────────────────────────────────────────
   const ledge = gui.addFolder('Ledge Grab')
@@ -162,12 +173,15 @@ export function createDebugMenu(animator, scene, courses, { camera, ambientLight
   // ── Platform Generation ────────────────────────────────────────────────────
   const plat = gui.addFolder('Platform Generation')
   plat.add(config, 'MAX_DROP', 1, 20, 0.5).onFinishChange(rebuildCourses)
-  plat.add(config, 'MIN_PLATFORM_SPACING', 0.5, 5, 0.25).onFinishChange(rebuildCourses)
+  plat.add(config, 'MIN_PLATFORM_SPACING', 0.1, 5, 0.1).onFinishChange(rebuildCourses)
   plat.add(config, 'FIRST_PLATFORM_GAP', 1, 20, 1).onFinishChange(rebuildCourses)
   plat.add(config, 'PLAT_HEIGHT_FRAC', 0, 1, 0.05).name('Height Fraction').onFinishChange(rebuildCourses)
   plat.add(config, 'PLAT_RANGE_FRAC', 0, 1, 0.05).name('Range Fraction').onFinishChange(rebuildCourses)
   plat.add(config, 'PLAT_MIN_GAP', 1, 15, 0.5).name('Min Gap').onFinishChange(rebuildCourses)
   plat.add(config, 'PLAT_MAX_GAP', 1, 20, 0.5).name('Max Gap').onFinishChange(rebuildCourses)
+  plat.add(config, 'PLAT_GAP_CHANCE', 0, 1, 0.01).name('Gap Chance').onFinishChange(rebuildCourses)
+  plat.add(config, 'PLAT_SEAM_GAP_MIN', 0, 2, 0.1).name('Seam Min').onFinishChange(rebuildCourses)
+  plat.add(config, 'PLAT_SEAM_GAP_MAX', 0, 3, 0.1).name('Seam Max').onFinishChange(rebuildCourses)
   plat.add(config, 'PLAT_DOUBLE_JUMP_CHANCE', 0, 1, 0.05).name('Double Jump %').onFinishChange(rebuildCourses)
   plat.add(config, 'PLAT_MIN_PER_SEGMENT', 1, 15, 1).name('Min Per Segment').onFinishChange(rebuildCourses)
   plat.add(config, 'PLAT_MAX_PER_SEGMENT', 1, 20, 1).name('Max Per Segment').onFinishChange(rebuildCourses)
@@ -175,13 +189,22 @@ export function createDebugMenu(animator, scene, courses, { camera, ambientLight
   plat.add(config, 'BOX_WIDTH_MAX', 1, 15, 0.5).name('Width Max').onFinishChange(rebuildCourses)
   plat.add(config, 'BOX_WIDTH', 0.5, 10, 0.25).name('Width Default').onFinishChange(rebuildCourses)
   plat.add(config, 'BOX_HEIGHT', 0.1, 3, 0.05).name('Box Height').onFinishChange(rebuildCourses)
-  plat.add(config, 'BOX_DEPTH_MIN', 2, 20, 1).name('Depth Min').onFinishChange(rebuildCourses)
-  plat.add(config, 'BOX_DEPTH_MAX', 5, 50, 1).name('Depth Max').onFinishChange(rebuildCourses)
+  plat.add(config, 'BOX_DEPTH_MIN', 2, 60, 1).name('Depth Min').onFinishChange(rebuildCourses)
+  plat.add(config, 'BOX_DEPTH_MAX', 5, 80, 1).name('Depth Max').onFinishChange(rebuildCourses)
   plat.add(config, 'BOX_DEPTH', 0.5, 30, 0.5).name('Depth Default').onFinishChange(rebuildCourses)
   plat.add(config, 'SPAWN_PLAT_SIZE', 1, 10, 0.5).name('Spawn Platform Size').onFinishChange(rebuildCourses)
   plat.add(config, 'WARMUP_COUNT', 0, 10, 1).name('Warmup Platforms').onFinishChange(rebuildCourses)
   plat.add(config, 'DOUBLE_JUMP_SIZE_SCALE', 0.1, 1.5, 0.05).name('DblJump Size Scale').onFinishChange(rebuildCourses)
   plat.close()
+
+  const courseObstacles = gui.addFolder('Course Obstacles')
+  courseObstacles.add(config, 'COURSE_OBSTACLE_CHANCE', 0, 1, 0.05).name('Obstacle Chance').onFinishChange(rebuildCourses)
+  courseObstacles.add(config, 'COURSE_SECOND_OBSTACLE_CHANCE', 0, 1, 0.05).name('Second Chance').onFinishChange(rebuildCourses)
+  courseObstacles.add(config, 'COURSE_OBSTACLE_EDGE_MARGIN', 2, 10, 0.5).name('Edge Margin').onFinishChange(rebuildCourses)
+  courseObstacles.add(config, 'COURSE_OBSTACLE_MIN_SPACING', 3, 15, 0.5).name('Min Spacing').onFinishChange(rebuildCourses)
+  courseObstacles.add(config, 'HURDLE_HEIGHT', 0.3, 2, 0.1).name('Hurdle Height').onFinishChange(rebuildCourses)
+  courseObstacles.add(config, 'OVERHEAD_BEAM_BOTTOM', 0.5, 1.5, 0.05).name('Beam Clearance').onFinishChange(rebuildCourses)
+  courseObstacles.close()
 
   // ── Camera ────────────────────────────────────────────────────────────────
   const cam = gui.addFolder('Camera')

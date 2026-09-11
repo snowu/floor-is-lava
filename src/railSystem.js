@@ -1,11 +1,29 @@
 import * as THREE from 'three'
 import config from './config.js'
 
+class MonotonicRailCurve extends THREE.Curve {
+  constructor(points) {
+    super()
+    this._shape = new THREE.CatmullRomCurve3(points, false, 'centripetal')
+    this._startZ = points[0].z
+    this._endZ = points.at(-1).z
+  }
+
+  getPoint(t, target = new THREE.Vector3()) {
+    this._shape.getPoint(t, target)
+    target.z = THREE.MathUtils.lerp(this._startZ, this._endZ, t)
+    return target
+  }
+}
+
 export class RailDefinition {
-  constructor(points, isCurved = false) {
+  constructor(points, isCurved = false, isLong = false) {
     this.points = points.map(p => new THREE.Vector3(p.x, p.y, p.z))
     this.isCurved = isCurved
-    this.spline = new THREE.CatmullRomCurve3(this.points)
+    this.isLong = isLong
+    this.spline = isLong
+      ? new MonotonicRailCurve(this.points)
+      : new THREE.CatmullRomCurve3(this.points, false, 'centripetal')
     this.length = this.spline.getLength()
   }
 
@@ -21,9 +39,11 @@ export class RailDefinition {
 export function createRailMeshes(railDef) {
   const group = new THREE.Group()
   group.userData.segmentOwned = true
-  const neonColor = railDef.isCurved ? config.RAIL_COLOR_CURVED : config.RAIL_COLOR_STRAIGHT
+  const neonColor = railDef.isLong
+    ? config.RAIL_COLOR_LONG
+    : railDef.isCurved ? config.RAIL_COLOR_CURVED : config.RAIL_COLOR_STRAIGHT
   const segments = Math.max(16, Math.floor(railDef.length * 2))
-  const radius = config.RAIL_RADIUS
+  const radius = config.RAIL_RADIUS * (railDef.isLong ? 1.25 : 1)
   const railMaterials = []
 
   // Main rail tube

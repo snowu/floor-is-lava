@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { createSeededRandom, generateSegmentPlatforms, validateSegment } from '../src/courseGenerator.js'
 import config from '../src/config.js'
+import { RailDefinition } from '../src/railSystem.js'
 
 const RUNS = 25000
 
@@ -208,7 +209,7 @@ describe('segment generation', { timeout: 60000 }, () => {
   })
 
   it('keeps every forward gap within the traversal budget', () => {
-    const maxGap = config.PLAT_MAX_GAP + config.BILLBOARD_GAP_SIZE
+    const maxGap = config.PLAT_MAX_GAP
     for (let seed = 1; seed <= 5000; seed++) {
       const { platforms } = generateSegmentPlatforms(null, 0, 'medium', true, 0, null, null, createSeededRandom(seed))
       for (let i = 1; i < platforms.length; i++) {
@@ -218,5 +219,99 @@ describe('segment generation', { timeout: 60000 }, () => {
         expect(edgeGap, `Seed ${seed} has an excessive gap`).toBeLessThanOrEqual(maxGap + 0.1)
       }
     }
+  })
+
+  it('occasionally creates long connector rails without making them common', () => {
+    let longCount = 0
+    for (let seed = 1; seed <= 2000; seed++) {
+      const { platforms, rails } = generateSegmentPlatforms(null, 0, 'medium', true, 0, null, null, createSeededRandom(seed))
+      for (const rail of rails.filter(candidate => candidate.isCurved)) {
+        if (!rail.isLong) continue
+        longCount++
+        expect(rail.platformSpan).toBeGreaterThanOrEqual(2)
+        expect(rail.platformSpan).toBeLessThanOrEqual(config.RAIL_LONG_MAX_SPAN)
+
+        const railDef = new RailDefinition(rail.points, true, true)
+        let previousZ = Infinity
+        for (let sample = 0; sample <= 100; sample++) {
+          const point = railDef.getPointAt(sample / 100)
+          expect(point.z, `Seed ${seed} has a reversing long rail`).toBeLessThanOrEqual(previousZ + 0.001)
+          previousZ = point.z
+
+          for (let i = rail.startPlatformIndex + 1; i < rail.endPlatformIndex; i++) {
+            const platform = platforms[i]
+            const radius = config.RAIL_RADIUS * 1.25
+            const intersects =
+              point.x >= platform.x - platform.w / 2 - radius &&
+              point.x <= platform.x + platform.w / 2 + radius &&
+              point.y >= platform.y - platform.h / 2 - radius &&
+              point.y <= platform.y + platform.h / 2 + radius &&
+              point.z >= platform.z - platform.d / 2 - radius &&
+              point.z <= platform.z + platform.d / 2 + radius
+            expect(intersects, `Seed ${seed} has a long rail intersecting platform ${i}`).toBe(false)
+          }
+        }
+      }
+    }
+
+    expect(longCount / 2000).toBeGreaterThan(0.1)
+    expect(longCount / 2000).toBeLessThan(0.3)
+  })
+
+  it('creates mostly continuous rooftops with rare explicit traversal gaps', () => {
+    let transitions = 0
+    let traversalGaps = 0
+    for (let seed = 1; seed <= 5000; seed++) {
+      const { platforms, rails } = generateSegmentPlatforms(null, 0, 'medium', true, 0, null, null, createSeededRandom(seed))
+      for (let i = 1; i < platforms.length; i++) {
+        const previous = platforms[i - 1]
+        const current = platforms[i]
+        const edgeGap = previous.z - previous.d / 2 - (current.z + current.d / 2)
+        transitions++
+        if (current.isTraversalGap) {
+          traversalGaps++
+          expect(edgeGap).toBeGreaterThanOrEqual(config.PLAT_MIN_GAP - 0.1)
+        } else {
+          expect(edgeGap).toBeLessThanOrEqual(config.PLAT_SEAM_GAP_MAX + 0.1)
+          expect(current.y + current.h / 2).toBeCloseTo(previous.y + previous.h / 2)
+        }
+      }
+
+      for (const rail of rails.filter(candidate => candidate.isCurved)) {
+        const crossedPlatforms = platforms.slice(rail.startPlatformIndex + 1, rail.endPlatformIndex + 1)
+        expect(crossedPlatforms.some(platform => platform.isTraversalGap)).toBe(true)
+      }
+    }
+
+    const gapRate = traversalGaps / transitions
+    expect(gapRate).toBeGreaterThan(0.1)
+    expect(gapRate).toBeLessThan(0.3)
+  })
+
+  it('places readable jump and slide obstacles inside their host rooftops', () => {
+    let hurdleCount = 0
+    let overheadCount = 0
+    for (let seed = 1; seed <= 2000; seed++) {
+      const { platforms, courseObstacles } = generateSegmentPlatforms(null, 0, 'medium', true, 0, null, null, createSeededRandom(seed))
+      for (const obstacle of courseObstacles) {
+        const platform = platforms[obstacle.platformIndex]
+        const platformTop = platform.y + platform.h / 2
+        expect(obstacle.z - obstacle.d / 2).toBeGreaterThan(platform.z - platform.d / 2)
+        expect(obstacle.z + obstacle.d / 2).toBeLessThan(platform.z + platform.d / 2)
+        expect(obstacle.w).toBeLessThan(platform.w)
+
+        if (obstacle.type === 'hurdle') {
+          hurdleCount++
+          expect(obstacle.y - obstacle.h / 2).toBeCloseTo(platformTop)
+        } else {
+          overheadCount++
+          const bottom = obstacle.y - obstacle.h / 2 - platformTop
+          expect(bottom).toBeGreaterThan(config.SLIDE_HEIGHT)
+          expect(bottom).toBeLessThan(config.PLAYER_HEIGHT)
+        }
+      }
+    }
+    expect(hurdleCount).toBeGreaterThan(100)
+    expect(overheadCount).toBeGreaterThan(100)
   })
 })

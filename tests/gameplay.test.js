@@ -40,15 +40,47 @@ describe('gameplay state transitions', () => {
     }
     const moveDir = new THREE.Vector3(0, 0, -1)
 
-    physics.update(humanoid, moveDir, true, false, false, false, 0.016, [wall])
+    physics.update(humanoid, moveDir, true, false, false, false, false, 0.016, [wall])
     expect(physics.state).toBe('wallrunning')
     physics._wallrunTimer = 0.001
-    physics.update(humanoid, moveDir, true, false, false, false, 0.016, [wall])
+    physics.update(humanoid, moveDir, true, false, false, false, false, 0.016, [wall])
 
     expect(physics.state).toBe('airborne')
     expect(physics.onWallRun).toHaveBeenCalledTimes(1)
     expect(physics._wallrunGraceTimer).toBeGreaterThan(0)
     expect(physics._wallrunGraceTimer).toBeLessThanOrEqual(config.WALLRUN_GRACE_TIME)
+  })
+
+  it('slides under an overhead obstacle and waits for room before standing', () => {
+    const physics = new Physics()
+    const humanoid = new THREE.Object3D()
+    humanoid.position.set(0, 0, 0)
+    const floor = {
+      aabb: new THREE.Box3(new THREE.Vector3(-5, -1, -5), new THREE.Vector3(5, 0, 5)),
+    }
+    const overhead = {
+      isCourseObstacle: true,
+      noLedgeGrab: true,
+      aabb: new THREE.Box3(new THREE.Vector3(-2, 0.82, -2), new THREE.Vector3(2, 1.32, 2)),
+    }
+    const moveDir = new THREE.Vector3(0, 0, -1)
+
+    physics.update(humanoid, moveDir, true, false, false, false, true, 0.1, [floor, overhead])
+    expect(physics.sliding).toBe(true)
+    expect(physics.activeHeight).toBe(config.SLIDE_HEIGHT)
+
+    physics._slideTimer = 0
+    physics.update(humanoid, moveDir, true, false, false, false, false, 0.01, [floor, overhead])
+    expect(physics.sliding).toBe(true)
+
+    physics.update(humanoid, moveDir, true, false, false, true, false, 0.01, [floor, overhead])
+    expect(physics.sliding).toBe(true)
+    expect(physics.state).toBe('grounded')
+
+    humanoid.position.z = -3
+    physics.update(humanoid, moveDir, true, false, false, false, false, 0.01, [floor, overhead])
+    expect(physics.sliding).toBe(false)
+    expect(physics.activeHeight).toBe(config.PLAYER_HEIGHT)
   })
 })
 

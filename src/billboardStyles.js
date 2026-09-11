@@ -684,7 +684,7 @@ export function createBillboardMeshes(bb, config, styleIndex = 0, productVariant
   const meshes = []
   const bbH = bb.height || config.BILLBOARD_HEIGHT
   const bbW = bb.width || config.BILLBOARD_WIDTH
-  const bbD = config.BILLBOARD_DEPTH
+  const bbD = bb.depth || config.BILLBOARD_DEPTH
   const bbY = bb.y + bbH / 2
 
   let mat = materials[styleIndex % materials.length]

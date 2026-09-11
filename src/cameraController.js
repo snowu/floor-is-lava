@@ -111,7 +111,7 @@ export class CameraController {
     // Collect platforms ahead, sorted by distance (closest Z first)
     const ahead = []
     for (const obs of obstacles) {
-      if (obs.isSpawn || obs.isBillboard) continue
+      if (obs.isSpawn || obs.isBillboard || obs.isCourseObstacle) continue
       obs.aabb.getCenter(_targetCenter)
       const dz = _targetCenter.z - pz
       if (dz > -2 || dz < -lookAhead) continue

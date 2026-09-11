@@ -5,10 +5,12 @@ export class Movement {
   constructor(physics, joystick) {
     this._keys = { w: false, a: false, s: false, d: false, e: false }
     this._jumpQueued = false
+    this._slideQueued = false
     this._physics = physics
     this._joystick = joystick || null
     this._started = !isMobile
     this._touching = false
+    this._rightTouchStart = null
 
     if (isMobile) {
       this._setupTouch()
@@ -24,19 +26,17 @@ export class Movement {
   }
 
   resetForDeath() {
+    this._clearKeys()
+    this._rightTouchStart = null
     if (!isMobile) return
     this._started = false
-    this._keys.w = false
-    this._keys.a = false
-    this._keys.d = false
-    this._keys.e = false
-    this._jumpQueued = false
     this._touching = false
   }
 
   _clearKeys() {
     for (const key of Object.keys(this._keys)) this._keys[key] = false
     this._jumpQueued = false
+    this._slideQueued = false
   }
 
   _setupKeyboard() {
@@ -47,6 +47,10 @@ export class Movement {
       if (e.code === 'KeyD') this._keys.d = true
       if (e.code === 'KeyE') this._keys.e = true
       if (e.code === 'Space') { e.preventDefault(); this._jumpQueued = true }
+      if (['ShiftLeft', 'ShiftRight', 'ControlLeft', 'ControlRight'].includes(e.code) && !e.repeat) {
+        e.preventDefault()
+        this._slideQueued = true
+      }
     })
 
     window.addEventListener('keyup', (e) => {
@@ -83,6 +87,10 @@ export class Movement {
       if (isLeftSide) return
       e.preventDefault()
       this._touching = true
+      this._rightTouchStart = {
+        x: e.changedTouches[0].clientX,
+        y: e.changedTouches[0].clientY,
+      }
 
       if (!this._started) {
         this.start()
@@ -104,7 +112,8 @@ export class Movement {
     window.addEventListener('touchend', (e) => {
       if (e.target.closest('#fullscreen-btn, #cam-mode-btn, #help-btn, #help-modal')) return
       const isLeftSide = e.changedTouches[0].clientX <= window.innerWidth / 2
-      if (isLeftSide) return
+      const startedOnRight = this._rightTouchStart?.x > window.innerWidth / 2
+      if (isLeftSide && !startedOnRight) return
       e.preventDefault()
       if (this._rightSideTouches(e.touches) > 0) return
       this._touching = false
@@ -113,14 +122,19 @@ export class Movement {
 
       this._keys.e = false
       if (!this._isAirState()) {
-        this._jumpQueued = true
+        const touch = e.changedTouches[0]
+        const swipedDown = this._rightTouchStart && touch.clientY - this._rightTouchStart.y > 50
+        if (swipedDown) this._slideQueued = true
+        else this._jumpQueued = true
       }
+      this._rightTouchStart = null
     }, { passive: false })
 
     window.addEventListener('touchcancel', (e) => {
       if (e.touches.length > 0) return
       this._touching = false
       this._keys.e = false
+      this._rightTouchStart = null
     })
   }
 
@@ -145,8 +159,10 @@ export class Movement {
   get eDown() { return this._keys.e }
 
   get jumpPressed() { return this._jumpQueued }
+  get slidePressed() { return this._slideQueued }
 
   clearJump() { this._jumpQueued = false }
+  clearSlide() { this._slideQueued = false }
 
   getMoveDir(cameraYaw) {
     const forward = new THREE.Vector3(-Math.sin(cameraYaw), 0, -Math.cos(cameraYaw))

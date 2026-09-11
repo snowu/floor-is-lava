@@ -11,6 +11,7 @@ const ANIM_STATE = {
   WALLRUN:    'wallrun',
   KICK:       'kick',
   GRINDING:   'grinding',
+  SLIDING:    'sliding',
 }
 
 export class HumanoidAnimator {
@@ -70,7 +71,9 @@ export class HumanoidAnimator {
     }
 
     // Timed state transitions
-    if (this._state === ANIM_STATE.LANDING) {
+    if (phys.sliding) {
+      this._setState(ANIM_STATE.SLIDING)
+    } else if (this._state === ANIM_STATE.LANDING) {
       if (this._stateTimer >= config.ANIM_LANDING_DURATION) {
         this._setState(hSpeed > 0.5 ? ANIM_STATE.RUNNING : ANIM_STATE.IDLE)
       }
@@ -120,6 +123,7 @@ export class HumanoidAnimator {
       case ANIM_STATE.WALLRUN:  this._poseWallRun(); break
       case ANIM_STATE.KICK:     this._poseKick(); break
       case ANIM_STATE.GRINDING: this._poseGrinding(); break
+      case ANIM_STATE.SLIDING:  this._poseSliding(); break
     }
 
     // Camera roll for wall running
@@ -222,6 +226,20 @@ export class HumanoidAnimator {
 
     // Camera dip on landing
     this.cameraYOffset = -crouch
+  }
+
+  _poseSliding() {
+    this._resetLimbs()
+    const j = this._joints
+    j.root.rotation.x = -0.35
+    j.hipL.rotation.x = 1.2
+    j.hipR.rotation.x = 1.2
+    j.shoulderL.rotation.x = -0.8
+    j.shoulderR.rotation.x = -0.8
+    j.body.position.y = this._bodyBaseY - 0.65
+    this.cameraYOffset = -config.ANIM_SLIDE_CAMERA_DROP
+    this.cameraHandLY = -0.18
+    this.cameraHandRY = -0.18
   }
 
   _poseHanging() {

@@ -330,11 +330,13 @@ function animate(timestamp) {
 
   const moveDir     = movement.getMoveDir(cameraController.cameraYaw)
   const jumpPressed = movement.jumpPressed
+  const slidePressed = movement.slidePressed
   movement.clearJump()
+  movement.clearSlide()
 
   const allObstacles = cachedObstacles
   const allWallAABBs = cachedWallAABBs
-  physics.update(humanoid, moveDir, movement.wDown, movement.sDown, movement.eDown, jumpPressed, delta,
+  physics.update(humanoid, moveDir, movement.wDown, movement.sDown, movement.eDown, jumpPressed, slidePressed, delta,
     allObstacles, allWallAABBs)
 
   // Rail grinding — detect jump-from-grind (physics already transitioned state)
@@ -382,6 +384,7 @@ function animate(timestamp) {
   cameraController.update()
 
   updatePlayerHitboxPositions(playerHitboxHelpers, humanoid.position)
+  upperHelper.visible = hitboxesVisible && !physics.sliding
   lowerHelper.visible = hitboxesVisible && !physics.legsExtended
 
   // Show kick hitbox when legs extended
@@ -446,7 +449,7 @@ function animate(timestamp) {
     const dz = Math.abs(rp.z - pp.z)
     const dy = rp.y - pp.y
     const rSize = rock.mesh.scale.x
-    if (dx < halfW + rSize && dz < halfW + rSize && dy >= 0 && dy < config.PLAYER_HEIGHT) {
+    if (dx < halfW + rSize && dz < halfW + rSize && dy >= 0 && dy < physics.activeHeight) {
       physics.onGroundHit()
       break
     }

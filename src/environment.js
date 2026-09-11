@@ -151,7 +151,7 @@ export function updateRocks(delta, time, playerX, playerZ, obstacles) {
 
       if (rock.isHazard && rock.velocity.y < 0) {
         for (const obs of obstacles) {
-          if (obs.isBillboard || obs.isSpawn) continue
+          if (obs.isBillboard || obs.isSpawn || obs.isCourseObstacle) continue
           const rp = rock.mesh.position
           if (rp.x >= obs.aabb.min.x && rp.x <= obs.aabb.max.x &&
               rp.z >= obs.aabb.min.z && rp.z <= obs.aabb.max.z &&

@@ -11,9 +11,9 @@ npm run dev
 
 ## Controls
 
-**Desktop:** WASD to move, Space to jump, E to kick while airborne, mouse to look
+**Desktop:** WASD to move, Space to jump, Shift or Ctrl to slide, E to kick while airborne, mouse to look
 
-**Mobile:** Left-side joystick to strafe, release the right side to jump, tap while airborne to air jump, and use two fingers while airborne to kick. Forward movement and camera tracking are automatic.
+**Mobile:** Left-side joystick to strafe; release the right side to jump, swipe down to slide, tap while airborne to air jump, and use two fingers while airborne to kick. Forward movement and camera tracking are automatic.
 
 ## Tech
 
