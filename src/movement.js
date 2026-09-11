@@ -34,6 +34,11 @@ export class Movement {
     this._touching = false
   }
 
+  _clearKeys() {
+    for (const key of Object.keys(this._keys)) this._keys[key] = false
+    this._jumpQueued = false
+  }
+
   _setupKeyboard() {
     window.addEventListener('keydown', (e) => {
       if (e.code === 'KeyW') this._keys.w = true
@@ -50,6 +55,10 @@ export class Movement {
       if (e.code === 'KeyS') this._keys.s = false
       if (e.code === 'KeyD') this._keys.d = false
       if (e.code === 'KeyE') this._keys.e = false
+    })
+    window.addEventListener('blur', () => this._clearKeys())
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) this._clearKeys()
     })
   }
 
@@ -86,6 +95,7 @@ export class Movement {
         if (rt === 1) {
           this._jumpQueued = true
         } else if (rt >= 2) {
+          this._jumpQueued = false
           this._keys.e = true
         }
       }

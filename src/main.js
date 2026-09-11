@@ -41,6 +41,7 @@ createSkyScreens(scene)
 // Course manager — generates corridor + platforms on the fly
 const course = new CourseManager('medium')
 const courses = [course]
+if (window.DEV_MODE) console.info(`Course seed: ${course.seed}`)
 
 // if (window.DEV_MODE) {
 //   courses.push(new BillboardTestCourse(30))
@@ -57,7 +58,7 @@ const movement = new Movement(physics, cameraController.joystick)
 const animator = new HumanoidAnimator(joints, physics)
 const railGrinder = new RailGrinder()
 cameraController.animator = animator
-createDebugMenu(animator, scene, courses, { camera, ambientLight, dirLight })
+if (window.DEV_MODE) createDebugMenu(animator, scene, courses, { camera, ambientLight, dirLight })
 
 const MODE_LABELS = { 'first-person': 'FP', 'third-person': 'TP', 'free': 'Free' }
 const camModeBtn = document.getElementById('cam-mode-btn')
@@ -192,14 +193,14 @@ physics.onGroundHit = () => {
   chainDisplayTimer = 0
   chainCounterEl.style.opacity = '0'
   if (railGrinder.isGrinding) railGrinder.dismount()
-  if (cameraController.mode === 'first-person') {
-    physics._respawn(humanoid)
-    cameraController.resetLook()
-  }
-  if (cameraController.mode === 'first-person') {
-    movement.resetForDeath()
-    if (isMobile && mobileOverlay) mobileOverlay.style.display = 'flex'
-  }
+  physics._respawn(humanoid)
+  cameraController.resetLook()
+  movement.resetForDeath()
+  for (const c of courses) c.destroyAll(scene)
+  cachedObstacles = []
+  cachedWallAABBs = []
+  cachedRails = []
+  if (isMobile && mobileOverlay) mobileOverlay.style.display = 'flex'
 }
 
 // Debug hitboxes — toggle with H
@@ -270,7 +271,9 @@ function rebuildObstacleHelpers() {
       const depth = Math.abs(z0 - z1)
       const midZ = (z0 + z1) / 2
       const seamMat = new THREE.LineBasicMaterial({ color: 0xff00ff, depthTest: false })
-      const seamGeo = new THREE.EdgesGeometry(new THREE.PlaneGeometry(config.CORRIDOR_WIDTH, depth))
+      const planeGeo = new THREE.PlaneGeometry(config.CORRIDOR_WIDTH, depth)
+      const seamGeo = new THREE.EdgesGeometry(planeGeo)
+      planeGeo.dispose()
       const seam = new THREE.LineSegments(seamGeo, seamMat)
       seam.rotation.x = -Math.PI / 2
       seam.position.set(0, 0.05, midZ)
@@ -281,7 +284,7 @@ function rebuildObstacleHelpers() {
     }
   }
   // Rail snap radius visualization — tube showing snap zone
-  railHelpers.forEach(h => { scene.remove(h); h.geometry.dispose() })
+  railHelpers.forEach(disposeHelper)
   railHelpers = []
   const railSnapMat = new THREE.MeshBasicMaterial({ color: 0xffff00, wireframe: true, transparent: true, opacity: 0.25, depthWrite: false })
   for (const railData of cachedRails) {
@@ -320,8 +323,9 @@ function rebuildObstacleHelpers() {
 }
 
 window.addEventListener('keydown', (e) => {
-  if (e.code === 'KeyH' && !e.shiftKey && !e.ctrlKey && !e.altKey) {
+  if (window.DEV_MODE && e.code === 'KeyH' && !e.shiftKey && !e.ctrlKey && !e.altKey) {
     hitboxesVisible = !hitboxesVisible
+    if (hitboxesVisible) rebuildObstacleHelpers()
     obstacleHelpers.forEach(h => { h.visible = hitboxesVisible })
     ledgeHelpers.forEach(h => { h.visible = hitboxesVisible })
     seamHelpers.forEach(h => { h.visible = hitboxesVisible })
@@ -361,7 +365,7 @@ function animate(timestamp) {
     cachedObstacles = courses.flatMap(c => c.allObstacles)
     cachedWallAABBs = courses.flatMap(c => c.allWallAABBs)
     cachedRails = courses.flatMap(c => c.allRails)
-    rebuildObstacleHelpers()
+    if (hitboxesVisible) rebuildObstacleHelpers()
   }
 
   if (config.PLAYER_WIDTH !== _prevPW || config.PLAYER_HEIGHT !== _prevPH) {

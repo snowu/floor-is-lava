@@ -1,16 +1,27 @@
 import config from './config.js'
 import { createPlatformMeshes } from './platformStyles.js'
-import { createBillboardMeshes, BILLBOARD_STYLE_COUNT, PRODUCT_AD_STYLE_INDEX, isProductAdStyle, registerProductAdMaterial } from './billboardStyles.js'
+import { createBillboardMeshes, BILLBOARD_STYLE_COUNT, PRODUCT_AD_STYLE_INDEX, PRODUCT_AD_VARIANT_COUNT, isProductAdStyle, registerProductAdMaterial } from './billboardStyles.js'
 import { buildPlatformAABBs } from './hitboxes.js'
 import { createRailMeshes, RailDefinition } from './railSystem.js'
 import * as THREE from 'three'
 
-function rand(min, max) {
-  return min + Math.random() * (max - min)
+export function createSeededRandom(seed) {
+  let state = seed >>> 0 || 0x6d2b79f5
+  return () => {
+    state += 0x6d2b79f5
+    let value = state
+    value = Math.imul(value ^ value >>> 15, value | 1)
+    value ^= value + Math.imul(value ^ value >>> 7, value | 61)
+    return ((value ^ value >>> 14) >>> 0) / 4294967296
+  }
 }
 
-function randInt(min, max) {
-  return Math.floor(rand(min, max + 1))
+function rand(min, max, rng) {
+  return min + rng() * (max - min)
+}
+
+function randInt(min, max, rng) {
+  return Math.floor(rand(min, max + 1, rng))
 }
 
 function clamp(v, lo, hi) {
@@ -94,7 +105,8 @@ function nudgeAwayFromAll(plat, allPlatforms, neighborPlatforms, halfW, billboar
   }
 }
 
-function generateSegmentPlatforms(prevPlatform, segmentStartZ, difficulty = 'medium', isFirstSegment = false, platformCounter = 0, neighborPlatforms = null, lastBillboardZ = null) {
+function generateSegmentPlatforms(prevPlatform, segmentStartZ, difficulty = 'medium', isFirstSegment = false, platformCounter = 0, neighborPlatforms = null, lastBillboardZ = null, rng = Math.random) {
+  const previousBillboardZ = lastBillboardZ
   const diff = {
     heightFraction: config.PLAT_HEIGHT_FRAC,
     rangeFraction: config.PLAT_RANGE_FRAC,
@@ -102,7 +114,7 @@ function generateSegmentPlatforms(prevPlatform, segmentStartZ, difficulty = 'med
     maxGap: config.PLAT_MAX_GAP,
     doubleJumpChance: config.PLAT_DOUBLE_JUMP_CHANCE,
   }
-  const count = randInt(config.PLAT_MIN_PER_SEGMENT, config.PLAT_MAX_PER_SEGMENT)
+  const count = randInt(config.PLAT_MIN_PER_SEGMENT, config.PLAT_MAX_PER_SEGMENT, rng)
   const platforms = []
   const billboards = []
 
@@ -114,9 +126,10 @@ function generateSegmentPlatforms(prevPlatform, segmentStartZ, difficulty = 'med
     prev = { w: sp, h: 1, d: sp, x: 0, y: 0.5, z: segmentStartZ - 3, isSpawn: true }
     platforms.push(prev)
   }
+  const entryPlatform = prev
 
   const WARMUP_COUNT = isFirstSegment ? config.WARMUP_COUNT : 0
-  let nextZ = segmentStartZ - (isFirstSegment ? config.FIRST_PLATFORM_GAP : 0)
+  let nextZ = prev.z - (isFirstSegment ? config.FIRST_PLATFORM_GAP : 0)
   let platIndex = platformCounter
 
   let afterGapSide = 0 // 0 = no constraint, -1/1 = force next platform to this side
@@ -130,7 +143,7 @@ function generateSegmentPlatforms(prevPlatform, segmentStartZ, difficulty = 'med
       if (!tooClose) {
         const prevTopY = prev.y + prev.h / 2
         const side = prev.x >= 0 ? 1 : -1
-        const facadeHeight = rand(config.FACADE_HEIGHT_MIN, config.FACADE_HEIGHT_MAX)
+        const facadeHeight = rand(config.FACADE_HEIGHT_MIN, config.FACADE_HEIGHT_MAX, rng)
         billboards.push({
           x: side * config.FACADE_X_OFFSET,
           y: prevTopY - 1,
@@ -148,31 +161,31 @@ function generateSegmentPlatforms(prevPlatform, segmentStartZ, difficulty = 'med
     const prevTopY = prev.y + prev.h / 2
     const warmupT = (isFirstSegment && i < WARMUP_COUNT) ? (i + 1) / WARMUP_COUNT : 1.0
 
-    const needsDoubleJump = warmupT < 1 ? false : Math.random() < diff.doubleJumpChance
+    const needsDoubleJump = warmupT < 1 ? false : rng() < diff.doubleJumpChance
     const maxHeight = needsDoubleJump ? config.DOUBLE_JUMP_HEIGHT : config.SINGLE_JUMP_HEIGHT
 
     const maxUp   = maxHeight * diff.heightFraction * warmupT
     const maxDown = Math.min(config.MAX_DROP, prevTopY - 0.5) * warmupT
 
-    const heightRoll = Math.random()
+    const heightRoll = rng()
     let dy
     if (heightRoll < 0.3) {
-      dy = rand(-maxDown * 0.5, -maxDown * 0.1)
+      dy = rand(-maxDown * 0.5, -maxDown * 0.1, rng)
     } else if (heightRoll < 0.7) {
-      dy = rand(maxUp * 0.2, maxUp * 0.7)
+      dy = rand(maxUp * 0.2, maxUp * 0.7, rng)
     } else {
-      dy = rand(maxUp * 0.7, maxUp)
+      dy = rand(maxUp * 0.7, maxUp, rng)
     }
 
     const sizeScale = needsDoubleJump ? config.DOUBLE_JUMP_SIZE_SCALE : 1.0
     const warmupSizeBonus = warmupT < 1 ? 1 + (1 - warmupT) * 0.5 : 1.0
-    const baseWidth = rand(config.BOX_WIDTH_MIN, config.BOX_WIDTH_MAX)
-    const baseDepth = rand(config.BOX_DEPTH_MIN, config.BOX_DEPTH_MAX)
+    const baseWidth = rand(config.BOX_WIDTH_MIN, config.BOX_WIDTH_MAX, rng)
+    const baseDepth = rand(config.BOX_DEPTH_MIN, config.BOX_DEPTH_MAX, rng)
     const w = baseWidth * sizeScale * warmupSizeBonus
     const h = config.BOX_HEIGHT
     const d = baseDepth * sizeScale * warmupSizeBonus
 
-    const edgeGap = rand(diff.minGap, diff.maxGap)
+    const edgeGap = rand(diff.minGap, diff.maxGap, rng)
     const prevHalfD = prev.d / 2
     const pz = nextZ - prevHalfD - edgeGap - d / 2
     nextZ = pz
@@ -181,12 +194,12 @@ function generateSegmentPlatforms(prevPlatform, segmentStartZ, difficulty = 'med
     if (afterGapSide !== 0) {
       // First platform after gap: spawn on same side as billboard wall
       const targetX = afterGapSide * (config.FACADE_X_OFFSET - 3)
-      px = clamp(targetX + rand(-1, 1), -halfW + w / 2, halfW - w / 2)
+      px = clamp(targetX + rand(-1, 1, rng), -halfW + w / 2, halfW - w / 2)
       afterGapSide = 0
     } else {
       const baseLateralRange = Math.min(6, config.CORRIDOR_WIDTH / 2 - 1)
       const lateralRange = baseLateralRange * warmupT
-      px = clamp(prev.x + rand(-lateralRange, lateralRange), -halfW + w / 2, halfW - w / 2)
+      px = clamp(prev.x + rand(-lateralRange, lateralRange, rng), -halfW + w / 2, halfW - w / 2)
     }
 
     const newTopY = prevTopY + dy
@@ -243,78 +256,6 @@ function generateSegmentPlatforms(prevPlatform, segmentStartZ, difficulty = 'med
     platIndex++
   }
 
-  // Generate rails
-  const rails = []
-
-  // Straight rails on platform edges
-  for (const plat of platforms) {
-    if (plat.isSpawn) continue
-    if (plat.d < 10) continue
-    if (Math.random() > config.RAIL_EDGE_CHANCE) continue
-
-    const railX = plat.x
-    const railY = plat.y + plat.h / 2 + 0.3
-    const railZ1 = plat.z + plat.d / 2 - 0.5
-    const railZ2 = plat.z - plat.d / 2 + 0.5
-
-    rails.push({
-      points: [
-        { x: railX, y: railY, z: railZ1 },
-        { x: railX, y: railY, z: railZ2 },
-      ],
-      isCurved: false,
-    })
-  }
-
-  // Curved rails bridging gaps between platforms
-  const curvedCount = Math.floor(config.CURVED_RAILS_PER_SEGMENT + (Math.random() < (config.CURVED_RAILS_PER_SEGMENT % 1) ? 1 : 0))
-  const usedPairs = new Set()
-
-  for (let c = 0; c < curvedCount && platforms.length > 2; c++) {
-    const startIdx = randInt(0, platforms.length - 2)
-    const endIdx = startIdx + 1
-    const pairKey = `${startIdx}-${endIdx}`
-    if (usedPairs.has(pairKey)) continue
-    usedPairs.add(pairKey)
-
-    const startPlat = platforms[startIdx]
-    const endPlat = platforms[endIdx]
-    if (startPlat.isSpawn || endPlat.isSpawn) continue
-
-    const gap = Math.abs(startPlat.z - endPlat.z) - startPlat.d / 2 - endPlat.d / 2
-    if (gap < 8) continue
-
-    const startY = startPlat.y + startPlat.h / 2 + 1.0
-    const endY = endPlat.y + endPlat.h / 2 + 1.0
-    const avgY = (startY + endY) / 2
-    const arcHeight = rand(1.5, 3) * Math.min(1, gap / 12)
-    const midY = avgY + arcHeight
-    const midX = (startPlat.x + endPlat.x) / 2 + rand(-1, 1)
-    const midZ = (startPlat.z + endPlat.z) / 2
-
-    const sz = startPlat.z - startPlat.d / 2
-    const ez = endPlat.z + endPlat.d / 2
-
-    // Quarter-points with gentle Y progression — match Z fraction to avoid vertical starts
-    const qZ1 = sz + (ez - sz) * 0.25
-    const qZ2 = sz + (ez - sz) * 0.75
-    const qX1 = startPlat.x + (midX - startPlat.x) * 0.35
-    const qX2 = midX + (endPlat.x - midX) * 0.65
-    const qY1 = startY + (midY - startY) * 0.35
-    const qY2 = endY + (midY - endY) * 0.35
-
-    rails.push({
-      points: [
-        { x: startPlat.x, y: startY, z: sz },
-        { x: qX1, y: qY1, z: qZ1 },
-        { x: midX, y: midY, z: midZ },
-        { x: qX2, y: qY2, z: qZ2 },
-        { x: endPlat.x, y: endY, z: ez },
-      ],
-      isCurved: true,
-    })
-  }
-
   // Unified post-processing: billboard clearance → overlap resolution → reachability clamp
   // Iterate until stable (max 10 passes)
   const absMaxReach = config.DOUBLE_JUMP_HEIGHT * config.PLAT_HEIGHT_FRAC
@@ -369,6 +310,96 @@ function generateSegmentPlatforms(prevPlatform, segmentStartZ, difficulty = 'med
     }
 
     if (!anyChange) break
+  }
+
+  // Correction passes can move an earlier platform behind a later one. Establish
+  // one canonical traversal order and guarantee edge-to-edge spacing in that order.
+  platforms.sort((a, b) => b.z - a.z)
+  let previous = isFirstSegment ? null : entryPlatform
+  for (const current of platforms) {
+    if (previous && current !== previous) {
+      const minGap = config.MIN_PLATFORM_SPACING + 0.2
+      const maxGap = config.PLAT_MAX_GAP + config.BILLBOARD_GAP_SIZE
+      const nearestZ = previous.z - previous.d / 2 - minGap - current.d / 2
+      const furthestZ = previous.z - previous.d / 2 - maxGap - current.d / 2
+      current.z = Math.round(clamp(current.z, furthestZ, nearestZ) * 10) / 10
+    }
+
+    if (!previous || current === previous) {
+      previous = current
+      continue
+    }
+    const previousTopY = previous.y + previous.h / 2
+    const currentTopY = current.y + current.h / 2
+    if (currentTopY - previousTopY > absMaxReach) {
+      current.y = Math.round(clamp(previousTopY + absMaxReach * 0.8, current.h / 2 + 0.5, config.CORRIDOR_HEIGHT - 2) * 10) / 10
+    }
+    previous = current
+  }
+  prev = platforms.at(-1)
+
+  // Facades are optional traversal features. Drop one when platform correction
+  // leaves no safe placement rather than moving the required path out of reach.
+  for (let i = billboards.length - 1; i >= 0; i--) {
+    const bb = billboards[i]
+    const clearanceBox = {
+      x: bb.x,
+      y: bb.y + bb.height / 2,
+      z: bb.z,
+      w: bb.width + (config.FACADE_HITBOX_PAD + config.FACADE_MIN_CLEARANCE) * 2,
+      h: bb.height,
+      d: config.FACADE_DEPTH + config.FACADE_MIN_CLEARANCE * 2,
+    }
+    if (platforms.some(platform => hasOverlap(platform, clearanceBox))) billboards.splice(i, 1)
+  }
+  lastBillboardZ = billboards.at(-1)?.z ?? previousBillboardZ
+
+  // Rails depend on final platform transforms and must be generated last.
+  const rails = []
+  for (const plat of platforms) {
+    if (plat.isSpawn || plat.d < 10 || rng() > config.RAIL_EDGE_CHANCE) continue
+    const railY = plat.y + plat.h / 2 + 0.3
+    rails.push({
+      points: [
+        { x: plat.x, y: railY, z: plat.z + plat.d / 2 - 0.5 },
+        { x: plat.x, y: railY, z: plat.z - plat.d / 2 + 0.5 },
+      ],
+      isCurved: false,
+    })
+  }
+
+  const curvedCount = Math.floor(config.CURVED_RAILS_PER_SEGMENT + (rng() < (config.CURVED_RAILS_PER_SEGMENT % 1) ? 1 : 0))
+  const usedPairs = new Set()
+  for (let c = 0; c < curvedCount && platforms.length > 2; c++) {
+    const startIdx = randInt(0, platforms.length - 2, rng)
+    const endIdx = startIdx + 1
+    const pairKey = `${startIdx}-${endIdx}`
+    if (usedPairs.has(pairKey)) continue
+    usedPairs.add(pairKey)
+
+    const startPlat = platforms[startIdx]
+    const endPlat = platforms[endIdx]
+    if (startPlat.isSpawn || endPlat.isSpawn) continue
+    const gap = Math.abs(startPlat.z - endPlat.z) - startPlat.d / 2 - endPlat.d / 2
+    if (gap < 8) continue
+
+    const startY = startPlat.y + startPlat.h / 2 + 1
+    const endY = endPlat.y + endPlat.h / 2 + 1
+    const midY = (startY + endY) / 2 + rand(1.5, 3, rng) * Math.min(1, gap / 12)
+    const midX = (startPlat.x + endPlat.x) / 2 + rand(-1, 1, rng)
+    const sz = startPlat.z - startPlat.d / 2
+    const ez = endPlat.z + endPlat.d / 2
+
+    rails.push({
+      points: [
+        { x: startPlat.x, y: startY, z: sz },
+        { x: startPlat.x + (midX - startPlat.x) * 0.35, y: startY + (midY - startY) * 0.35, z: sz + (ez - sz) * 0.25 },
+        { x: midX, y: midY, z: (startPlat.z + endPlat.z) / 2 },
+        { x: midX + (endPlat.x - midX) * 0.65, y: endY + (midY - endY) * 0.35, z: sz + (ez - sz) * 0.75 },
+        { x: endPlat.x, y: endY, z: ez },
+      ],
+      isCurved: true,
+    })
   }
 
   return { platforms, billboards, rails, lastPlatform: prev, platformCounter: platIndex, lastBillboardZ: lastBillboardZ }
@@ -523,8 +554,9 @@ export class BillboardTestCourse {
 }
 
 export class CourseManager {
-  constructor(difficulty = 'medium') {
+  constructor(difficulty = 'medium', seed = Math.floor(Math.random() * 0xffffffff)) {
     this._difficulty = difficulty
+    this._seed = seed >>> 0
     this._segments = []
     this._nextSegmentIndex = 0
     this._lastPlatform = null
@@ -543,6 +575,8 @@ export class CourseManager {
     return out
   }
 
+  get seed() { return this._seed }
+
   get allObstacles() {
     const out = []
     for (const seg of this._segments) {
@@ -558,9 +592,7 @@ export class CourseManager {
 
   destroyAll(scene) {
     for (const seg of this._segments) {
-      for (const m of seg.meshes) {
-        scene.remove(m)
-      }
+      this._disposeSegment(seg, scene)
     }
     this._segments = []
     this._nextSegmentIndex = 0
@@ -579,41 +611,72 @@ export class CourseManager {
     const generateDist = config.FOG_END + config.SEGMENT_DEPTH + speed * config.GENERATE_TIME_AHEAD
     const targetZ = this._furthestZ - generateDist
 
-    const targetSegment = Math.floor(-targetZ / config.SEGMENT_DEPTH)
     const added = []
+    const removed = []
 
     let generated = 0
-    while (this._nextSegmentIndex <= targetSegment && generated < 3) {
+    while ((!this._lastPlatform || this._lastPlatform.z > targetZ) && generated < 3) {
       const seg = this._createSegment(THREE)
       this._segments.push(seg)
       for (const m of seg.meshes) { scene.add(m); added.push(m) }
       generated++
     }
 
-    // Hide/show segments based on distance — keep all for respawn
+    // Keep only the active render window. A seeded run can be regenerated on death.
     const activeRange = config.FOG_END + config.SEGMENT_DEPTH * 2
     let visChanged = false
-    for (const seg of this._segments) {
-      const segEnd = seg.startZ - config.SEGMENT_DEPTH
-      const dist = Math.abs(playerZ - (seg.startZ + segEnd) / 2)
-      const shouldShow = dist < activeRange
+    for (let i = this._segments.length - 1; i >= 0; i--) {
+      const seg = this._segments[i]
+      if (seg.minZ > playerZ + activeRange) {
+        this._disposeSegment(seg, scene)
+        this._segments.splice(i, 1)
+        removed.push(seg)
+        visChanged = true
+        continue
+      }
+      const dist = Math.abs(playerZ - (seg.minZ + seg.maxZ) / 2)
+      const shouldShow = dist < activeRange + (seg.maxZ - seg.minZ) / 2
       if (seg._visible !== shouldShow) {
         seg._visible = shouldShow
         visChanged = true
         for (const m of seg.meshes) m.visible = shouldShow
       }
     }
-    return { added, removed: [], visChanged }
+    return { added, removed, visChanged }
+  }
+
+  _disposeSegment(seg, scene) {
+    const disposedGeometries = new Set()
+    const disposedMaterials = new Set()
+    for (const root of seg.meshes) {
+      scene.remove(root)
+      root.traverse((obj) => {
+        const ownsTree = root.userData.segmentOwned
+        if (ownsTree && obj.geometry && !disposedGeometries.has(obj.geometry)) {
+          obj.geometry.dispose()
+          disposedGeometries.add(obj.geometry)
+        }
+        const objectMaterials = Array.isArray(obj.material) ? obj.material : [obj.material]
+        for (const material of objectMaterials) {
+          if (!material || disposedMaterials.has(material)) continue
+          if (ownsTree || material.userData.segmentOwned) {
+            material.dispose()
+            disposedMaterials.add(material)
+          }
+        }
+      })
+    }
   }
 
 
   _createSegment(THREE) {
     const index = this._nextSegmentIndex++
     const startZ = -index * config.SEGMENT_DEPTH
+    const rng = createSeededRandom(this._seed + index)
 
     const { platforms, billboards, rails, lastPlatform, platformCounter, lastBillboardZ } = generateSegmentPlatforms(
       this._lastPlatform, startZ, this._difficulty, index === 0, this._platformCounter,
-      this._prevSegmentPlatforms, this._lastBillboardZ
+      this._prevSegmentPlatforms, this._lastBillboardZ, rng
     )
     this._lastPlatform = lastPlatform
     this._platformCounter = platformCounter
@@ -636,10 +699,11 @@ export class CourseManager {
 
     // Billboards placed in gaps between platforms
     for (const bb of billboards) {
-      const styleIdx = Math.random() < 0.75
+      const styleIdx = rng() < 0.75
         ? PRODUCT_AD_STYLE_INDEX
-        : Math.floor(Math.random() * (BILLBOARD_STYLE_COUNT - 1))
-      const result = createBillboardMeshes(bb, config, styleIdx)
+        : Math.floor(rng() * (BILLBOARD_STYLE_COUNT - 1))
+      const adVariant = Math.floor(rng() * PRODUCT_AD_VARIANT_COUNT)
+      const result = createBillboardMeshes(bb, config, styleIdx, adVariant)
       for (const m of result.meshes) meshes.push(m)
       const aabb = new THREE.Box3().setFromObject(result.mainMesh)
       if (bb.side > 0) aabb.min.x -= config.FACADE_HITBOX_PAD
@@ -662,11 +726,13 @@ export class CourseManager {
     const allIssues = validateSegment(platforms, billboards, prevNeighbors)
     const issues = allIssues.filter(i => i.type === 'overlap' || i.type === 'clip')
 
-    return { index, startZ, platforms, meshes, obstacles, issues, railData: segmentRails }
+    const minZ = Math.min(...platforms.map(p => p.z - p.d / 2))
+    const maxZ = Math.max(...platforms.map(p => p.z + p.d / 2))
+    return { index, startZ, minZ, maxZ, platforms, meshes, obstacles, issues, railData: segmentRails }
   }
 
   segmentBoundaries() {
-    return this._segments.map(s => s.startZ)
+    return this._segments.map(s => s.maxZ)
   }
 
   updatePlatforms() {

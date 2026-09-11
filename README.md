@@ -1,6 +1,6 @@
 # Floor Is Lava
 
-A 3D platformer game built with Three.js. Run, jump, and grab ledges across procedurally generated obstacle courses. Tracks score and best time. Works on desktop and mobile (touch joystick + auto-tracking camera).
+An endless first-person parkour score attack built with Three.js. Chain jumps, ledge grabs, wall runs, and rail grinds across a procedurally generated course above the lava. Works on desktop and mobile.
 
 ## Setup
 
@@ -11,12 +11,19 @@ npm run dev
 
 ## Controls
 
-**Desktop:** WASD/arrows to move, Space to jump, mouse to look
+**Desktop:** WASD to move, Space to jump, E to kick while airborne, mouse to look
 
-**Mobile:** Virtual joystick to move, tap to jump, auto-tracking camera
+**Mobile:** Left-side joystick to strafe, release the right side to jump, tap while airborne to air jump, and use two fingers while airborne to kick. Forward movement and camera tracking are automatic.
 
 ## Tech
 
 - [Three.js](https://threejs.org/) r185
 - Vite
 - Custom physics, procedural course generation, humanoid animation
+- Seeded course generation with deterministic validation tests
+
+## Development
+
+- `npm test` runs course-generation and gameplay regression tests.
+- `npm run build` creates the game and asset-viewer production pages.
+- In development, F2 opens the tuning menu, H toggles hitboxes, and F cycles camera modes.

@@ -119,6 +119,7 @@ export class Physics {
         this.velocity.y = config.WALLRUN_JUMP_SPEED
         this.velocity.x = this._wallNormalX * config.WALLRUN_KICK_SPEED
         this._wallKickTimer = config.WALLRUN_KICK_DURATION
+        this._wallrunGraceTimer = config.WALLRUN_GRACE_TIME
         this._state = STATE.AIRBORNE
         this._airJumpsLeft = config.MAX_AIR_JUMPS + 1
       } else if (this._state === STATE.GROUNDED || this._coyoteTimer > 0) {
@@ -144,6 +145,7 @@ export class Physics {
       this._wallrunTimer -= delta
       if (sDown || this._wallrunTimer <= 0) {
         this._state = STATE.AIRBORNE
+        this._wallrunGraceTimer = config.WALLRUN_GRACE_TIME
       }
     }
 
@@ -235,12 +237,13 @@ export class Physics {
               this._airJumpsLeft = config.MAX_AIR_JUMPS
             }
             if (hitAxis === 'x' && this._state === STATE.AIRBORNE &&
+                this._wallrunGraceTimer <= 0 &&
                 humanoid.position.y > config.WALLRUN_MIN_HEIGHT &&
                 this._momentum >= config.WALLRUN_MIN_ENTRY_SPEED) {
               this._state = STATE.WALLRUNNING
               this._wallNormalX = obs.wallNormalX
               this._wallrunEntrySpeed = this._moveSpeed
-              this._wallrunGraceTimer = config.WALLRUN_GRACE_TIME
+              this._wallrunGraceTimer = 0
               this.velocity.y = Math.max(this.velocity.y, 0)
               this._airJumpsLeft = config.MAX_AIR_JUMPS
               if (this.onWallRun) this.onWallRun()
@@ -343,6 +346,7 @@ export class Physics {
     if (this._state === STATE.WALLRUNNING &&
         (humanoid.position.y <= config.WALLRUN_MIN_HEIGHT || !touchingWall)) {
       this._state = STATE.AIRBORNE
+      this._wallrunGraceTimer = config.WALLRUN_GRACE_TIME
     }
 
     // Walked off an edge — start coyote timer
@@ -536,6 +540,7 @@ export class Physics {
     this._chainTimer = 0
     this._chainCombo = 0
     this._wallrunTimer = 0
+    this._wallrunGraceTimer = 0
   }
 
   static spawnPosition() {

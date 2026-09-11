@@ -20,6 +20,7 @@ export class RailDefinition {
 
 export function createRailMeshes(railDef) {
   const group = new THREE.Group()
+  group.userData.segmentOwned = true
   const neonColor = railDef.isCurved ? config.RAIL_COLOR_CURVED : config.RAIL_COLOR_STRAIGHT
   const segments = Math.max(16, Math.floor(railDef.length * 2))
   const radius = config.RAIL_RADIUS
@@ -164,13 +165,13 @@ export class RailGrinder {
     if (this._t >= 1 || this._t <= 0) {
       const clampedT = Math.max(0, Math.min(1, this._t))
       const endPos = this._activeRail.getPointAt(clampedT)
-      const endTangent = this._activeRail.getTangentAt(Math.max(0.01, Math.min(0.99, this._t)))
+      const endTangent = this._activeRail.getTangentAt(Math.max(0.01, Math.min(0.99, this._t))).multiplyScalar(this._forward)
       this._activeRail = null
       return { position: endPos, tangent: endTangent, ended: true }
     }
 
     const position = this._activeRail.getPointAt(this._t)
-    const tangent = this._activeRail.getTangentAt(this._t)
+    const tangent = this._activeRail.getTangentAt(this._t).multiplyScalar(this._forward)
     return { position, tangent, ended: false }
   }
 
@@ -178,7 +179,7 @@ export class RailGrinder {
     const rail = this._activeRail
     if (!rail) return null
     const t = Math.max(0.01, Math.min(0.99, this._t))
-    const tangent = rail.getTangentAt(t)
+    const tangent = rail.getTangentAt(t).multiplyScalar(this._forward)
     this._activeRail = null
     return tangent
   }

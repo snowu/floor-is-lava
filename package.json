@@ -1,10 +1,8 @@
 {
   "name": "floor-is-lava",
   "version": "1.0.0",
-  "main": "index.js",
-  "directories": {
-    "doc": "docs"
-  },
+  "private": true,
+  "description": "An endless first-person parkour score attack built with Three.js",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
@@ -14,7 +12,6 @@
   "keywords": [],
   "author": "",
   "license": "ISC",
-  "description": "",
   "dependencies": {
     "lil-gui": "^0.21.0",
     "three": "^0.185.0"

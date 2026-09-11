@@ -476,6 +476,7 @@ const AD_GENERATORS = [
   createFloorIsLavaAd,
   createSponsorAd,
 ]
+export const PRODUCT_AD_VARIANT_COUNT = AD_GENERATORS.length
 
 function createAdTexture(variantIndex) {
   const gen = AD_GENERATORS[variantIndex % AD_GENERATORS.length]
@@ -487,7 +488,12 @@ function createAdTexture(variantIndex) {
   return tex
 }
 
-const adTextures = AD_GENERATORS.map((_, i) => createAdTexture(i))
+let adTextures = null
+
+function getAdTextures() {
+  if (!adTextures) adTextures = AD_GENERATORS.map((_, i) => createAdTexture(i))
+  return adTextures
+}
 
 // ── Registry ────────────────────────────────────────────────────────────────
 
@@ -510,7 +516,7 @@ const materials = BILLBOARD_STYLES.map(s => {
     uniforms.gameTime = { value: 0 }
   }
   if (s.isProductAd) {
-    uniforms.adTexture = { value: adTextures[0] }
+    uniforms.adTexture = { value: null }
   }
   return new THREE.ShaderMaterial({
     uniforms,
@@ -669,7 +675,7 @@ export function isProductAdStyle(styleIndex) {
 
 let productAdCounter = 0
 
-export function createBillboardMeshes(bb, config, styleIndex = 0) {
+export function createBillboardMeshes(bb, config, styleIndex = 0, productVariant = null) {
   const meshes = []
   const bbH = bb.height || config.BILLBOARD_HEIGHT
   const bbW = bb.width || config.BILLBOARD_WIDTH
@@ -679,9 +685,12 @@ export function createBillboardMeshes(bb, config, styleIndex = 0) {
   let mat = materials[styleIndex % materials.length]
 
   if (isProductAdStyle(styleIndex)) {
+    const textures = getAdTextures()
+    const textureIndex = productVariant ?? productAdCounter
     mat = mat.clone()
-    mat.uniforms.adTexture = { value: adTextures[productAdCounter % adTextures.length] }
+    mat.uniforms.adTexture = { value: textures[textureIndex % textures.length] }
     mat.uniforms.time = { value: 0 }
+    mat.userData.segmentOwned = true
     productAdCounter++
   }
 
