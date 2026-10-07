@@ -2,7 +2,7 @@
   "name": "floor-is-lava",
   "version": "1.0.0",
   "private": true,
-  "description": "An endless first-person parkour score attack built with Three.js",
+  "description": "An endless side-scrolling rooftop runner with Mirror's Edge style movement, built with Three.js",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
@@ -13,11 +13,11 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "lil-gui": "^0.21.0",
-    "three": "^0.185.0"
+    "lil-gui": "^0.21.0"
   },
   "devDependencies": {
     "vite": "^8.1.0",
     "vitest": "^4.1.9"
-  }
+  },
+  "type": "module"
 }

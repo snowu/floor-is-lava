@@ -2,175 +2,101 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-    <title>floor-is-lava</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&display=swap" rel="stylesheet">
-    <style>
-      * { margin: 0; padding: 0; box-sizing: border-box; }
-      body { overflow: hidden; background: #000; touch-action: none; }
-      @media (pointer: coarse) {
-        #score-hud { font-size: 16px !important; top: 10px !important; right: 10px !important; }
-        #score-hud div { font-size: 13px !important; }
-}
-    </style>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+    <meta name="theme-color" content="#05040d" />
+    <meta name="description" content="A cyberpunk rooftop runner. Vault, slide, roll, wall-run and zip across the city: beat the clock in time trials or chain combos in endless." />
+    <title>Floor Is Lava</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@400;600;700&family=Silkscreen:wght@400;700&display=swap" rel="stylesheet" />
   </head>
-  <body>
-    <div id="score-hud" style="
-      position: fixed; top: 20px; right: 20px;
-      font-family: 'Orbitron', monospace; font-size: 24px; color: #fff;
-      text-align: right; pointer-events: none; user-select: none;
-      text-shadow: 0 0 6px rgba(0,0,0,0.8);
-    ">
-      <div>Score: <span id="score-current">0</span></div>
-      <div style="font-size: 20px; color: #aaa;">Best: <span id="score-best">0</span></div>
-      <div style="font-size: 20px; color: #00ffcc; margin-top: 2px;">Best x<span id="best-multiplier">1</span></div>
-      <div style="font-size: 20px; color: #ff0; margin-top: 4px;">Time: <span id="timer">0:00</span></div>
-      <button id="help-btn" style="
-        display: none;
-        margin-top: 8px; margin-left: auto;
-        width: 28px; height: 28px;
-        background: rgba(255,255,255,0.18); border: 1px solid rgba(255,255,255,0.35);
-        border-radius: 50%; color: #fff; font-family: 'Orbitron', monospace; font-size: 14px; font-weight: bold;
-        cursor: pointer; pointer-events: auto;
-        backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px);
-        line-height: 26px; text-align: center; padding: 0;
-      ">?</button>
-      <div id="debug-hud" style="display: none;">
-        <div style="font-size: 20px; color: #f80; margin-top: 8px;">Speed: <span id="speed-meter">0</span></div>
-        <div style="font-size: 20px; color: #8cf; margin-top: 4px;">Jumps: <span id="air-jumps">0</span></div>
-        <div style="font-size: 20px; color: #aaa; margin-top: 4px;">State: <span id="player-state">-</span></div>
-      </div>
-    </div>
-    <div id="mobile-overlay" style="
-      display: none;
-      position: fixed; inset: 0;
-      justify-content: center; align-items: center;
-      font-family: 'Orbitron', monospace; color: #fff;
-      pointer-events: none; z-index: 50;
-      flex-direction: column; gap: 16px;
-      background: rgba(0,0,0,0.5);
-    ">
-      <div style="font-size: 32px; font-weight: bold; text-shadow: 0 2px 8px #000;">Tap right side to start</div>
-      <div style="font-size: 15px; color: #ddd; text-align: center; line-height: 1.8; text-shadow: 0 1px 4px #000;">
-        Left side: drag to strafe<br>
-        Right side: release to jump<br>
-        Right side: swipe down to slide<br>
-        Airborne tap: air jump<br>
-        Airborne 2-finger tap: kick
-      </div>
-    </div>
-    <div id="help-modal" style="
-      display: none;
-      position: fixed; inset: 0;
-      background: rgba(0,0,0,0.8);
-      z-index: 200;
-      justify-content: center; align-items: center;
-      font-family: 'Orbitron', monospace; color: #fff;
-    ">
-      <div style="
-        background: rgba(30,30,30,0.95); border: 1px solid rgba(255,255,255,0.2);
-        border-radius: 12px; padding: 28px 32px; max-width: 340px; width: 90%;
-        text-align: left; position: relative;
-      ">
-        <div style="font-size: 20px; font-weight: bold; margin-bottom: 16px; text-align: center;">Controls</div>
-        <div style="font-size: 14px; line-height: 2; color: #eee;">
-          <div style="margin-bottom: 8px; color: #8cf; font-weight: bold;">Left side of screen</div>
-          <div>👆 Drag left/right → Strafe</div>
-          <div style="margin-top: 12px; margin-bottom: 8px; color: #8cf; font-weight: bold;">Right side of screen</div>
-          <div>👆 Tap → Start running</div>
-          <div>👆 Release → Jump</div>
-          <div>👇 Swipe down → Slide</div>
-          <div>👆 Tap while airborne → Air jump</div>
-          <div>✌️ 2-finger tap airborne → Kick</div>
-        </div>
-        <button id="help-close" style="
-          display: block; margin: 20px auto 0;
-          padding: 8px 28px;
-          background: rgba(255,255,255,0.15); border: 1px solid rgba(255,255,255,0.3);
-          border-radius: 8px; color: #fff; font-family: 'Orbitron', monospace; font-size: 14px;
-          cursor: pointer;
-        ">Got it</button>
-      </div>
-    </div>
-    <div id="momentum-bar-container" style="position:fixed;bottom:20px;left:50%;transform:translateX(-50%);width:200px;height:8px;background:rgba(0,0,0,0.5);border-radius:4px;border:1px solid rgba(255,255,255,0.2);z-index:10">
-      <div id="momentum-bar" style="height:100%;width:0%;border-radius:4px;background:linear-gradient(90deg,#00ff88,#ffff00,#ff4444);transition:width 0.1s"></div>
-    </div>
-    <div id="chain-counter" style="position:fixed;bottom:50px;left:50%;transform:translateX(-50%);color:#00ffcc;font-family:monospace;font-size:28px;font-weight:bold;z-index:10;opacity:0;transition:opacity 0.3s;text-shadow:0 0 10px #00ffcc,0 0 20px #00ffcc"></div>
-    <button id="cam-mode-btn" style="
-      display: none;
-      position: fixed; bottom: 16px; right: 16px;
-      height: 36px; padding: 0 12px;
-      background: rgba(255,255,255,0.15); border: 1px solid rgba(255,255,255,0.3);
-      border-radius: 8px; color: #fff; font-family: 'Orbitron', monospace; font-size: 14px;
-      cursor: pointer; z-index: 100;
-      backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px);
-    ">FP</button>
-    <button id="fullscreen-btn" style="
-      display: none;
-      position: fixed; bottom: 16px; right: 70px;
-      width: 44px; height: 44px;
-      background: rgba(255,255,255,0.15); border: 1px solid rgba(255,255,255,0.3);
-      border-radius: 8px; color: #fff; font-size: 20px;
-      cursor: pointer; z-index: 100;
-      backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px);
-    " aria-label="Fullscreen">⛶</button>
-    <script>
-      window.DEV_MODE = location.hostname === 'localhost' || location.hostname === '';
-      if (window.DEV_MODE) {
-        document.getElementById('debug-hud').style.display = 'block';
-        document.getElementById('cam-mode-btn').style.display = 'block';
-      }
+  <body class="pixel">
+    <div id="app"></div>
 
-      var _hasTouchUA = /Android|iPhone|iPad|iPod|webOS|BlackBerry|IEMobile|Opera Mini|Mobi/i.test(navigator.userAgent);
-      var _isCoarse = window.matchMedia('(pointer: coarse)').matches;
-      var _hasTouchHardware = navigator.maxTouchPoints > 0;
-      if (_isCoarse && (_hasTouchUA || _hasTouchHardware)) {
-        document.getElementById('mobile-overlay').style.display = 'flex';
-        var helpBtn = document.getElementById('help-btn');
-        var helpModal = document.getElementById('help-modal');
-        var helpClose = document.getElementById('help-close');
-        helpBtn.style.display = 'block';
-        helpBtn.addEventListener('touchend', function(e) {
-          e.stopPropagation();
-          helpModal.style.display = 'flex';
-        });
-        helpClose.addEventListener('touchend', function(e) {
-          e.stopPropagation();
-          helpModal.style.display = 'none';
-        });
-        helpModal.addEventListener('touchend', function(e) {
-          if (e.target === helpModal) helpModal.style.display = 'none';
-        });
-        var fsBtn = document.getElementById('fullscreen-btn');
-        fsBtn.style.display = 'block';
-        function updateFsBtn() {
-          var isFs = !!(document.fullscreenElement || document.webkitFullscreenElement);
-          fsBtn.textContent = isFs ? '✕' : '⛶';
-          fsBtn.setAttribute('aria-label', isFs ? 'Exit fullscreen' : 'Fullscreen');
-        }
-        fsBtn.addEventListener('touchend', function(e) {
-          e.stopPropagation();
-          var isFs = !!(document.fullscreenElement || document.webkitFullscreenElement);
-          if (isFs) {
-            (document.exitFullscreen || document.webkitExitFullscreen).call(document);
-          } else {
-            var el = document.documentElement;
-            var rfs = el.requestFullscreen || el.webkitRequestFullscreen || el.msRequestFullscreen;
-            if (rfs) {
-              rfs.call(el).then(function() {
-                if (screen.orientation && screen.orientation.lock) {
-                  screen.orientation.lock('landscape').catch(function() {});
-                }
-              }).catch(function() {});
-            }
-          }
-        });
-        document.addEventListener('fullscreenchange', updateFsBtn);
-        document.addEventListener('webkitfullscreenchange', updateFsBtn);
-      }
-    </script>
+    <div id="hud" class="hud is-hidden">
+      <div class="hud-tl">
+        <div class="chip dist"><span id="score">0</span><small id="score-unit">PTS</small></div>
+        <div class="sub"><span id="sub-a">BEST 0</span><span class="dot"></span><span id="sub-b"></span></div>
+        <div id="lives" class="lives"></div>
+      </div>
+      <div class="hud-tc" id="trial-hud">
+        <div class="timer" id="timer">0:00.00</div>
+        <div class="progress"><i id="progress-fill"></i><span id="progress-ticks"></span></div>
+        <div class="delta" id="delta"></div>
+      </div>
+      <div class="hud-tr">
+        <button id="btn-focus" class="icon-btn touch-only" aria-label="Focus">◎</button>
+        <button id="btn-mute" class="icon-btn" aria-label="Mute">♪</button>
+        <button id="btn-pause" class="icon-btn" aria-label="Pause">❚❚</button>
+      </div>
+      <div class="hud-bl">
+        <div class="meter-label"><span>SPEED</span><b id="speed-val">0</b></div>
+        <div class="speed" id="speed-segs"></div>
+        <div class="meter-label focus-label"><span>FOCUS</span><b id="focus-key" class="key-only">E</b></div>
+        <div class="focus"><i id="focus-fill"></i></div>
+      </div>
+      <div id="combo" class="combo">
+        <div class="combo-moves" id="combo-moves"></div>
+        <div class="combo-points"><span id="combo-pts">0</span><b id="combo-mult">×1</b></div>
+        <div class="combo-bar"><i id="combo-fill"></i></div>
+      </div>
+      <div id="countdown" class="countdown"></div>
+      <div id="banner" class="banner"></div>
+      <div id="hint" class="hint"></div>
+      <div id="toasts" class="toasts"></div>
+      <div id="touch-zones" class="touch-zones">
+        <div class="zone left"><b>SLIDE · ROLL</b><span>tap the left side</span></div>
+        <div class="zone right"><b>JUMP</b><span>hold for height</span></div>
+      </div>
+    </div>
+
+    <div id="title" class="screen">
+      <div class="card">
+        <div class="kicker"><i></i>A CYBERPUNK ROOFTOP RUN</div>
+        <h1>FLOOR<br />IS <em>LAVA</em></h1>
+        <ul id="menu" class="menu"></ul>
+        <div class="menu-help key-only"><kbd>↑</kbd><kbd>↓</kbd> choose · <kbd>SPACE</kbd> run · <kbd>R</kbd> restart</div>
+        <dl class="controls key-only">
+          <dt><kbd>SPACE</kbd></dt><dd>Jump — hold for height, into walls to climb</dd>
+          <dt><kbd>S</kbd></dt><dd>Slide — or just before landing to roll</dd>
+          <dt><kbd>E</kbd></dt><dd>Focus — slow time when charged</dd>
+        </dl>
+        <dl class="controls touch-only">
+          <dt>RIGHT</dt><dd>Jump — hold for height</dd>
+          <dt>LEFT</dt><dd>Slide — or just before landing to roll</dd>
+        </dl>
+      </div>
+      <div class="rotate touch-only">Turn your phone sideways for a wider view</div>
+    </div>
+
+    <div id="over" class="screen is-hidden">
+      <div class="card">
+        <div class="kicker"><i></i><span id="over-kicker">RUN OVER</span></div>
+        <h1 id="over-title">OUT OF <em>LIVES</em></h1>
+        <div class="result"><span id="over-main">0</span><small id="over-unit">PTS</small></div>
+        <div id="over-best" class="best-line"></div>
+        <div id="over-medals" class="medals"></div>
+        <div class="stats" id="over-stats"></div>
+        <ol id="over-splits" class="splits"></ol>
+        <div class="actions">
+          <button id="btn-retry" class="action primary">RETRY <kbd class="key-only">SPACE</kbd></button>
+          <button id="btn-menu" class="action">MENU <kbd class="key-only">ESC</kbd></button>
+        </div>
+      </div>
+    </div>
+
+    <div id="paused" class="screen is-hidden">
+      <div class="card small">
+        <div class="kicker"><i></i>PAUSED</div>
+        <h1>TAKE A <em>BREATH</em></h1>
+        <div class="actions">
+          <button id="btn-resume" class="action primary">RESUME <kbd class="key-only">ESC</kbd></button>
+          <button id="btn-restart" class="action">RESTART <kbd class="key-only">R</kbd></button>
+          <button id="btn-quit" class="action">MENU <kbd class="key-only">ENTER</kbd></button>
+        </div>
+      </div>
+    </div>
+
     <script type="module" src="/src/main.js"></script>
   </body>
 </html>

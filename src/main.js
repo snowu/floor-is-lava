@@ -1,459 +1,561 @@
-import * as THREE from 'three'
-import { scene, camera, renderer, timer, updateSky } from './scene.js'
-import { createHumanoid } from './humanoid.js'
-import { Movement } from './movement.js'
-import { CameraController } from './cameraController.js'
-import { createGround, updateGround } from './ground.js'
-import { createRocks, updateRocks, getRockHazards, createMountains, updateMountains } from './environment.js'
-import { CourseManager, BillboardTestCourse } from './obstacles.js'
-import { updatePlatformMaterials } from './platformStyles.js'
-import { updateBillboardMaterials, initSurveillance, createSkyScreens, updateSkyScreens } from './billboardStyles.js'
-import { Physics } from './physics.js'
-import { RailGrinder } from './railSystem.js'
-import { HumanoidAnimator } from './humanoidAnimator.js'
-import { makeWireBox, createPlayerHitboxHelpers, updatePlayerHitboxPositions, createObstacleHitboxHelper } from './hitboxes.js'
-import { createDebugMenu } from './debugMenu.js'
-import config from './config.js'
-import { isMobile } from './mobile.js'
-import { GameSession } from './gameSession.js'
+import './ui/style.css'
+import { PHYS, FOCUS, RUN } from './sim/config.js'
+import { Level } from './sim/level.js'
+import { createPlayer, stepPlayer } from './sim/player.js'
+import { Bot } from './sim/bot.js'
+import { ScoreKeeper, COMBO_WINDOW } from './sim/score.js'
+import { GhostRecorder, GhostPlayer } from './sim/ghost.js'
+import { TRACKS, dailyTrack, levelOptions } from './sim/tracks.js'
+import { Input } from './input.js'
+import { Audio } from './audio.js'
+import { Hud, formatTime, medalFor } from './ui/hud.js'
+import { PixelView } from './pixel/view.js'
 
-const mobileOverlay = document.getElementById('mobile-overlay')
+const DEMO_SEED = 20261007
+const TOAST = {
+  vault: 'SPEED VAULT', clamber: 'CLAMBER', roll: 'ROLL', wallrun: 'WALLRUN', walljump: 'WALL KICK',
+  zip: 'ZIPLINE', spring: 'LAUNCH', grab: 'LEDGE', climb: 'WALL CLIMB', slidejump: 'SLIDE JUMP',
+}
 
-// Lights
-const ambientLight = new THREE.AmbientLight(0xffffff, config.AMBIENT_INTENSITY)
-scene.add(ambientLight)
+const store = {
+  get(key, fallback) { try { return localStorage.getItem(key) ?? fallback } catch { return fallback } },
+  set(key, value) { try { localStorage.setItem(key, value) } catch { /* storage unavailable */ } },
+  json(key) { try { return JSON.parse(localStorage.getItem(key)) } catch { return null } },
+}
 
-const dirLight = new THREE.DirectionalLight(0xffffff, 1)
-dirLight.position.set(config.DIR_LIGHT_X, config.DIR_LIGHT_Y, config.DIR_LIGHT_Z)
-scene.add(dirLight)
+const isTouch = window.matchMedia('(pointer: coarse)').matches && navigator.maxTouchPoints > 0
+const params = new URLSearchParams(location.search)
+const fixedSeed = params.has('seed') ? Number(params.get('seed')) : null
 
-// Death floor
-const ground = createGround()
-scene.add(ground)
+const view = new PixelView()
+const input = new Input()
+const audio = new Audio()
+const hud = new Hud(isTouch)
+hud.setMuted(audio.muted)
 
-// Environment: rocks + mountains
-createRocks(scene)
-createMountains(scene)
+const MODES = [{ kind: 'endless' }, ...TRACKS.map((track) => ({ kind: 'trial', track })), { kind: 'trial', track: dailyTrack() }]
 
-// Surveillance billboard system
-initSurveillance(renderer, scene)
-createSkyScreens(scene)
+const g = {
+  mode: 'title',            // title | countdown | run | respawn | finish | over | paused
+  pausedFrom: null,
+  sel: Math.min(MODES.length - 1, Number(store.get('fil.sel', 0)) || 0),
+  kind: 'endless',
+  track: null,
+  level: null,
+  player: null,
+  bot: null,
+  prevX: 0, prevY: 0,
+  acc: 0,
+  clock: 0,
+  phaseT: 0,
+  topSpeed: 0,
+  moves: 0,
+  falls: 0,
+  focus: 0,
+  focusActive: false,
+  focusVis: 0,
+  flash: 0,
+  fade: 1,
+  district: '',
+  hintsShown: new Set(),
+  cpNext: 0,
+  splits: [],
+  pb: null,
+  ghost: null,
+  recorder: null,
+  score: null,
+  lives: 0,
+  overAt: 0,
+  tutorialDone: store.get('fil.tutorial', '0') === '1',
+  focusHinted: store.get('fil.focusHint', '0') === '1',
+  comboHinted: store.get('fil.comboHint', '0') === '1',
+}
 
-// Course manager — generates corridor + platforms on the fly
-const course = new CourseManager('medium')
-const courses = [course]
-if (window.DEV_MODE) console.info(`Course seed: ${course.seed}`)
+// ── records ──────────────────────────────────────────────────────────────
 
-// if (window.DEV_MODE) {
-//   courses.push(new BillboardTestCourse(30))
-// }
+const endlessBest = () => Number(store.get('fil.best.endless', 0)) || 0
+const trialPB = (track) => store.json(`fil.pb.${track.id}`)
 
-const { group: humanoid, joints } = createHumanoid()
-humanoid.position.set(config.SPAWN_POS.x, config.SPAWN_POS.y, config.SPAWN_POS.z)
-scene.add(humanoid)
-
-// Controllers
-const physics  = new Physics()
-const cameraController = new CameraController(camera, renderer.domElement, humanoid, scene)
-const movement = new Movement(physics, cameraController.joystick)
-const animator = new HumanoidAnimator(joints, physics)
-const railGrinder = new RailGrinder()
-cameraController.animator = animator
-if (window.DEV_MODE) createDebugMenu(animator, scene, courses, { camera, ambientLight, dirLight })
-
-const MODE_LABELS = { 'first-person': 'FP', 'third-person': 'TP', 'free': 'Free' }
-const camModeBtn = document.getElementById('cam-mode-btn')
-if (camModeBtn) {
-  const handler = (e) => {
-    e.preventDefault()
-    e.stopPropagation()
-    cameraController.cycleMode()
-    camModeBtn.textContent = MODE_LABELS[cameraController.mode] || cameraController.mode
-    if (isMobile && mobileOverlay) {
-      if (cameraController.mode === 'first-person' && !movement.started) {
-        mobileOverlay.style.display = 'flex'
-      } else {
-        mobileOverlay.style.display = 'none'
-      }
+function menuItems() {
+  return MODES.map((m) => {
+    if (m.kind === 'endless') {
+      return { name: 'ENDLESS', sub: 'combo score attack', best: `${endlessBest().toLocaleString()} PTS`, medal: -1 }
     }
-  }
-  camModeBtn.addEventListener('click', handler)
-  camModeBtn.addEventListener('touchend', handler)
-}
-
-// HUD elements
-const scoreEl = document.getElementById('score-current')
-const bestEl = document.getElementById('score-best')
-const speedEl = document.getElementById('speed-meter')
-const airJumpsEl = document.getElementById('air-jumps')
-const stateEl = document.getElementById('player-state')
-const timerEl = document.getElementById('timer')
-const momentumBar = document.getElementById('momentum-bar')
-const chainCounterEl = document.getElementById('chain-counter')
-const bestMultEl = document.getElementById('best-multiplier')
-const gameSession = new GameSession()
-let chainDisplayTimer = 0
-let cachedObstacles = []
-let cachedWallAABBs = []
-let cachedRails = []
-
-function updateScoreDisplay() {
-  scoreEl.textContent = gameSession.score
-  bestEl.textContent = gameSession.bestScore
-  bestMultEl.textContent = gameSession.bestMultiplier
-}
-updateScoreDisplay()
-
-function formatTime(seconds) {
-  const m = Math.floor(seconds / 60)
-  const s = Math.floor(seconds % 60)
-  return `${m}:${s.toString().padStart(2, '0')}`
-}
-
-physics.onBoxLand = (obs) => {
-  if (gameSession.landOn(obs)) updateScoreDisplay()
-}
-
-const _originalOnLand = physics.onLand
-physics.onLand = () => {
-  if (_originalOnLand) _originalOnLand()
-  gameSession.land()
-  updateScoreDisplay()
-  railGrinder.resetCooldown()
-}
-
-physics.onWallRun = () => {
-  gameSession.startTrick()
-  updateScoreDisplay()
-  chainCounterEl.textContent = `x${gameSession.trickMultiplier}`
-  chainCounterEl.style.opacity = '1'
-  chainDisplayTimer = 2.0
-}
-
-physics.onGrind = () => {
-  gameSession.startTrick()
-  updateScoreDisplay()
-  chainCounterEl.textContent = `x${gameSession.trickMultiplier}`
-  chainCounterEl.style.opacity = '1'
-  chainDisplayTimer = 2.0
-}
-
-physics.onChain = (combo) => {
-  chainDisplayTimer = 2.0
-}
-
-physics.onGroundHit = () => {
-  gameSession.reset()
-  updateScoreDisplay()
-  timerEl.textContent = formatTime(0)
-  chainDisplayTimer = 0
-  chainCounterEl.style.opacity = '0'
-  if (railGrinder.isGrinding) railGrinder.dismount()
-  physics._respawn(humanoid)
-  cameraController.resetLook()
-  movement.resetForDeath()
-  for (const c of courses) c.destroyAll(scene)
-  cachedObstacles = []
-  cachedWallAABBs = []
-  cachedRails = []
-  if (isMobile && mobileOverlay) mobileOverlay.style.display = 'flex'
-}
-
-// Debug hitboxes — toggle with H
-
-let obstacleHelpers = []
-let ledgeHelpers = []
-let seamHelpers = []
-let issueHelpers = []
-let railHelpers = []
-let hitboxesVisible = false
-let kickHelper = null
-let _prevPW = config.PLAYER_WIDTH, _prevPH = config.PLAYER_HEIGHT
-
-let playerHitboxHelpers = createPlayerHitboxHelpers()
-let upperHelper = playerHitboxHelpers.upper
-let lowerHelper = playerHitboxHelpers.lower
-scene.add(upperHelper)
-scene.add(lowerHelper)
-
-function rebuildPlayerHelper() {
-  const vis = upperHelper.visible
-  scene.remove(upperHelper)
-  scene.remove(lowerHelper)
-  upperHelper.geometry.dispose()
-  lowerHelper.geometry.dispose()
-  playerHitboxHelpers = createPlayerHitboxHelpers()
-  upperHelper = playerHitboxHelpers.upper
-  lowerHelper = playerHitboxHelpers.lower
-  upperHelper.visible = vis
-  lowerHelper.visible = vis
-  scene.add(upperHelper)
-  scene.add(lowerHelper)
-  _prevPW = config.PLAYER_WIDTH
-  _prevPH = config.PLAYER_HEIGHT
-}
-
-function disposeHelper(h) {
-  scene.remove(h)
-  if (h.geometry) h.geometry.dispose()
-  if (h.material && !h.material._shared) h.material.dispose()
-}
-
-function rebuildObstacleHelpers() {
-  obstacleHelpers.forEach(disposeHelper)
-  ledgeHelpers.forEach(disposeHelper)
-  seamHelpers.forEach(disposeHelper)
-  const allObs = cachedObstacles
-  obstacleHelpers = allObs.map(({ aabb }) => {
-    const h = createObstacleHitboxHelper(aabb, 0xffffff)
-    h.visible = hitboxesVisible
-    scene.add(h)
-    return h
+    const pb = trialPB(m.track)
+    const sub = m.track.daily ? `${m.track.daily.slice(4, 6)}/${m.track.daily.slice(6)} · ${m.track.length} M` : `time trial · ${m.track.length} M`
+    return { name: m.track.name.toUpperCase(), sub, best: pb ? formatTime(pb.time) : '—', medal: pb ? medalFor(pb.time, m.track.medals) : -1 }
   })
-  ledgeHelpers = allObs.filter(o => o.ledgeAABB).map(({ ledgeAABB }) => {
-    const h = createObstacleHitboxHelper(ledgeAABB, 0x00ffff)
-    h.visible = hitboxesVisible
-    scene.add(h)
-    return h
-  })
-  // Segment zone rectangles on the ground between seams
-  seamHelpers = []
-  for (const c of courses) {
-    if (!c.segmentBoundaries) continue
-    const bounds = c.segmentBoundaries()
-    for (let i = 0; i < bounds.length; i++) {
-      const z0 = bounds[i]
-      const z1 = i + 1 < bounds.length ? bounds[i + 1] : z0 - config.SEGMENT_DEPTH
-      const depth = Math.abs(z0 - z1)
-      const midZ = (z0 + z1) / 2
-      const seamMat = new THREE.LineBasicMaterial({ color: 0xff00ff, depthTest: false })
-      const planeGeo = new THREE.PlaneGeometry(config.CORRIDOR_WIDTH, depth)
-      const seamGeo = new THREE.EdgesGeometry(planeGeo)
-      planeGeo.dispose()
-      const seam = new THREE.LineSegments(seamGeo, seamMat)
-      seam.rotation.x = -Math.PI / 2
-      seam.position.set(0, 0.05, midZ)
-      seam.renderOrder = 999
-      seam.visible = hitboxesVisible
-      scene.add(seam)
-      seamHelpers.push(seam)
-    }
-  }
-  // Rail snap radius visualization — tube showing snap zone
-  railHelpers.forEach(disposeHelper)
-  railHelpers = []
-  const railSnapMat = new THREE.MeshBasicMaterial({ color: 0xffff00, wireframe: true, transparent: true, opacity: 0.25, depthWrite: false })
-  for (const railData of cachedRails) {
-    const rd = railData.railDef
-    const segments = Math.max(8, Math.floor(rd.length))
-    const snapTube = new THREE.TubeGeometry(rd.spline, segments, config.RAIL_SNAP_RADIUS, 8, false)
-    const mesh = new THREE.Mesh(snapTube, railSnapMat)
-    mesh.visible = hitboxesVisible
-    scene.add(mesh)
-    railHelpers.push(mesh)
-  }
+}
 
-  // Issue markers — red for overlap/clip, yellow for unreachable
-  issueHelpers.forEach(disposeHelper)
-  issueHelpers = []
-  for (const c of courses) {
-    if (!c._segments) continue
-    for (const seg of c._segments) {
-      if (!seg.issues || seg.issues.length === 0) continue
-      const flagged = new Set()
-      for (const issue of seg.issues) {
-        const color = issue.type === 'unreachable' ? 0xffff00 : 0xff0000
-        for (const idx of issue.platIndices) {
-          if (idx >= seg.platforms.length || flagged.has(`${idx}-${color}`)) continue
-          flagged.add(`${idx}-${color}`)
-          const p = seg.platforms[idx]
-          const marker = makeWireBox(p.w + 0.3, p.h + 0.3, p.d + 0.3, color)
-          marker.position.set(p.x, p.y, p.z)
-          marker.visible = hitboxesVisible
-          scene.add(marker)
-          issueHelpers.push(marker)
-        }
-      }
+function renderMenu() {
+  hud.menu(menuItems(), g.sel, (i) => start(i))
+}
+
+// ── worlds and runs ──────────────────────────────────────────────────────
+
+function buildWorld(level, demo) {
+  g.level = level
+  level.ensure(260)
+  view.bind(level)
+  g.player = createPlayer(0, level.roofAt(0))
+  g.prevX = g.player.x
+  g.prevY = g.player.y
+  g.bot = demo ? new Bot(level) : null
+  g.acc = 0
+  g.focus = 0
+  g.focusActive = false
+  g.district = ''
+  view.snap(g.player.x, g.player.y)
+}
+
+function toTitle() {
+  buildWorld(new Level(DEMO_SEED), true)
+  g.mode = 'title'
+  hud.showHud(false)
+  hud.showOver(false)
+  hud.showPaused(false)
+  hud.showTitle(true)
+  renderMenu()
+}
+
+function start(i) {
+  g.sel = i
+  store.set('fil.sel', String(i))
+  newRun()
+}
+
+function newRun() {
+  audio.start()
+  const m = MODES[g.sel]
+  g.kind = m.kind
+  g.track = m.track ?? null
+  const level = g.kind === 'trial'
+    ? new Level(g.track.seed, levelOptions(g.track))
+    : new Level(fixedSeed ?? (Math.random() * 2 ** 32) >>> 0)
+  buildWorld(level, false)
+  g.clock = 0
+  g.phaseT = 0
+  g.topSpeed = 0
+  g.moves = 0
+  g.falls = 0
+  g.cpNext = 0
+  g.splits = []
+  g.hintsShown.clear()
+  g.score = new ScoreKeeper()
+  g.score.teleport(g.player.x)
+  g.lives = RUN.LIVES
+  g.fade = 1
+  view.passed = 0
+
+  if (g.kind === 'trial') {
+    level.ensure(g.track.length + 120)
+    g.pb = trialPB(g.track)
+    g.ghost = g.pb?.ghost ? new GhostPlayer(g.pb.ghost) : null
+    g.recorder = new GhostRecorder()
+    hud.setupRun('trial', {
+      title: g.track.name.toUpperCase(),
+      best: g.pb ? `PB ${formatTime(g.pb.time)}` : 'NO TIME YET',
+      checkpoints: level.checkpoints,
+      length: level.finish.x,
+    })
+    g.mode = 'countdown'
+    g.countShown = -1
+  } else {
+    g.pb = null
+    g.ghost = null
+    g.recorder = null
+    hud.setupRun('endless', { title: '', best: `BEST ${endlessBest().toLocaleString()}`, lives: RUN.LIVES })
+    g.mode = 'run'
+    if (!g.comboHinted && g.tutorialDone) {
+      g.comboHinted = true
+      store.set('fil.comboHint', '1')
+      hud.hint('combo')
     }
+  }
+  input.clearEdges()
+  hud.showTitle(false)
+  hud.showOver(false)
+  hud.showPaused(false)
+  hud.showHud(true)
+  hud.showZones()
+  setTimeout(() => hud.hideZones(), 3500)
+}
+
+function toMenu() {
+  audio.ctx?.resume()
+  toTitle()
+}
+
+function setPaused(on) {
+  if (on && (g.mode === 'run' || g.mode === 'countdown' || g.mode === 'respawn')) {
+    g.pausedFrom = g.mode
+    g.mode = 'paused'
+    hud.showPaused(true)
+    audio.ctx?.suspend()
+  } else if (!on && g.mode === 'paused') {
+    g.mode = g.pausedFrom
+    hud.showPaused(false)
+    input.clearEdges()
+    audio.ctx?.resume()
   }
 }
 
-window.addEventListener('keydown', (e) => {
-  if (window.DEV_MODE && e.code === 'KeyH' && !e.shiftKey && !e.ctrlKey && !e.altKey) {
-    hitboxesVisible = !hitboxesVisible
-    if (hitboxesVisible) rebuildObstacleHelpers()
-    obstacleHelpers.forEach(h => { h.visible = hitboxesVisible })
-    ledgeHelpers.forEach(h => { h.visible = hitboxesVisible })
-    seamHelpers.forEach(h => { h.visible = hitboxesVisible })
-    issueHelpers.forEach(h => { h.visible = hitboxesVisible })
-    railHelpers.forEach(h => { h.visible = hitboxesVisible })
-    upperHelper.visible = hitboxesVisible
-    lowerHelper.visible = hitboxesVisible
-  }
-})
+function toggleMute() {
+  audio.start()
+  audio.setMuted(!audio.muted)
+  hud.setMuted(audio.muted)
+}
 
-let _paused = false
-document.addEventListener('visibilitychange', () => {
-  if (document.hidden) {
-    _paused = true
-  }
-})
+const playing = () => ['countdown', 'run', 'respawn', 'finish', 'paused', 'over'].includes(g.mode)
 
-function animate(timestamp) {
-  requestAnimationFrame(animate)
-  timer.update(timestamp)
-  const rawDelta = timer.getDelta()
-  if (_paused || rawDelta > 0.5) {
-    _paused = false
-    renderer.render(scene, camera)
+input.on('nav', (d) => {
+  if (g.mode !== 'title') return
+  g.sel = (g.sel + d + MODES.length) % MODES.length
+  renderMenu()
+})
+input.on('confirm', () => {
+  if (g.mode === 'title') start(g.sel)
+  else if (g.mode === 'over' && performance.now() - g.overAt > 400) newRun()
+})
+input.on('enter', () => {
+  if (g.mode === 'title') start(g.sel)
+  else if (g.mode === 'paused') { hud.showPaused(false); toMenu() }
+  else if (g.mode === 'over') newRun()
+})
+input.on('restart', () => {
+  if (!playing()) return
+  audio.ctx?.resume()
+  newRun()
+})
+input.on('back', () => {
+  if (g.mode === 'paused') setPaused(false)
+  else if (g.mode === 'over') toMenu()
+  else setPaused(true)
+})
+input.on('pause', () => setPaused(g.mode !== 'paused'))
+input.on('mute', toggleMute)
+
+const click = (id, fn) => document.getElementById(id).addEventListener('click', fn)
+click('btn-pause', () => setPaused(g.mode !== 'paused'))
+click('btn-mute', toggleMute)
+click('btn-retry', () => newRun())
+click('btn-menu', () => toMenu())
+click('btn-resume', () => setPaused(false))
+click('btn-restart', () => { audio.ctx?.resume(); newRun() })
+click('btn-quit', () => toMenu())
+document.getElementById('btn-focus').addEventListener('touchstart', (e) => { e.preventDefault(); input.focusPressed = true }, { passive: false })
+document.addEventListener('visibilitychange', () => { if (document.hidden) setPaused(true) })
+
+if (import.meta.env.DEV) {
+  input.on('debug', async () => {
+    if (g.gui) { g.gui.destroy(); g.gui = null; return }
+    const { default: GUI } = await import('lil-gui')
+    g.gui = new GUI({ title: 'Tuning' })
+    const phys = g.gui.addFolder('Physics')
+    for (const k of Object.keys(PHYS)) if (typeof PHYS[k] === 'number' && k !== 'FIXED_DT') phys.add(PHYS, k)
+  })
+}
+
+// ── game events ──────────────────────────────────────────────────────────
+
+function onEvent(e) {
+  const p = g.player
+  const live = g.mode === 'run'
+  if (live || g.mode === 'title') audio.event(e.type, e)
+  view.event(e, p)
+  if (e.type === 'bonk') g.flash = 0.12
+  if (e.type === 'dead') {
+    if (g.mode === 'title') toTitle()
+    else if (live) startRespawn()
     return
   }
-  const delta = Math.min(rawDelta, 0.05)
-
-  // Generate segments for all courses
-  const currentSpeed = Math.sqrt(physics.velocity.x ** 2 + physics.velocity.z ** 2)
-  let anyChanged = false
-  for (const c of courses) {
-    const { added, visChanged } = c.update(humanoid.position.z, currentSpeed, scene, THREE)
-    if (added.length > 0 || visChanged) anyChanged = true
+  if (!live) return
+  if (e.type === 'hardland') hud.toast('HARD LANDING', 'ROLL IT NEXT TIME')
+  if (TOAST[e.type]) {
+    g.moves++
+    if (g.kind === 'trial') hud.toast(TOAST[e.type])
   }
-  if (anyChanged) {
-    cachedObstacles = courses.flatMap(c => c.allObstacles)
-    cachedWallAABBs = courses.flatMap(c => c.allWallAABBs)
-    cachedRails = courses.flatMap(c => c.allRails)
-    if (hitboxesVisible) rebuildObstacleHelpers()
+  if (g.kind === 'endless') {
+    const result = g.score.event(e.type, p.speed)
+    if (result === 'bail') { hud.comboResult('bail', g.score.log.at(-1).points); audio.event('bail') }
   }
-
-  if (config.PLAYER_WIDTH !== _prevPW || config.PLAYER_HEIGHT !== _prevPH) {
-    rebuildPlayerHelper()
-  }
-
-  const moveDir     = movement.getMoveDir(cameraController.cameraYaw)
-  const jumpPressed = movement.jumpPressed
-  const slidePressed = movement.slidePressed
-  movement.clearJump()
-  movement.clearSlide()
-
-  const allObstacles = cachedObstacles
-  const allWallAABBs = cachedWallAABBs
-  physics.update(humanoid, moveDir, movement.wDown, movement.sDown, movement.eDown, jumpPressed, slidePressed, delta,
-    allObstacles, allWallAABBs)
-
-  // Rail grinding — detect jump-from-grind (physics already transitioned state)
-  if (physics.state !== 'grinding' && railGrinder.isGrinding) {
-    const tangent = railGrinder.dismount()
-    if (tangent) {
-      physics.velocity.set(
-        tangent.x * physics.momentum,
-        physics.velocity.y,
-        tangent.z * physics.momentum
-      )
-    }
-  }
-
-  // Rail grinding — update position along rail or try to mount
-  if (railGrinder.isGrinding) {
-    const result = railGrinder.update(delta, physics.momentum)
-    if (result) {
-      if (result.ended) {
-        // Push player forward past rail end so they don't land on the platform
-        humanoid.position.copy(result.position)
-        humanoid.position.addScaledVector(result.tangent, 1.5)
-        physics.exitGrinding(result.tangent)
-      } else {
-        humanoid.position.copy(result.position)
-        // Orient humanoid along rail tangent
-        const lookTarget = result.position.clone().add(result.tangent)
-        const yaw = Math.atan2(-(lookTarget.x - result.position.x), -(lookTarget.z - result.position.z))
-        humanoid.rotation.y = yaw
-      }
-    }
-  } else if (physics.state === 'airborne' && physics.velocity.y <= 0) {
-    // Try to mount a rail
-    for (const railData of cachedRails) {
-      if (railGrinder.tryMount(railData, humanoid.position, physics.velocity.y, physics.velocity)) {
-        physics.enterGrinding()
-        break
-      }
-    }
-  }
-
-  movement.updateMobileState()
-  cameraController.updateAutoAim(allObstacles)
-  animator.update(delta)
-  cameraController.update()
-
-  updatePlayerHitboxPositions(playerHitboxHelpers, humanoid.position)
-  upperHelper.visible = hitboxesVisible && !physics.sliding
-  lowerHelper.visible = hitboxesVisible && !physics.legsExtended
-
-  // Show kick hitbox when legs extended
-  if (physics.legsExtended && hitboxesVisible) {
-    if (!kickHelper) {
-      kickHelper = makeWireBox(config.PLAYER_WIDTH, config.KICK_LEG_HEIGHT, config.KICK_LEG_REACH, 0xff8800)
-      kickHelper.renderOrder = 999
-      scene.add(kickHelper)
-    }
-    kickHelper.visible = true
-    const yaw = humanoid.rotation.y
-    kickHelper.position.set(
-      humanoid.position.x + (-Math.sin(yaw)) * config.KICK_LEG_REACH / 2,
-      humanoid.position.y + config.KICK_HIP_Y,
-      humanoid.position.z + (-Math.cos(yaw)) * config.KICK_LEG_REACH / 2
-    )
-    kickHelper.rotation.y = yaw
-  } else if (kickHelper) {
-    kickHelper.visible = false
-  }
-
-  if (isMobile && movement.started && mobileOverlay && mobileOverlay.style.display !== 'none') {
-    mobileOverlay.style.display = 'none'
-  }
-  gameSession.update(delta, physics.state, physics.horizontalSpeed)
-
-  // Show active trick score + multiplier
-  if (gameSession.inTrick && gameSession.trickScore > 0) {
-    chainCounterEl.textContent = `${Math.floor(gameSession.trickScore)} x${gameSession.trickMultiplier} = +${gameSession.pendingTrickPoints}`
-    chainCounterEl.style.opacity = '1'
-    chainDisplayTimer = 2.0
-  }
-
-  timerEl.textContent = formatTime(gameSession.runTime)
-  speedEl.textContent = physics.horizontalSpeed.toFixed(1)
-  airJumpsEl.textContent = physics._airJumpsLeft
-  stateEl.textContent = physics.state
-
-  const momentumPct = ((physics.momentum - config.MOMENTUM_MIN) / (config.MOMENTUM_MAX - config.MOMENTUM_MIN)) * 100
-  momentumBar.style.width = `${Math.min(100, Math.max(0, momentumPct))}%`
-  if (chainDisplayTimer > 0) {
-    chainDisplayTimer -= delta
-    if (chainDisplayTimer <= 0) {
-      chainCounterEl.style.opacity = '0'
-    }
-  }
-
-  updateGround(timestamp * 0.001, humanoid.position.x, humanoid.position.z)
-  updateSky(timestamp * 0.001, humanoid.position.x, humanoid.position.y, humanoid.position.z)
-  updateRocks(delta, timestamp * 0.001, humanoid.position.x, humanoid.position.z, allObstacles)
-  updateMountains(timestamp * 0.001, humanoid.position.x, humanoid.position.z)
-  updatePlatformMaterials(timestamp * 0.001)
-  updateBillboardMaterials(timestamp * 0.001, gameSession.score, gameSession.runTime)
-  updateSkyScreens(timestamp * 0.001, humanoid.position, gameSession.score, gameSession.runTime)
-
-  // Rock hazard collision
-  const halfW = config.PLAYER_WIDTH / 2
-  for (const rock of getRockHazards()) {
-    const rp = rock.mesh.position
-    const pp = humanoid.position
-    const dx = Math.abs(rp.x - pp.x)
-    const dz = Math.abs(rp.z - pp.z)
-    const dy = rp.y - pp.y
-    const rSize = rock.mesh.scale.x
-    if (dx < halfW + rSize && dz < halfW + rSize && dy >= 0 && dy < physics.activeHeight) {
-      physics.onGroundHit()
-      break
-    }
-  }
-  renderer.render(scene, camera)
+  const gain = FOCUS.GAIN[e.type]
+  if (gain) g.focus = Math.min(1, g.focus + gain)
 }
-animate()
+
+function startRespawn() {
+  g.mode = 'respawn'
+  g.phaseT = 0
+  g.falls++
+  g.focusActive = false
+  view.setFloor(g.player.y + 2)
+  audio.event('dead')
+  if (g.kind === 'endless') {
+    if (g.score.bail() === 'bail') hud.comboResult('bail', g.score.log.at(-1).points)
+    g.lives--
+  }
+}
+
+function respawn() {
+  const r = g.level.respawnPoint(g.prevX)
+  g.player = createPlayer(r.x, r.y)
+  g.player.speed = PHYS.SPEED_MIN
+  g.prevX = r.x
+  g.prevY = r.y
+  g.acc = 0
+  g.score.teleport(r.x)
+  view.snap(r.x, r.y)
+  g.fade = 0.8
+  g.mode = 'run'
+  audio.event('respawn')
+}
+
+function passCheckpoint(i) {
+  view.passed = i + 1
+  audio.event('checkpoint')
+  if (g.kind !== 'trial') {
+    hud.toast('CHECKPOINT')
+    return
+  }
+  g.splits.push(g.clock)
+  const pbSplit = g.pb?.splits?.[i]
+  hud.split(pbSplit != null ? g.clock - pbSplit : null)
+}
+
+function finishTrial() {
+  g.splits.push(g.clock)
+  const time = g.clock
+  const prev = g.pb
+  const newBest = !prev || time < prev.time
+  if (newBest) {
+    store.set(`fil.pb.${g.track.id}`, JSON.stringify({ time, splits: g.splits, ghost: g.recorder.data() }))
+  }
+  g.result = {
+    kind: 'trial', track: g.track.name, time, newBest, prevBest: prev?.time ?? null, prevSplits: prev?.splits ?? null,
+    medals: g.track.medals, splits: g.splits, falls: g.falls, topSpeed: g.topSpeed, moves: g.moves,
+  }
+  const pbSplit = prev?.time
+  hud.split(pbSplit != null ? time - pbSplit : null)
+  audio.event(newBest ? 'best' : 'finish')
+  g.mode = 'finish'
+  g.phaseT = 0
+}
+
+function endEndless() {
+  const best = endlessBest()
+  const score = Math.floor(g.score.total)
+  const newBest = score > best
+  if (newBest) store.set('fil.best.endless', String(score))
+  g.result = {
+    kind: 'endless', score, best: Math.max(best, score), newBest, distance: Math.max(0, g.player.x),
+    bestCombo: g.score.bestCombo, topSpeed: g.topSpeed,
+  }
+  if (newBest) audio.event('best')
+  showResults()
+}
+
+function showResults() {
+  g.mode = 'over'
+  g.overAt = performance.now()
+  input.clearEdges()
+  hud.showHud(false)
+  hud.showOver(true, g.result)
+}
+
+// ── per-frame systems ────────────────────────────────────────────────────
+
+const events = []
+const IDLE = { jump: false, jumpPressed: false, down: false, downPressed: false }
+
+function stepPhysics(dt) {
+  g.acc += dt
+  let steps = 0
+  while (g.acc >= PHYS.FIXED_DT && steps < 12) {
+    g.acc -= PHYS.FIXED_DT
+    steps++
+    const p = g.player
+    g.prevX = p.x
+    g.prevY = p.y
+    g.level.ensure(p.x + 200)
+    const control = g.bot ? g.bot.input(p) : g.mode === 'run' ? input.consume() : IDLE
+    events.length = 0
+    stepPlayer(p, control, PHYS.FIXED_DT, g.level, events)
+    for (const e of events) onEvent(e)
+    if (g.mode !== 'run' && g.mode !== 'title' && g.mode !== 'finish') break
+  }
+  if (g.acc > PHYS.FIXED_DT * 4) g.acc = 0
+}
+
+function updateFocus(dt) {
+  const p = g.player
+  if (p.speed >= 15) g.focus = Math.min(1, g.focus + FOCUS.GAIN_AT_SPEED * dt)
+  if (input.takeFocus()) {
+    if (g.focusActive) g.focusActive = false
+    else if (g.focus >= FOCUS.MIN_TO_START) {
+      g.focusActive = true
+      audio.event('focus')
+    }
+  }
+  if (g.focusActive) {
+    g.focus = Math.max(0, g.focus - FOCUS.DRAIN * dt)
+    if (g.focus <= 0) g.focusActive = false
+  }
+  if (!g.focusHinted && g.focus >= FOCUS.MIN_TO_START && p.x > 400) {
+    g.focusHinted = true
+    store.set('fil.focusHint', '1')
+    hud.hint('focus')
+  }
+}
+
+function updateHints() {
+  if (g.tutorialDone || g.kind !== 'endless') return
+  const p = g.player
+  for (const h of g.level.hintsIn(p.x + 2, p.x + 8 + p.speed * 1.1)) {
+    if (g.hintsShown.has(h)) continue
+    g.hintsShown.add(h)
+    hud.hint(h.key)
+  }
+  const tutorialEnd = g.level.chunks.find((c) => c.id === 6)
+  if (tutorialEnd && p.x > tutorialEnd.x0 + 20) {
+    g.tutorialDone = true
+    store.set('fil.tutorial', '1')
+  }
+}
+
+const COUNT = ['3', '2', '1', 'GO']
+
+let last = performance.now()
+let time = 0
+
+function frame(now) {
+  requestAnimationFrame(frame)
+  const raw = Math.min(0.1, (now - last) / 1000)
+  last = now
+  time += raw
+  input.pollGamepad()
+  if (g.mode === 'title' && input.takeAny()) start(g.sel)
+  else input.takeAny()
+
+  const p = g.player
+  let scale = 1
+  if (g.mode === 'run') {
+    updateFocus(raw)
+    scale = g.focusActive ? FOCUS.TIME_SCALE : 1
+  } else if (g.mode === 'respawn') {
+    scale = 0.6
+  }
+  const dt = g.mode === 'paused' ? 0 : raw * scale
+
+  if (g.mode === 'countdown') {
+    const beat = Math.min(3, Math.floor(g.phaseT / 0.6))
+    if (beat !== g.countShown) {
+      g.countShown = beat
+      hud.countdown(COUNT[beat])
+      audio.event(beat === 3 ? 'go' : 'count')
+    }
+    g.phaseT += raw
+    if (g.phaseT >= 1.8) {
+      g.mode = 'run'
+      input.clearEdges()
+      setTimeout(() => { if (g.mode !== 'countdown') hud.countdown('') }, 500)
+    }
+  } else if (g.mode === 'run' || g.mode === 'title' || g.mode === 'finish') {
+    stepPhysics(dt)
+    if (g.mode === 'run' || g.mode === 'respawn') {
+      g.clock += dt
+      g.topSpeed = Math.max(g.topSpeed, p.speed)
+      updateHints()
+    }
+  } else if (g.mode === 'respawn') {
+    g.clock += raw
+    g.phaseT += raw
+    p.vy = Math.max(p.vy - PHYS.G * dt, -PHYS.MAX_FALL)
+    p.y += p.vy * dt
+    if (g.phaseT >= RUN.RESPAWN_TIME) {
+      if (g.kind === 'endless' && g.lives <= 0) endEndless()
+      else respawn()
+    }
+  }
+
+  if (g.mode === 'finish') {
+    g.phaseT += raw
+    if (g.phaseT > 1.3) showResults()
+  }
+
+  const cur = g.player
+  if (g.mode === 'run') {
+    const cps = g.level.checkpoints
+    while (g.cpNext < cps.length && cur.x >= cps[g.cpNext].x) passCheckpoint(g.cpNext++)
+    if (g.kind === 'trial' && g.level.finish && cur.x >= g.level.finish.x) finishTrial()
+    if (g.kind === 'endless') {
+      const r = g.score.update(dt, cur)
+      if (r === 'bank') { hud.comboResult('bank', g.score.log.at(-1).points); audio.event('bank', { mult: g.score.log.at(-1).mult }) }
+    }
+    if (g.recorder) g.recorder.sample(g.clock, cur)
+  }
+  if (g.mode !== 'paused') g.level.prune(cur.x - 90)
+
+  const alpha = g.mode === 'run' || g.mode === 'title' || g.mode === 'finish' ? g.acc / PHYS.FIXED_DT : 1
+  const distance = Math.max(0, cur.x)
+  g.focusVis += ((g.focusActive ? 1 : 0) - g.focusVis) * Math.min(1, raw * 6)
+  g.flash = Math.max(0, g.flash - raw * 2)
+  g.fade = Math.max(0, g.fade - raw * 2.5)
+  const ghost = g.ghost && (g.mode === 'run' || g.mode === 'respawn' || g.mode === 'finish') ? g.ghost.at(g.clock) : null
+
+  view.frame({
+    raw, dt, time, mode: g.mode === 'countdown' ? 'run' : g.mode, p: cur, level: g.level, distance,
+    rx: g.prevX + (cur.x - g.prevX) * alpha,
+    ry: g.prevY + (cur.y - g.prevY) * alpha,
+    idle: g.mode === 'countdown',
+    ghost: ghost && !ghost.done ? ghost : null,
+    speedK: smoothstep(cur.speed, 11, PHYS.SPEED_MAX),
+    focusVis: g.focusVis, flash: g.flash, fade: g.fade,
+  })
+
+  if (['run', 'respawn', 'countdown', 'finish'].includes(g.mode)) {
+    const name = view.districtName(distance)
+    const base = {
+      speed: cur.speed,
+      focus: g.focus,
+      focusActive: g.focusActive,
+      focusReady: g.focus >= FOCUS.MIN_TO_START,
+    }
+    if (g.kind === 'trial') {
+      const finishX = g.level.finish?.x ?? 1
+      hud.update({ ...base, score: Math.max(0, finishX - cur.x), time: g.clock, progress: Math.min(1, cur.x / finishX) })
+    } else {
+      const s = g.score
+      hud.update({
+        ...base,
+        score: s.total,
+        lives: g.lives,
+        sub: `${Math.floor(distance).toLocaleString()} M · ${name.toUpperCase()}`,
+        combo: { mult: s.mult, points: s.pending, moves: s.moves.join(' · '), timer: s.timer / COMBO_WINDOW },
+      })
+    }
+    if (name !== g.district) {
+      g.district = name
+      hud.district(name)
+    }
+  }
+
+  audio.update(raw, {
+    speed: g.mode === 'run' || g.mode === 'title' ? cur.speed : 0,
+    zip: cur.state === 'zip' && g.mode === 'run',
+    focus: g.focusVis,
+    playing: g.mode === 'run',
+  })
+}
+
+function smoothstep(x, a, b) {
+  const t = Math.max(0, Math.min(1, (x - a) / (b - a)))
+  return t * t * (3 - 2 * t)
+}
+
+view.onStep = (kind) => {
+  if (g.mode === 'run') audio.step(kind)
+}
+
+toTitle()
+requestAnimationFrame(frame)
+if (import.meta.env.DEV) window.__game = { g, view, start, newRun }
