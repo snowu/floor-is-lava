@@ -229,6 +229,46 @@ export class Audio {
       case 'focus':
         this.tone(t, 0.6, 880, 220, { gain: 0.12, type: 'sine' })
         break
+      case 'airjump':
+        this.noise(t, 0.16, { freq: 900, sweep: 3200, q: 0.8, gain: 0.12 })
+        this.tone(t, 0.18, 660, 1320, { gain: 0.05, type: 'triangle' })
+        break
+      case 'shard': {
+        const n = 84 + ((this.shardStep = ((this.shardStep ?? 0) + 1) % 5) * 2)
+        this.tone(t, 0.09, mtof(n), mtof(n), { gain: 0.05, type: 'square' })
+        this.tone(t + 0.04, 0.12, mtof(n + 7), mtof(n + 7), { gain: 0.04, type: 'square' })
+        break
+      }
+      case 'zap':
+        this.tone(t, 0.35, 1800, 90, { gain: 0.12, type: 'sawtooth' })
+        this.noise(t, 0.3, { freq: 4000, q: 2, gain: 0.2 })
+        break
+      case 'spotted':
+        ;[0, 0.12].forEach((d) => this.tone(t + d, 0.09, 1568, 1568, { gain: 0.07, type: 'square' }))
+        break
+      case 'takedown':
+        this.noise(t, 0.08, { freq: 2600, q: 2, gain: 0.3 })
+        this.tone(t, 0.5, 400, 60, { gain: 0.2, type: 'square' })
+        this.noise(t + 0.05, 0.6, { freq: 700, sweep: 150, type: 'lowpass', gain: 0.25 })
+        break
+      case 'traced':
+        for (let i = 0; i < 4; i++) this.tone(t + i * 0.14, 0.12, i % 2 ? 880 : 1175, i % 2 ? 880 : 1175, { gain: 0.1, type: 'sawtooth' })
+        this.noise(t, 0.6, { freq: 3000, sweep: 400, q: 0.6, gain: 0.2 })
+        break
+      case 'uplink':
+        ;[0, 7, 12, 19].forEach((n, i) => this.tone(t + i * 0.06, 0.3, mtof(67 + n), mtof(67 + n), { gain: 0.06, type: 'square' }))
+        break
+      case 'install':
+        this.tone(t, 0.5, 220, 1760, { gain: 0.08, type: 'sawtooth' })
+        ;[0, 4, 7, 11].forEach((n, i) => this.tone(t + 0.25 + i * 0.05, 0.25, mtof(79 + n), mtof(79 + n), { gain: 0.05, type: 'square' }))
+        break
+      case 'buy':
+        this.tone(t, 0.08, 1320, 1320, { gain: 0.07, type: 'square' })
+        this.tone(t + 0.07, 0.12, 1760, 1760, { gain: 0.07, type: 'square' })
+        break
+      case 'deny':
+        this.tone(t, 0.18, 180, 160, { gain: 0.1, type: 'square' })
+        break
       case 'best':
         ;[0, 4, 7, 12].forEach((n, i) => this.tone(t + i * 0.09, 0.5, mtof(72 + n), mtof(72 + n), { gain: 0.08, type: 'triangle' }))
         break

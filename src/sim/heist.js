@@ -1,0 +1,163 @@
+// Heist: the roguelike run. Five sectors of city, one per district, with a
+// street doc at every uplink between them. Corp security traces you while you
+// run; flow pulls the trace back down, mistakes and hazards push it up, and
+// when it fills, ICE burns a point of integrity. Pure state, no DOM.
+
+import { HEIST, setPhysMods } from './config.js'
+import { createRng } from './rng.js'
+import { bodyHeight, isGrounded } from './player.js'
+import { CHROME, chromeEffects, rollOffer, countOf } from './chrome.js'
+
+// Moves that jam the trace (the same ones that feed a combo).
+const JAMMING = new Set(['vault', 'roll', 'wallrun', 'walljump', 'zip', 'zipjump', 'spring', 'grab', 'climb', 'slidejump', 'airjump', 'clamber'])
+
+export function heistOptions() {
+  return {
+    tutorial: false,
+    length: HEIST.SECTORS * HEIST.SECTOR_LEN,
+    checkpointEvery: HEIST.SECTOR_LEN,
+    difficulty: { start: 0.15, ramp: HEIST.SECTORS * HEIST.SECTOR_LEN * 0.9 },
+    heist: true,
+  }
+}
+
+export class HeistState {
+  constructor(seed) {
+    this.seed = seed >>> 0
+    this.rng = createRng(this.seed ^ 0xc0ffee)
+    this.sector = 0
+    this.trace = 0
+    this.integrity = HEIST.INTEGRITY
+    this.maxIntegrity = HEIST.INTEGRITY
+    this.creds = 0
+    this.owned = []
+    this.offer = []
+    this.repairs = 0
+    this.stats = { shards: 0, takedowns: 0, zaps: 0, spotted: 0, burns: 0, falls: 0 }
+    this.fx = chromeEffects([])
+    setPhysMods({})
+  }
+
+  get mods() { return this.fx.run }
+  get repairCost() { return HEIST.REPAIR_COST + HEIST.REPAIR_STEP * this.repairs }
+  get rerollCost() { return HEIST.REROLL_COST }
+  get canRepair() { return this.integrity < this.maxIntegrity && this.creds >= this.repairCost }
+  get canReroll() { return this.creds >= this.rerollCost }
+
+  // ── street doc ──────────────────────────────────────────────────────────
+
+  openShop() {
+    this.offer = rollOffer(this.rng, this.owned)
+    return this.offer
+  }
+
+  reroll() {
+    if (!this.canReroll) return false
+    this.creds -= this.rerollCost
+    this.offer = rollOffer(this.rng, this.owned)
+    return true
+  }
+
+  repair() {
+    if (!this.canRepair) return false
+    this.creds -= this.repairCost
+    this.repairs++
+    this.integrity++
+    return true
+  }
+
+  install(id) {
+    const c = CHROME.find((x) => x.id === id)
+    if (!c || countOf(this.owned, id) >= c.max) return false
+    this.owned.push(id)
+    this.fx = chromeEffects(this.owned)
+    setPhysMods(this.fx.phys)
+    const max = HEIST.INTEGRITY + this.fx.run.maxIntegrity
+    if (max > this.maxIntegrity) {
+      this.integrity += max - this.maxIntegrity
+      this.maxIntegrity = max
+    }
+    this.offer = []
+    return true
+  }
+
+  // Reached the uplink at the end of the current sector.
+  advance() {
+    this.sector++
+    this.trace = 0
+  }
+
+  // Leave PHYS as we found it.
+  dispose() { setPhysMods({}) }
+
+  // ── per step ───────────────────────────────────────────────────────────
+
+  // A scored move or event from the runner.
+  move(type) {
+    if (JAMMING.has(type)) this.trace = Math.max(0, this.trace - HEIST.TRACE_MOVE)
+  }
+
+  hurt() {
+    this.integrity = Math.max(0, this.integrity - 1)
+    return this.integrity
+  }
+
+  // Advance trace and resolve pickups and hazards against the runner. Events
+  // are pushed in the same shape the player emits.
+  step(dt, p, level, events) {
+    const m = this.mods
+    this.trace += HEIST.TRACE_RATE * (1 + HEIST.TRACE_PER_SECTOR * this.sector) * m.traceRate * dt
+    if (!p.alive) return
+
+    const hw = 0.3
+    const h = bodyHeight(p)
+    const bx0 = p.x - hw, bx1 = p.x + hw, by0 = p.y, by1 = p.y + h
+    for (const c of level.chunksIn(p.x - 3, p.x + 3)) {
+      const r = HEIST.SHARD_RADIUS + m.magnet
+      for (const s of c.shards) {
+        if (s.taken) continue
+        if (s.x < bx0 - r || s.x > bx1 + r || s.y < by0 - r || s.y > by1 + r) continue
+        s.taken = true
+        this.creds += HEIST.SHARD_EDDIES * m.shardValue
+        this.stats.shards++
+        this.trace = Math.max(0, this.trace - HEIST.TRACE_SHARD)
+        events.push({ type: 'shard', x: s.x, y: s.y })
+      }
+      for (const l of c.lasers) {
+        if (l.tripped) continue
+        if (l.x1 < bx0 || l.x0 > bx1 || l.y1 < by0 || l.y0 > by1) continue
+        l.tripped = true
+        this.stats.zaps++
+        this.trace += HEIST.TRACE_ZAP * m.zapTrace
+        events.push({ type: 'zap', x: p.x, y: (l.y0 + l.y1) / 2, keepsCombo: m.zapKeepsCombo })
+      }
+      for (const d of c.drones) {
+        if (d.down) continue
+        const dx0 = d.x - HEIST.DRONE_W / 2, dx1 = d.x + HEIST.DRONE_W / 2
+        const touching = bx1 > dx0 && bx0 < dx1 && by1 > d.y && by0 < d.y + HEIST.DRONE_H
+        if (touching && !isGrounded(p)) {
+          d.down = true
+          this.stats.takedowns++
+          this.trace = Math.max(0, this.trace - HEIST.TRACE_TAKEDOWN)
+          if (p.state === 'air') {
+            p.vy = Math.max(p.vy, HEIST.TAKEDOWN_VY)
+            p.jumpHoldActive = false
+          }
+          events.push({ type: 'takedown', x: d.x, y: d.y })
+        } else if (!d.spotted && p.x > d.x + 0.6) {
+          d.spotted = true
+          this.stats.spotted++
+          this.trace += HEIST.TRACE_SPOT * m.spotTrace
+          events.push({ type: 'spotted', x: d.x, y: d.y })
+        }
+      }
+    }
+
+    if (this.trace >= 1) {
+      this.trace = HEIST.TRACE_AFTER_BURN
+      this.stats.burns++
+      this.hurt()
+      events.push({ type: 'traced', x: p.x, y: p.y })
+    }
+  }
+}

@@ -4,10 +4,29 @@ A cyberpunk side-scrolling rooftop runner with Mirror's Edge–style movement. Y
 
 ## Modes
 
+- **Heist** is the roguelike run. You're a data courier crossing five sectors of city, one district each, on a fresh random seed every time. Corp security **traces** you while you run: clean moves jam it, while tripped laser grids and drones that spot you push it up. When it fills, ICE burns a point of integrity. Grab cyan **data shards** for creds, slide under or jump over **laser grids**, and jump into hovering **drones** for a takedown. At the uplink between sectors a **street doc** offers three pieces of chrome; one is free, and creds buy repairs and rerolls. Falls and ICE burns cost integrity, and losing it all flatlines the run. Extracting with integrity left pays a bonus.
 - **Time Trials** (Sprint 600 m, Relay 1200 m, Gauntlet 2000 m, plus a Daily course seeded by the date). Each trial is a fixed-seed course, identical on every attempt, so times are comparable. The clock counts up, checkpoint splits show green/red deltas against your personal best, and your best run plays back as a cyan ghost. Medals are gold, silver and bronze; silver is the autopilot's time, so it's provably reachable, and gold needs real flow.
 - **Endless** is a combo score attack on a fresh random city every run. Every move feeds a combo whose multiplier grows with each chained move and scales with your speed. Keep moving to bank it; a hard landing, a bonk or a fall throws the combo away. Distance also scores, more when you're fast. You have three lives.
 
 Falling never ends a trial. You respawn at the last checkpoint and the clock keeps running, so mistakes cost time. In Endless, a fall also costs a life and your current combo.
+
+### Chrome
+
+| Chrome | Effect |
+|---|---|
+| Reinforced Tendons *(rare)* | A mid-air jump |
+| Overclocked Calves | Higher top speed, faster acceleration (stacks ×3) |
+| Pneumatic Ankles | Higher jumps (×2) |
+| Kinetic Dampers | Survive harder drops, wider roll window (×2) |
+| Gecko Grip | Longer ledge reach, stronger wall climbs (×2) |
+| Tachyon Optics | Focus charges faster (×2) |
+| Chrono Dilator *(rare)* | Focus slows time harder and lasts longer |
+| Synaptic Buffer | Longer combo window (×2) |
+| Subdermal Plating | +1 max integrity (×3) |
+| Insulated Dermis | Lasers don't break combos and trip less trace |
+| Ghost Protocol | Trace builds slower (×2) |
+| Signal Jammer | Drones add less trace (×2) |
+| Data Siphon | Shards are worth double and pull in from further away (×2) |
 
 ## Look
 
@@ -45,7 +64,7 @@ Anything you can use is painted runner-vision red.
 
 ## Code layout
 
-- `src/sim/` is the pure, deterministic simulation with no rendering or DOM: player physics (`player.js`), seeded course generation with checkpoints and finish lines (`generator.js`), level streaming (`level.js`), trial tracks (`tracks.js`), combo scoring (`score.js`), ghost recording (`ghost.js`), and a lookahead autopilot (`bot.js`) that drives the title-screen demo, the traversal tests and the medal times.
+- `src/sim/` is the pure, deterministic simulation with no rendering or DOM: player physics (`player.js`), seeded course generation with checkpoints and finish lines (`generator.js`), the heist run state with trace, pickups and hazards (`heist.js`), chrome upgrades (`chrome.js`), level streaming (`level.js`), trial tracks (`tracks.js`), combo scoring (`score.js`), ghost recording (`ghost.js`), and a lookahead autopilot (`bot.js`) that drives the title-screen demo, the traversal tests and the medal times.
 - `src/pixel/` is the renderer: palettes, pixel buffers and dithering, sprite bakers, the skeletal runner sprite, and the view.
 - `src/ui/`, `src/input.js` and `src/audio.js` are the HUD, the input layer (keyboard, touch and gamepad), and fully synthesized audio and music.
 

@@ -18,11 +18,16 @@
         <div class="chip dist"><span id="score">0</span><small id="score-unit">PTS</small></div>
         <div class="sub"><span id="sub-a">BEST 0</span><span class="dot"></span><span id="sub-b"></span></div>
         <div id="lives" class="lives"></div>
+        <div id="chrome-row" class="chrome-row"></div>
       </div>
       <div class="hud-tc" id="trial-hud">
         <div class="timer" id="timer">0:00.00</div>
         <div class="progress"><i id="progress-fill"></i><span id="progress-ticks"></span></div>
         <div class="delta" id="delta"></div>
+        <div class="trace-wrap" id="trace-wrap">
+          <div class="trace-label"><span>TRACE</span><b id="trace-val">0%</b></div>
+          <div class="trace"><i id="trace-fill"></i></div>
+        </div>
       </div>
       <div class="hud-tr">
         <button id="btn-focus" class="icon-btn touch-only" aria-label="Focus">◎</button>
@@ -52,7 +57,7 @@
 
     <div id="title" class="screen">
       <div class="card">
-        <div class="kicker"><i></i>A CYBERPUNK ROOFTOP RUN</div>
+        <div class="kicker"><i></i>DATA COURIER · ROOFTOP RUN</div>
         <h1>FLOOR<br />IS <em>LAVA</em></h1>
         <ul id="menu" class="menu"></ul>
         <div class="menu-help key-only"><kbd>↑</kbd><kbd>↓</kbd> choose · <kbd>SPACE</kbd> run · <kbd>R</kbd> restart</div>
@@ -82,6 +87,22 @@
           <button id="btn-retry" class="action primary">RETRY <kbd class="key-only">SPACE</kbd></button>
           <button id="btn-menu" class="action">MENU <kbd class="key-only">ESC</kbd></button>
         </div>
+      </div>
+    </div>
+
+    <div id="shop" class="screen shop is-hidden">
+      <div class="card wide">
+        <div class="kicker"><i></i><span id="shop-kicker">UPLINK</span></div>
+        <h1>STREET <em>DOC</em></h1>
+        <div class="shop-status"><span id="shop-creds">¢ 0</span><span id="shop-integrity" class="lives"></span></div>
+        <div class="shop-tip">Install one piece of chrome, free. Spend creds first if you want.</div>
+        <ul id="shop-offer" class="offer"></ul>
+        <div class="actions shop-actions">
+          <button id="btn-repair" class="action">REPAIR</button>
+          <button id="btn-reroll" class="action">REROLL</button>
+        </div>
+        <div class="shop-owned" id="shop-owned"></div>
+        <div class="menu-help key-only"><kbd>↑</kbd><kbd>↓</kbd> choose · <kbd>SPACE</kbd> install</div>
       </div>
     </div>
 

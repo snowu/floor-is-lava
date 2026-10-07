@@ -23,6 +23,7 @@ export function createPlayer(x, y) {
     jumpHoldT: 0,
     rollTimer: 0,
     coyote: 0,
+    airJumps: PHYS.AIR_JUMPS,
     climbUsed: false,
     climbT: 0,
     wall: null,
@@ -204,6 +205,7 @@ function land(p, s, events) {
   p.y = s.y1
   p.vy = 0
   p.climbUsed = false
+  p.airJumps = PHYS.AIR_JUMPS
   p.jumpHoldActive = false
   p.support = s
   if (s.kind === 'spring') {
@@ -340,6 +342,7 @@ function tryAttach(p, level, events) {
     if (p.x < panel.x0 || p.x > panel.x1 || p.y < panel.y0 || p.y > panel.y1) continue
     p.panel = panel
     p.lastPanel = panel.id
+    p.airJumps = PHYS.AIR_JUMPS
     p.vy = Math.max(-1, Math.min(p.vy, PHYS.WALLRUN_ENTER_VY))
     p.jumpHoldActive = false
     gainSpeed(p, PHYS.BONUS_WALLRUN)
@@ -354,6 +357,7 @@ function tryAttach(p, level, events) {
     if (Math.abs(p.y + PHYS.ZIP_HANG - ly) > PHYS.ZIP_CATCH) continue
     p.zip = zip
     p.lastZip = zip.id
+    p.airJumps = PHYS.AIR_JUMPS
     p.zipV = Math.max(p.speed, PHYS.ZIP_MIN)
     p.y = ly - PHYS.ZIP_HANG
     p.vy = 0
@@ -502,6 +506,9 @@ function stepGround(p, input, dt, solids, events) {
 function stepAir(p, input, dt, solids, level, events) {
   if (p.coyote > 0 && p.jumpBuffer > 0) {
     startJump(p, PHYS.JUMP_V, events)
+  } else if (p.jumpBuffer > 0 && p.airJumps > 0 && p.state === 'air') {
+    p.airJumps--
+    startJump(p, Math.max(p.vy, PHYS.AIR_JUMP_V), events, 'airjump')
   }
   const g = airGravity(p, input)
   if (p.jumpHoldActive && p.vy > 0) p.jumpHoldT += dt

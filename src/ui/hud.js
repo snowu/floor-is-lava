@@ -14,6 +14,10 @@ const HINTS = {
   zip: { key: '<b>JUMP</b> to catch the <b>ZIPLINE</b>', touch: '<b>JUMP</b> to catch the <b>ZIPLINE</b>' },
   spring: { key: 'Hit the red ramp to <b>LAUNCH</b>', touch: 'Hit the red ramp to <b>LAUNCH</b>' },
   focus: { key: 'Focus charged — <kbd>E</kbd> to <b>SLOW TIME</b>', touch: 'Focus charged — tap <b>◎</b> to <b>SLOW TIME</b>' },
+  heist: { key: 'Keep moving to jam the <b>TRACE</b> · grab <b>SHARDS</b> for creds', touch: 'Keep moving to jam the <b>TRACE</b> · grab <b>SHARDS</b> for creds' },
+  laserLow: { key: 'Low <b>LASER</b> — <kbd>SPACE</kbd> to jump it', touch: 'Low <b>LASER</b> — tap <b>RIGHT</b> to jump it' },
+  laserHigh: { key: 'High <b>LASER</b> — <kbd>S</kbd> to slide under', touch: 'High <b>LASER</b> — tap <b>LEFT</b> to slide under' },
+  drone: { key: 'Security <b>DRONE</b> — jump into it for a <b>TAKEDOWN</b>', touch: 'Security <b>DRONE</b> — jump into it for a <b>TAKEDOWN</b>' },
   combo: { key: 'Chain moves to build a <b>COMBO</b> · mistakes lose it', touch: 'Chain moves to build a <b>COMBO</b> · mistakes lose it' },
 }
 
@@ -35,6 +39,12 @@ export function medalFor(time, medals) {
   return medals.findIndex((m) => time <= m)
 }
 
+function chromeTags(list) {
+  const counts = new Map()
+  for (const c of list) counts.set(c, (counts.get(c) ?? 0) + 1)
+  return [...counts].map(([c, n]) => `<i class="${c.rare ? 'rare' : ''}" title="${c.name}: ${c.desc}">${c.short}${n > 1 ? ` ×${n}` : ''}</i>`).join('')
+}
+
 export class Hud {
   constructor(touch) {
     this.touch = touch
@@ -50,6 +60,9 @@ export class Hud {
       over: $('over'), overKicker: $('over-kicker'), overTitle: $('over-title'), overMain: $('over-main'), overUnit: $('over-unit'),
       overBest: $('over-best'), overMedals: $('over-medals'), overStats: $('over-stats'), overSplits: $('over-splits'),
       paused: $('paused'),
+      traceFill: $('trace-fill'), traceVal: $('trace-val'), trace: $('trace-wrap'), chromeRow: $('chrome-row'),
+      shop: $('shop'), shopKicker: $('shop-kicker'), shopCreds: $('shop-creds'), shopIntegrity: $('shop-integrity'),
+      shopOffer: $('shop-offer'), repair: $('btn-repair'), reroll: $('btn-reroll'), shopOwned: $('shop-owned'),
     }
     this.segs = []
     for (let i = 0; i < SEGMENTS; i++) {
@@ -72,6 +85,7 @@ export class Hud {
   showHud(on) { this.el.hud.classList.toggle('is-hidden', !on) }
   showTitle(on) { this.el.title.classList.toggle('is-hidden', !on) }
   showPaused(on) { this.el.paused.classList.toggle('is-hidden', !on) }
+  showShop(on) { this.el.shop.classList.toggle('is-hidden', !on) }
 
   // items: [{ name, sub, best, medal }]
   menu(items, selected, onPick) {
@@ -92,14 +106,55 @@ export class Hud {
     this.last = {}
     this.el.hud.classList.toggle('trial', kind === 'trial')
     this.el.hud.classList.toggle('endless', kind === 'endless')
+    this.el.hud.classList.toggle('heist', kind === 'heist')
     this.el.scoreUnit.textContent = kind === 'trial' ? 'M LEFT' : 'PTS'
     this.el.subA.textContent = best
     this.el.subB.textContent = title
     this.el.delta.className = 'delta'
     this.el.ticks.innerHTML = checkpoints.map((c) => `<i style="left:${(c.x / length) * 100}%"></i>`).join('')
-    this.el.lives.innerHTML = Array.from({ length: lives }, () => '<i></i>').join('')
+    this.setLives(lives)
+    this.el.chromeRow.innerHTML = ''
     this.el.combo.classList.remove('show')
     this.el.countdown.textContent = ''
+  }
+
+  setLives(n) {
+    this.el.lives.innerHTML = Array.from({ length: n }, () => '<i></i>').join('')
+    delete this.last.lives
+  }
+
+  // Installed chrome as small tags under the integrity pips.
+  chrome(list) {
+    this.el.chromeRow.innerHTML = chromeTags(list)
+  }
+
+  // The street doc between heist sectors. Items 0-2 are the offer, 3 is
+  // repair, 4 is reroll.
+  shop(d, sel, onPick) {
+    const e = this.el
+    e.shopKicker.textContent = `UPLINK ${d.sector}/${d.sectors - 1} · SECTOR ${d.sector + 1} NEXT`
+    e.shopCreds.textContent = `¢ ${d.creds.toLocaleString()}`
+    e.shopIntegrity.innerHTML = Array.from({ length: d.maxIntegrity }, (_, i) => `<i class="${i < d.integrity ? '' : 'lost'}"></i>`).join('')
+    e.shopOffer.innerHTML = ''
+    const cards = d.offer.length ? d.offer : [{ name: 'Nothing left', maker: 'STREET DOC', tag: '—', desc: 'You are all chrome. Jack back in.', none: true }]
+    cards.forEach((c, i) => {
+      const li = document.createElement('li')
+      li.className = `${i === sel ? 'sel' : ''} ${c.rare ? 'rare' : ''}`
+      const stack = c.max > 1 ? `<span class="stack">${c.have}/${c.max}</span>` : ''
+      li.innerHTML = `<div class="o-top"><span class="o-maker">${c.maker}</span><span class="o-tag">${c.rare ? 'RARE · ' : ''}${c.tag}</span></div>` +
+        `<div class="o-name">${c.name}${stack}</div><div class="o-desc">${c.desc}</div>`
+      li.addEventListener('click', () => onPick(i))
+      e.shopOffer.appendChild(li)
+    })
+    e.repair.innerHTML = d.repair.full ? 'REPAIR · FULL' : `REPAIR +1 · ¢ ${d.repair.cost}`
+    e.reroll.innerHTML = `REROLL · ¢ ${d.reroll.cost}`
+    e.repair.classList.toggle('sel', sel === 3)
+    e.reroll.classList.toggle('sel', sel === 4)
+    e.repair.classList.toggle('off', !d.repair.ok)
+    e.reroll.classList.toggle('off', !d.reroll.ok)
+    e.repair.onclick = () => onPick(3)
+    e.reroll.onclick = () => onPick(4)
+    e.shopOwned.innerHTML = d.owned.length ? `<span>INSTALLED</span>${chromeTags(d.owned)}` : ''
   }
 
   showOver(on, r) {
@@ -127,6 +182,16 @@ export class Hud {
         const d = pb != null ? `<span class="${t < pb ? 'good' : 'bad'}">${formatDelta(t - pb)}</span>` : ''
         return `<li><span>${i === r.splits.length - 1 ? 'FINISH' : `CP ${i + 1}`}</span><b>${formatTime(t)}</b>${d}</li>`
       }).join('')
+    } else if (r.kind === 'heist') {
+      e.overKicker.textContent = r.extracted ? 'HEIST · EXTRACTED' : `HEIST · SECTOR ${r.sector + 1}/${r.sectors}`
+      e.overTitle.innerHTML = r.extracted ? 'CLEAN <em>EXIT</em>' : r.newBest ? 'NEW <em>BEST</em>' : '<em>FLAT</em>LINED'
+      e.overMain.textContent = Math.floor(r.score).toLocaleString()
+      e.overUnit.textContent = 'PTS'
+      e.overBest.classList.toggle('new', r.newBest)
+      e.overBest.innerHTML = `BEST <b>${Math.floor(r.best).toLocaleString()}</b>${r.bonus ? ` · EXTRACTION <b>+${r.bonus.toLocaleString()}</b>` : ''}`
+      e.overStats.innerHTML = `<div><b>${r.stats.shards}</b><span>SHARDS</span></div><div><b>${r.stats.takedowns}</b><span>TAKEDOWNS</span></div>` +
+        `<div><b>${Math.floor(r.bestCombo).toLocaleString()}</b><span>BEST COMBO</span></div>`
+      e.overMedals.innerHTML = r.chrome.length ? `<div class="chrome-row big">${chromeTags(r.chrome)}</div>` : ''
     } else {
       e.overKicker.textContent = 'ENDLESS · RUN OVER'
       e.overTitle.innerHTML = r.newBest ? 'NEW <em>BEST</em>' : 'OUT OF <em>LIVES</em>'
@@ -140,7 +205,14 @@ export class Hud {
 
   // ── per-frame ───────────────────────────────────────────────────────────
 
-  update({ score, speed, focus, focusActive, focusReady, time, progress, lives, combo, sub }) {
+  update({ score, speed, focus, focusActive, focusReady, time, progress, lives, combo, sub, trace }) {
+    if (trace !== undefined) {
+      this.set('trace', Math.round(Math.min(1, trace) * 100), (v) => {
+        this.el.traceFill.style.width = `${v}%`
+        this.el.traceVal.textContent = `${v}%`
+        this.el.trace.classList.toggle('hot', v >= 75)
+      })
+    }
     if (score !== undefined) this.set('score', Math.floor(score), (v) => { this.el.score.textContent = v.toLocaleString() })
     if (time !== undefined) this.set('timer', Math.floor(time * 100), () => { this.el.timer.textContent = formatTime(time) })
     if (progress !== undefined) this.set('progress', Math.round(progress * 400), (v) => { this.el.progress.style.width = `${v / 4}%` })
