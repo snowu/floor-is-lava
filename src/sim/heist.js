@@ -3,13 +3,56 @@
 // run; flow pulls the trace back down, mistakes and hazards push it up, and
 // when it fills, ICE burns a point of integrity. Pure state, no DOM.
 
-import { HEIST, setPhysMods } from './config.js'
+import { HEIST, PHYS, setPhysMods } from './config.js'
 import { createRng } from './rng.js'
 import { bodyHeight, isGrounded } from './player.js'
 import { CHROME, chromeEffects, rollOffer, countOf } from './chrome.js'
 
-// Moves that jam the trace (the same ones that feed a combo).
-const JAMMING = new Set(['vault', 'roll', 'wallrun', 'walljump', 'zip', 'zipjump', 'spring', 'grab', 'climb', 'slidejump', 'airjump', 'clamber'])
+// Moves that jam the trace: the ones the city hands you. Slide jumps feed a
+// combo but can be repeated on any flat roof, so they don't jam.
+const JAMMING = new Set(['vault', 'roll', 'wallrun', 'walljump', 'zip', 'spring', 'padjump', 'grab', 'climb', 'landslide', 'airjump', 'clamber'])
+
+// 0 at the minimum running speed, 1 at the speed that fully counts as flow.
+export function flowOf(speed) {
+  return Math.max(0, Math.min(1, (speed - PHYS.SPEED_MIN) / (HEIST.TRACE_FLOW_SPEED - PHYS.SPEED_MIN)))
+}
+
+// Trace per second at a sector and speed, before chrome.
+export function traceRate(sector, speed) {
+  return HEIST.TRACE_RATE * (1 + HEIST.TRACE_PER_SECTOR * sector) * (1 - HEIST.TRACE_FLOW_HIDE * flowOf(speed))
+}
+
+// What the hazards would do to a runner, without touching them: the
+// autopilot uses it to look ahead. Returns a cost per step (lasers and drone
+// scans cost, takedowns don't) and remembers what it has judged.
+export class HazardProbe {
+  constructor() { this.seen = new Set() }
+
+  cost(p, level) {
+    if (!p.alive) return 0
+    const h = bodyHeight(p)
+    const bx0 = p.x - 0.3, bx1 = p.x + 0.3, by0 = p.y, by1 = p.y + h
+    let cost = 0
+    for (const c of level.chunksIn(p.x - 3, p.x + 3)) {
+      for (const l of c.lasers ?? []) {
+        if (l.tripped || this.seen.has(l.id)) continue
+        if (l.x1 < bx0 || l.x0 > bx1 || l.y1 < by0 || l.y0 > by1) continue
+        this.seen.add(l.id)
+        cost += 3
+      }
+      for (const d of c.drones ?? []) {
+        if (d.down || d.passed || this.seen.has(d.id)) continue
+        const touching = bx1 > d.x - HEIST.DRONE_W / 2 && bx0 < d.x + HEIST.DRONE_W / 2 && by1 > d.y && by0 < d.y + HEIST.DRONE_H
+        if (touching && !isGrounded(p)) this.seen.add(d.id)
+        else if (p.x > d.x + 0.6) {
+          this.seen.add(d.id)
+          if (by0 < d.y + HEIST.DRONE_H) cost += 2
+        }
+      }
+    }
+    return cost
+  }
+}
 
 export function heistOptions() {
   return {
@@ -106,7 +149,7 @@ export class HeistState {
   // are pushed in the same shape the player emits.
   step(dt, p, level, events) {
     const m = this.mods
-    this.trace += HEIST.TRACE_RATE * (1 + HEIST.TRACE_PER_SECTOR * this.sector) * m.traceRate * dt
+    this.trace += traceRate(this.sector, p.speed) * m.traceRate * dt
     if (!p.alive) return
 
     const hw = 0.3
