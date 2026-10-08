@@ -3,11 +3,12 @@ import { toCanvas, pack, mix, css, dither, hash, PixelBuffer } from './pixels.js
 import { paletteAt, districtName, ACCENT } from './palette.js'
 import { RunnerSprite, ORIGIN_X, ORIGIN_Y } from './runner.js'
 import { RoofWater } from './water.js'
+import { drawRoofSurface, drawContactShadow, drawRunnerContact, equipmentLight } from './roof.js'
 import { PPU, bakeDecor, bakeBird, bakeCloud, bakeCar, recede, outlined } from './sprites.js'
 import { CITY, bakeTower, bakeFog, bakeFacade } from './city.js'
-import { bakeBillboard, specFor, inks } from './billboard.js'
+import { bakeBillboard, specFor, inks, billboardLight } from './billboard.js'
 import { drawBig, bigW } from './art.js'
-import { bakeObstacle, lipOf, bakeShadow, bakePipe, bakePipeFront, pipeFrame, bakeFence, drawFenceLive } from './obstacles.js'
+import { bakeObstacle, lipOf, bakePipe, bakePipeFront, pipeFrame, bakeFence, drawFenceLive } from './obstacles.js'
 import { PHYS, HEIST } from '../sim/config.js'
 import { createRng } from '../sim/rng.js'
 
@@ -57,7 +58,7 @@ export class PixelView {
     this.drops = []
     this.lightning = 0
     this.lightningClock = 8
-    this.weather = { rain: 0, target: 0, clock: 0, ready: false }
+    this.weather = { rain: 0, wet: 0, target: 0, clock: 0, ready: false }
     this.layers = LAYERS.map((L) => ({ ...L, items: [], cursor: null, rng: createRng(Math.floor(L.f * 1e4)) }))
     this.clouds = { items: [], cursor: null, rng: createRng(77) }
     this.cars = []
@@ -214,7 +215,7 @@ export class PixelView {
   }
 
   event(e, p) {
-    if (['land', 'hardland', 'landslide'].includes(e.type)) this.water.splash(p.x, p.y, p.speed, this.weather.rain, e.impact ?? 12)
+    if (['land', 'hardland', 'landslide'].includes(e.type)) this.water.splash(p.x, p.y, p.speed, this.weather.wet, e.impact ?? 12)
     switch (e.type) {
       case 'land':
         this.runner.land(e.impact ?? 0)
@@ -308,7 +309,7 @@ export class PixelView {
       this.onStep?.(k)
       if (k === 'run' && this.stepPoint) {
         const foot = this.runner.joints?.[(this.runner.lastStep & 1) ? 'ankleB' : 'ankleA']
-        this.water.splash(this.stepPoint.x + (foot?.[0] ?? 0) / PPU, this.stepPoint.y, this.stepPoint.speed, this.weather.rain)
+        this.water.splash(this.stepPoint.x + (foot?.[0] ?? 0) / PPU, this.stepPoint.y, this.stepPoint.speed, this.weather.wet)
       }
     }
     this.ghostRunner = new RunnerSprite(id)
@@ -445,6 +446,7 @@ export class PixelView {
     if (!w.ready) {
       w.ready = true
       w.target = w.rain = Math.random() < pal.rain * 0.5 ? 0.6 + Math.random() * 0.4 : 0
+      w.wet = w.rain
       w.clock = 10 + Math.random() * 30
     }
     w.clock -= dt
@@ -458,6 +460,7 @@ export class PixelView {
       }
     }
     w.rain += clamp(w.target - w.rain, -dt / 8, dt / 8)
+    w.wet = damp(w.wet, w.rain, w.rain > w.wet ? 0.3 : 0.025, dt)
   }
 
   drawSky(pal, time) {
@@ -676,6 +679,10 @@ export class PixelView {
       const w = Math.round((c.x1 - c.x0) * PPU)
       const cv = this.sprite(`c${c.id}:b`, ver, () => bakeFacade({ w, roofH: v.roofH, style: c.style, seed: c.seed, pal, wall: v.wall, accentCap: v.cap }))
       ctx.drawImage(cv, this.sx(c.x0), this.sy(c.roof) - v.roofH)
+      const lights = v.signs.map((sg) => ({ x: this.sx(c.x0) + sg.dx + sg.spec.w / 2, w: sg.spec.w, color: billboardLight(sg.spec, pal), strength: 0.35 }))
+      if (v.roofAd) lights.push({ x: this.sx(c.x0) + v.roofAd.dx + v.roofAd.spec.w / 2, w: v.roofAd.spec.w, color: billboardLight(v.roofAd.spec, pal, this.cam.time), strength: 1 })
+      v.lights = lights
+      drawRoofSurface(ctx, { x: this.sx(c.x0), y: this.sy(c.roof), w, depth: v.roofH, seed: c.seed, pal, wet: this.weather.wet, rain: this.weather.rain, time: this.cam.time, lights })
     }
     // advertising on the facades, and billboards standing on the roofs
     const t = this.cam.time
@@ -689,11 +696,13 @@ export class PixelView {
       const depth = Math.max(4, c.depth - 6)
       for (const d of v.decor) {
         const bucket = Math.floor(d.v * 8) / 8
-        const cv = this.sprite(`d:${d.type}:${bucket}`, ver, () => recede(bakeDecor(d.type, bucket, pal), pal.mid, 0.32))
+        const material = equipmentLight(pal, this.sx(d.x), v.lights)
+        const cv = this.sprite(`c${c.id}:d:${d.x}:${d.type}:${bucket}`, `${ver}:${material.light}`, () => recede(bakeDecor(d.type, bucket, material), pal.mid, 0.32))
         const back = clamp((-d.z - 4) / depth, 0, 1)
         const bx = this.sx(d.x) - (cv.width >> 1)
         const by = this.sy(c.roof) - Math.round(back * (v.roofH - 3)) - cv.height
         if (bx > this.W || bx + cv.width < 0) continue
+        drawContactShadow(ctx, bx + 2, by + cv.height, cv.width - 4, pal, 2)
         ctx.drawImage(cv, bx, by)
         if (d.type === 'vents' && Math.random() < 0.06) {
           this.particles.push({ x: d.x + (Math.random() - 0.5) * 0.8, y: c.roof + back * (v.roofH - 3) / PPU + 1, vx: -0.3, vy: 1 + Math.random(), life: 1.4, max: 1.4, color: mix(pal.haze, pal.light, 0.35), size: 2 })
@@ -711,11 +720,12 @@ export class PixelView {
         const w = Math.max(2, Math.round((sd.x1 - sd.x0) * PPU)), h = Math.max(2, Math.round((sd.y1 - sd.y0) * PPU))
         const drop = this.sy(c.roof) - this.sy(sd.y0) - 2
         const f = pipeFrame('beam', w, h, drop, sd.id)
-        const cv = this.sprite(`c${c.id}:p${sd.id}`, ver, () => bakePipe('beam', w, h, drop, pal, sd.id))
+        const material = equipmentLight(pal, this.sx(sd.x0) + w / 2, v.lights), litVer = `${ver}:${material.light}`
+        const cv = this.sprite(`c${c.id}:p${sd.id}`, litVer, () => bakePipe('beam', w, h, drop, material, sd.id))
         const x = this.sx(sd.x0) - f.ox, y = this.sy(sd.y1) - f.oy
-        ctx.drawImage(this.sprite(`shadow${w}`, 0, () => bakeShadow(w)), this.sx(sd.x0) - 3, this.sy(c.roof) - 1)
+        drawContactShadow(ctx, this.sx(sd.x0), this.sy(c.roof), w, pal)
         ctx.drawImage(cv, x, y)
-        const front = this.sprite(`c${c.id}:pf${sd.id}`, ver, () => bakePipeFront('beam', w, h, drop, pal, sd.id))
+        const front = this.sprite(`c${c.id}:pf${sd.id}`, litVer, () => bakePipeFront('beam', w, h, drop, material, sd.id))
         this.beams.push({ cv: front, x, y })
       }
       for (const sd of c.solids) {
@@ -723,11 +733,12 @@ export class PixelView {
         const w = Math.max(2, Math.round((sd.x1 - sd.x0) * PPU))
         const h = Math.max(2, Math.round((sd.y1 - sd.y0) * PPU))
         if (sd.kind === 'beam') continue
-        const cv = this.sprite(`c${c.id}:o${sd.id}`, ver, () => bakeObstacle(sd.sub, w, h, pal, sd.id))
+        const material = equipmentLight(pal, this.sx(sd.x0) + w / 2, v.lights)
+        const cv = this.sprite(`c${c.id}:o${sd.id}`, `${ver}:${material.light}`, () => bakeObstacle(sd.sub, w, h, material, sd.id))
         const lip = lipOf(sd.sub)
         const ox = this.sx(sd.x0), oy = this.sy(sd.y1) - lip
         // A contact shadow seats equipment on the roof.
-        ctx.drawImage(this.sprite(`shadow${w}`, 0, () => bakeShadow(w)), ox - 3, this.sy(c.roof) - 1)
+        drawContactShadow(ctx, ox, this.sy(c.roof), w, pal)
         ctx.drawImage(cv, ox - 1, oy - 1)
       }
       for (const e of c.extras) {
@@ -999,6 +1010,9 @@ export class PixelView {
       }
     }
     if (!r.joints) return
+    const roof = s.level.roofAt(s.rx)
+    const chunk = s.level.chunks.find((c) => s.rx >= c.x0 && s.rx <= c.x1)
+    if (roof !== null) drawRunnerContact(ctx, { x: this.sx(s.rx), y: this.sy(s.ry), floor: this.sy(roof), pal, joints: r.joints, span: chunk && [this.sx(chunk.x0), this.sx(chunk.x1)] })
     const x = this.sx(s.rx) - ORIGIN_X
     const y = this.sy(s.ry) - ORIGIN_Y
     // afterimages at speed and in focus

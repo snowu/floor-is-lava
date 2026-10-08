@@ -75,7 +75,7 @@ npm run dev
 - **Zipline**: jump to catch red cables across wide gaps.
 - **Springboard**: red ramps launch you up to taller roofs.
 
-Anything you can use is painted runner-vision red.
+Anything you can use is painted runner-vision red. Puddles and broken neon reflections sit behind the front roof edge, equipment and feet have contact shadows, and surfaces dry gradually after rain stops.
 
 ## Code layout
 
@@ -88,4 +88,4 @@ Anything you can use is painted runner-vision red.
 - `npm test` runs physics unit tests, sprite and palette checks, generator invariants, scoring and ghost tests, and autopilot runs that drive the real physics through 2.5 km of several seeds and finish every trial within its silver time.
 - `npm run build` creates the production build that GitHub Pages deploys.
 - `?seed=123` fixes the course seed. In development, F2 opens a tuning panel for physics and chase values.
-- F3 opens the local art lab and freezes the current game until you return. It includes a live autopilot course, synchronized runner comparisons, every traversal pose, pipe variants, obstacle strips across all five districts, and scenery. Pause, step, change seeds, inspect collision boxes, and export native-resolution PNGs. F3 works in development and in a production build served on localhost (`npm run build` then `npm run preview`). You can also open `lab.html` directly on the local server.
+- F3 opens the local art lab and freezes the current game until you return. It includes a live autopilot course, synchronized runner comparisons, every traversal pose, pipe variants, obstacle strips across all five districts, scenery, and a matching dry/wet roof lighting scene. Pause, step, change seeds, inspect collision boxes, and export native-resolution PNGs. F3 works in development and in a production build served on localhost (`npm run build` then `npm run preview`). You can also open `lab.html` directly on the local server.
