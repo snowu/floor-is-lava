@@ -133,6 +133,15 @@
       </div>
     </div>
 
+    <aside id="app-release" class="app-release" hidden aria-label="App version">
+      <span id="app-version"></span><button id="check-updates" type="button">CHECK UPDATES</button>
+      <span id="update-status" role="status" aria-live="polite"></span>
+    </aside>
+    <aside id="app-update" class="app-update" hidden aria-label="App update">
+      <div><strong>NEW VERSION AVAILABLE</strong><p id="update-message" role="status" aria-live="polite"></p></div>
+      <button id="update-now" type="button">UPDATE NOW</button>
+    </aside>
+
     <script type="module" src="/src/main.js"></script>
   </body>
 </html>

@@ -15,6 +15,7 @@ import { PixelView } from './pixel/view.js'
 import { PALETTE_NAMES, pinPalette } from './pixel/palette.js'
 import { RUNNERS, RUNNER_STYLES } from './pixel/runner.js'
 import { localLab } from './lab/local.js'
+import { installAppUpdates } from './ui/update.js'
 
 const DEMO_SEED = 20261007
 const TOAST = {
@@ -864,6 +865,7 @@ function frame(now) {
     if (g.phaseT > 1.3) showResults()
   }
 
+  appUpdates.sync()
   const cur = g.player
   if (g.mode === 'run') {
     const cps = g.level.checkpoints
@@ -949,5 +951,6 @@ view.onStep = (kind) => {
 }
 
 toTitle()
+const appUpdates = installAppUpdates({ canShow: () => !artLabOpen && ['title', 'paused', 'over'].includes(g.mode) })
 requestAnimationFrame(frame)
 if (import.meta.env.DEV) window.__game = { g, view, start, newRun, landCue }
