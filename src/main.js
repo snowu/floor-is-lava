@@ -36,7 +36,38 @@ const audio = new Audio()
 const hud = new Hud(isTouch)
 hud.setMuted(audio.muted)
 
-const MODES = [{ kind: 'heist' }, { kind: 'endless' }, ...TRACKS.map((track) => ({ kind: 'trial', track })), { kind: 'trial', track: dailyTrack() }]
+const MODES = [{ kind: 'heist' }, { kind: 'endless' }, ...TRACKS.map((track) => ({ kind: 'trial', track })), { kind: 'trial', daily: true }]
+
+// The daily course comes from the date when you look at it or start it, so a
+// page left open past midnight moves on. Its medals come from timing the
+// autopilot on it in a worker, cached for the day.
+const dailyMedals = { pending: null, worker: null }
+function dailyWithMedals() {
+  const track = dailyTrack()
+  track.medals = store.json(`fil.medals.${track.id}`)
+  if (!track.medals) requestDailyMedals(track)
+  return track
+}
+function requestDailyMedals(track) {
+  if (dailyMedals.pending === track.id) return
+  try {
+    dailyMedals.worker ??= new Worker(new URL('./medalWorker.js', import.meta.url), { type: 'module' })
+  } catch { return }
+  dailyMedals.pending = track.id
+  dailyMedals.worker.onmessage = (e) => {
+    const { id, medals } = e.data
+    dailyMedals.pending = null
+    if (!medals) return
+    try {
+      for (const key of Object.keys(localStorage)) if (key.startsWith('fil.medals.daily-')) localStorage.removeItem(key)
+    } catch { /* storage unavailable */ }
+    store.set(`fil.medals.${id}`, JSON.stringify(medals))
+    if (g.track?.id === id) g.track.medals = medals
+    if (g.mode === 'title') renderMenu()
+  }
+  dailyMedals.worker.postMessage({ date: Date.now() })
+}
+const trackOf = (m) => (m.daily ? dailyWithMedals() : m.track)
 
 const g = {
   mode: 'title',            // title | countdown | run | respawn | finish | over | paused | shop | flatline
@@ -95,9 +126,10 @@ function menuItems() {
     if (m.kind === 'endless') {
       return { name: 'ENDLESS', sub: 'combo score attack', best: `${endlessBest().toLocaleString()} PTS`, medal: -1 }
     }
-    const pb = trialPB(m.track)
-    const sub = m.track.daily ? `${m.track.daily.slice(4, 6)}/${m.track.daily.slice(6)} · ${m.track.length} M` : `time trial · ${m.track.length} M`
-    return { name: m.track.name.toUpperCase(), sub, best: pb ? formatTime(pb.time) : '—', medal: pb ? medalFor(pb.time, m.track.medals) : -1 }
+    const track = trackOf(m)
+    const pb = trialPB(track)
+    const sub = track.daily ? `${track.daily.slice(4, 6)}/${track.daily.slice(6)} · ${track.length} M` : `time trial · ${track.length} M`
+    return { name: track.name.toUpperCase(), sub, best: pb ? formatTime(pb.time) : '—', medal: pb ? medalFor(pb.time, track.medals) : -1 }
   })
 }
 
@@ -163,7 +195,7 @@ function newRun() {
   hud.showShop(false)
   const m = MODES[g.sel]
   g.kind = m.kind
-  g.track = m.track ?? null
+  g.track = m.kind === 'trial' ? trackOf(m) : null
   const seed = fixedSeed ?? (Math.random() * 2 ** 32) >>> 0
   const level = g.kind === 'trial'
     ? new Level(g.track.seed, levelOptions(g.track))
