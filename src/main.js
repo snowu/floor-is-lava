@@ -295,6 +295,32 @@ click('btn-menu', () => toMenu())
 click('btn-resume', () => setPaused(false))
 click('btn-restart', () => { audio.ctx?.resume(); newRun() })
 click('btn-quit', () => toMenu())
+// Fullscreen: toggled from the title screen or the HUD. Landscape is locked
+// where the browser allows it. iPhone Safari has no fullscreen API, so it gets
+// a hint to install to the home screen (the manifest launches fullscreen).
+const docEl = document.documentElement
+const canFullscreen = !!(docEl.requestFullscreen || docEl.webkitRequestFullscreen)
+const isStandalone = window.matchMedia('(display-mode: fullscreen), (display-mode: standalone)').matches || navigator.standalone === true
+const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
+const fullscreenElement = () => document.fullscreenElement || document.webkitFullscreenElement
+document.body.classList.toggle('no-fs', !canFullscreen || isStandalone)
+document.body.classList.toggle('ios-browser', !!(isIOS && !isStandalone))
+
+async function toggleFullscreen() {
+  try {
+    if (fullscreenElement()) {
+      await (document.exitFullscreen || document.webkitExitFullscreen).call(document)
+    } else {
+      await (docEl.requestFullscreen || docEl.webkitRequestFullscreen).call(docEl, { navigationUI: 'hide' })
+      await screen.orientation?.lock?.('landscape').catch(() => {})
+    }
+  } catch { /* the browser refused; nothing to undo */ }
+}
+const syncFullscreen = () => document.body.classList.toggle('fs', !!fullscreenElement())
+document.addEventListener('fullscreenchange', syncFullscreen)
+document.addEventListener('webkitfullscreenchange', syncFullscreen)
+for (const btn of document.querySelectorAll('.fs-toggle')) btn.addEventListener('click', toggleFullscreen)
+
 document.getElementById('btn-focus').addEventListener('touchstart', (e) => { e.preventDefault(); input.focusPressed = true }, { passive: false })
 document.addEventListener('visibilitychange', () => { if (document.hidden) setPaused(true) })
 

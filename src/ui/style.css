@@ -357,3 +357,88 @@ body.pixel .banner { color: #eef6ff; text-shadow: -2px 0 var(--pink), 2px 0 var(
   .shop h1 { display: none; }
   .shop-tip { display: none; }
 }
+
+/* ── fullscreen & phones ─────────────────────────────────────────────── */
+
+.fs-toggle svg { display: block; width: 16px; height: 16px; margin: auto; fill: currentColor; shape-rendering: crispEdges; }
+.fs-toggle .fs-exit, body.fs .fs-toggle .fs-enter { display: none; }
+body.fs .fs-toggle .fs-exit { display: block; }
+body.no-fs .fs-toggle { display: none; }
+.corner { position: fixed; top: max(14px, env(safe-area-inset-top)); right: max(14px, env(safe-area-inset-right)); z-index: 21; }
+.ios-tip {
+  display: none; position: fixed; z-index: 21; bottom: max(14px, env(safe-area-inset-bottom)); right: max(14px, env(safe-area-inset-right));
+  max-width: min(320px, 60vw); padding: 8px 12px; font: 400 14px/1.3 'Pixelify Sans', monospace; color: #c8d4ee;
+  background: rgba(10, 8, 26, 0.92); box-shadow: 0 0 0 2px rgba(41, 243, 255, 0.35);
+}
+.ios-tip b { color: var(--cyan); font-weight: 600; }
+body.ios-browser .ios-tip { display: block; }
+body.pixel .rotate { white-space: normal; text-align: center; width: max-content; max-width: calc(100vw - 32px); line-height: 1.5; }
+@media (orientation: portrait) {
+  .ios-tip { top: max(14px, env(safe-area-inset-top)); bottom: auto; left: 16px; right: auto; }
+}
+
+/* Landscape phones: menus become two columns that fit the height, the HUD shrinks. */
+@media (orientation: landscape) and (max-height: 500px) {
+  .screen { align-items: center; padding: max(8px, env(safe-area-inset-top)) max(14px, env(safe-area-inset-right)) max(8px, env(safe-area-inset-bottom)) max(14px, env(safe-area-inset-left)); }
+  body.pixel .card { max-height: calc(100dvh - 16px); overflow-y: auto; overscroll-behavior: contain; padding: 14px 18px 14px 24px; }
+  body.pixel #title .card {
+    width: min(720px, calc(100vw - 110px)); overflow: hidden;
+    display: grid; grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.15fr); grid-template-rows: auto 1fr; column-gap: 20px;
+  }
+  #title .kicker { grid-column: 1; }
+  body.pixel #title h1 { grid-column: 1; grid-row: 2; align-self: start; margin: 10px 0 0; font-size: clamp(34px, 11vh, 50px); }
+  #title .menu { grid-column: 2; grid-row: 1 / 3; margin: 0; gap: 4px; max-height: calc(100dvh - 44px); overflow-y: auto; overscroll-behavior: contain; }
+  #title .controls, #title .menu-help { display: none; }
+  .menu li { padding: 6px 10px 5px 12px; }
+  .m-name { font-size: 17px; }
+  .m-sub { font-size: 9px; }
+  .m-best { font-size: 14px; }
+
+  body.pixel h1 { font-size: 38px; margin: 6px 0 4px; }
+  body.pixel .result { font-size: 40px; }
+  body.pixel .stats { margin-top: 10px; padding-top: 10px; }
+  body.pixel .stats b { font-size: 20px; }
+  .splits { max-height: 64px; margin-top: 8px; }
+  .medals { margin-top: 8px; }
+  .actions { margin-top: 10px; }
+  .action { padding: 8px 12px 7px; }
+
+  .offer { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .o-name { font-size: 15px; }
+  .o-desc { font-size: 12px; }
+  .shop-status { margin-top: 6px; font-size: 20px; }
+  .shop-owned { margin-top: 8px; }
+
+  body.pixel .dist { font-size: 26px; }
+  body.pixel .dist small { font-size: 10px; }
+  body.pixel .chip { padding: 4px 10px 3px 8px; border-left-width: 4px; }
+  body.pixel .sub { font-size: 9px; margin-top: 4px; }
+  .lives { margin-top: 5px; }
+  .lives i { width: 10px; height: 7px; }
+  .hud-tc { gap: 4px; }
+  .timer { font-size: 28px; }
+  .progress { width: min(240px, 36vw); height: 5px; }
+  .trace { width: min(160px, 28vw); height: 6px; }
+  .trace-label { font-size: 9px; }
+  .hud-tr { gap: 6px; }
+  body.pixel .icon-btn { width: 34px; height: 34px; font-size: 13px; }
+  body.pixel #btn-focus { width: 44px; height: 44px; font-size: 20px; }
+  .hud-bl { width: 130px; }
+  .speed { height: 9px; gap: 2px; }
+  body.pixel .meter-label { font-size: 9px; margin-bottom: 3px; }
+  .focus-label { margin-top: 6px; }
+  body.pixel .hint { top: 24%; padding: 6px 12px 5px; font-size: 13px; white-space: normal; width: max-content; max-width: 58vw; }
+  body.pixel .banner { top: 34%; font-size: 12px; }
+  body.pixel .toast { font-size: 18px; }
+  .toasts { bottom: 26%; }
+  .combo { bottom: 52px; }
+  .combo-points { font-size: 22px; }
+  .combo-points b { font-size: 18px; }
+  .combo-bar { width: 120px; }
+  .countdown { font-size: 84px; }
+  .zone { padding-bottom: 56px; }
+  body.pixel .zone { font-size: 13px; }
+  .chrome-row { max-width: 200px; }
+  .chrome-row i { font-size: 8px; }
+}
+.toast { white-space: nowrap; }
