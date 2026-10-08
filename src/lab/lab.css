@@ -454,3 +454,11 @@ footer {
 }
 
 #facades { margin-bottom: 32px; }
+
+#trace-chart { image-rendering: auto; }
+#trace-section .inline { margin-bottom: 12px; font-size: 12px; color: var(--muted); }
+.trace-summary { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-top: 12px; font: 12px ui-monospace, monospace; color: var(--muted); }
+.trace-summary b { color: #e7e9ef; font-weight: 600; }
+.trace-summary .row { border: 1px solid var(--line); padding: 10px 12px; line-height: 1.7; }
+.trace-summary i { display: inline-block; width: 10px; height: 3px; margin-right: 6px; vertical-align: middle; }
+@media(max-width:600px) { .trace-summary { grid-template-columns: 1fr; } }

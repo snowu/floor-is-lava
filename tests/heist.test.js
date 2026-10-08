@@ -8,6 +8,7 @@ import { createRng } from '../src/sim/rng.js'
 import { CHROME, rollOffer, chromeEffects, countOf } from '../src/sim/chrome.js'
 import { HeistState, heistOptions, HazardProbe, traceRate } from '../src/sim/heist.js'
 import { ScoreKeeper } from '../src/sim/score.js'
+import { simulateHeist } from '../src/sim/heistSim.js'
 
 const NONE = { jump: false, jumpPressed: false, down: false, downPressed: false }
 
@@ -237,34 +238,13 @@ describe('heist state', () => {
 
 describe('heist traversal', () => {
   it('a careful autopilot extracts from a full heist with no chrome', () => {
-    const level = new Level(31337, heistOptions())
-    const net = new HeistState(31337)
-    const bot = new Bot(level, { heist: true })
-    level.ensure(200)
-    let p = createPlayer(0, level.roofAt(0))
-    const events = []
-    let falls = 0
-    const end = HEIST.SECTORS * HEIST.SECTOR_LEN
-    for (let i = 0; i < 120 * 400 && !(level.finish && p.x > level.finish.x); i++) {
-      level.ensure(p.x + 200)
-      events.length = 0
-      stepPlayer(p, bot.input(p), PHYS.FIXED_DT, level, events)
-      net.step(PHYS.FIXED_DT, p, level, events)
-      for (const e of events) net.move(e.type)
-      if (p.x > level.checkpoints[net.sector]?.x) net.advance()
-      if (!p.alive) {
-        falls++
-        const r = level.roofStartBehind(p.x)
-        p = createPlayer(r.x, r.y)
-      }
-      level.prune(p.x - 90)
-    }
-    expect(p.x).toBeGreaterThan(end - 100)
-    expect(falls).toBeLessThanOrEqual(2)
-    expect(net.stats.shards).toBeGreaterThan(20)
+    const run = simulateHeist(31337)
+    expect(run.extracted).toBe(true)
+    expect(run.falls).toBeLessThanOrEqual(2)
+    expect(run.stats.shards).toBeGreaterThan(20)
     // flow, not luck: dodging the hazards keeps the trace from ever burning
-    expect(net.stats.zaps + net.stats.spotted).toBeLessThanOrEqual(4)
-    expect(net.stats.takedowns).toBeGreaterThan(5)
-    expect(net.stats.burns).toBe(0)
+    expect(run.stats.zaps + run.stats.spotted).toBeLessThanOrEqual(4)
+    expect(run.stats.takedowns).toBeGreaterThan(5)
+    expect(run.stats.burns).toBe(0)
   }, 90000)
 })

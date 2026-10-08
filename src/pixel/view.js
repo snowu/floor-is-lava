@@ -10,15 +10,13 @@ import { CITY, bakeTower, bakeFog, bakeFacade } from './city.js'
 import { bakeBillboard, specFor, inks, billboardLight, drawTicker } from './billboard.js'
 import { drawBig, bigW } from './art.js'
 import { bakeObstacle, lipOf, bakePipe, bakePipeFront, pipeFrame, bakeFence, drawFenceLive } from './obstacles.js'
+import { drawDrone, drawWreck, drawLaser, drawLaserSpill, drawShard, SHARD, SECURITY as LASER } from './security.js'
 import { PHYS, HEIST } from '../sim/config.js'
 import { createRng } from '../sim/rng.js'
 
 // Internal resolution: 270px tall in landscape; portrait screens get a taller
 // canvas instead of a letterboxed strip. Module-level so the bakers share it.
 let H = 270
-const SHARD = [41, 243, 255]
-const LASER = [255, 47, 160]
-const TRIPPED = [255, 170, 40]
 const HULL = [26, 24, 38]
 const CUE = [41, 243, 255]
 const CUE_IDLE = [150, 146, 176]
@@ -836,67 +834,31 @@ export class PixelView {
     }
   }
 
-  // Heist layer behind the runner: data shards, security drones, wrecks.
+  // Heist layer behind the runner: data shards, security drones, wrecks,
+  // and the light laser grids throw on the roof.
   drawHeist(s, pal) {
     const { ctx } = this
     const left = this.cam.x - this.W / 2 / PPU - 4, right = this.cam.x + this.W / 2 / PPU + 4
     const t = this.cam.time
     for (const c of s.level.chunksIn(left, right)) {
       if (!c.shards) continue
+      const floor = this.sy(c.roof)
+      for (const l of c.lasers) {
+        const x0 = this.sx(l.x0), x1 = this.sx(l.x1)
+        if (x1 < -8 || x0 > this.W + 8) continue
+        drawLaserSpill(ctx, x0, x1, this.sy((l.y0 + l.y1) / 2), floor, t, { tripped: l.tripped, seed: l.x0 })
+      }
       for (const d of c.drones) {
         if (d.down) continue
         const x = this.sx(d.x)
-        const top = this.sy(d.y + HEIST.DRONE_H) + Math.round(Math.sin(t * 2.3 + d.x) * 1.5)
-        const floor = this.sy(c.roof)
-        // scan cone sweeping the roof
-        const sweep = Math.sin(t * 1.4 + d.x) * 7
-        const cone = d.spotted ? [255, 59, 48] : SHARD
-        ctx.fillStyle = css(cone)
-        for (let y = top + 7; y < floor; y++) {
-          const u = (y - top - 7) / Math.max(1, floor - top - 7)
-          const cx = x + sweep * u
-          const half = 1 + u * 9
-          for (let xx = Math.round(cx - half); xx <= Math.round(cx + half); xx++) {
-            if (dither(xx, y + Math.floor(t * 12), 0.16 + (y === floor - 1 ? 0.4 : 0))) ctx.fillRect(xx, y, 1, 1)
-          }
-        }
-        // hull, rotors, eye
-        ctx.fillStyle = css([8, 6, 14])
-        ctx.fillRect(x - 7, top + 1, 15, 6)
-        ctx.fillStyle = css(HULL)
-        ctx.fillRect(x - 6, top + 2, 13, 4)
-        ctx.fillStyle = css(mix(HULL, [120, 120, 150], 0.4))
-        ctx.fillRect(x - 6, top + 2, 13, 1)
-        const blade = Math.floor(t * 30) & 1
-        ctx.fillStyle = 'rgba(200,210,230,0.7)'
-        ctx.fillRect(x - 9 + blade, top, 5, 1)
-        ctx.fillRect(x + 5 - blade, top, 5, 1)
-        ctx.fillStyle = css([8, 6, 14])
-        ctx.fillRect(x - 6, top + 1, 1, 1)
-        ctx.fillRect(x + 6, top + 1, 1, 1)
-        ctx.fillStyle = Math.sin(t * 10 + d.x) > -0.3 ? css([255, 59, 48]) : css([120, 20, 20])
-        ctx.fillRect(x - 4, top + 4, 2, 2)
-        ctx.fillStyle = css(cone)
-        ctx.fillRect(x - 1, top + 6, 3, 1)
+        if (x < -30 || x > this.W + 30) continue
+        drawDrone(ctx, x, this.sy(d.y), floor, t, { seed: d.x, alarm: d.spotted, cleared: d.passed && !d.spotted })
       }
       for (const sh of c.shards) {
         if (sh.taken) continue
         const x = this.sx(sh.x)
-        const y = this.sy(sh.y) + Math.round(Math.sin(t * 3 + sh.x * 1.7) * 1.5)
         if (x < -6 || x > this.W + 6) continue
-        const k = 0.35 + 0.65 * Math.abs(Math.cos(t * 3.2 + sh.x))
-        ctx.fillStyle = css(SHARD, 0.28)
-        for (let dy = -5; dy <= 5; dy++) {
-          const hw = Math.round((5 - Math.abs(dy)) * k)
-          ctx.fillRect(x - hw, y + dy, hw * 2 + 1, 1)
-        }
-        ctx.fillStyle = css(SHARD)
-        for (let dy = -3; dy <= 3; dy++) {
-          const hw = Math.round((3 - Math.abs(dy)) * k)
-          ctx.fillRect(x - hw, y + dy, hw * 2 + 1, 1)
-        }
-        ctx.fillStyle = '#ffffff'
-        ctx.fillRect(x, y - 1, 1, 2)
+        drawShard(ctx, x, this.sy(sh.y), t, sh.x)
       }
     }
     // shot-down drones tumble into the street
@@ -907,11 +869,7 @@ export class PixelView {
       w.y += w.vy * s.dt
       const x = this.sx(w.x), y = this.sy(w.y)
       if (w.life <= 0 || y > H + 10) return false
-      const tilt = Math.floor(w.life * 8) & 1
-      ctx.fillStyle = css(HULL)
-      ctx.fillRect(x - 6, y - 2 - tilt, 13, 4 + tilt * 2)
-      ctx.fillStyle = css([255, 140, 40])
-      ctx.fillRect(x - 1, y - 1, 2, 2)
+      drawWreck(ctx, x, y, w.life)
       if (Math.random() < 0.5) this.particles.push({ x: w.x, y: w.y, vx: -1 + Math.random() * 2, vy: 1 + Math.random(), life: 0.5, max: 0.5, color: Math.random() < 0.5 ? [255, 200, 90] : [60, 56, 70], size: Math.random() < 0.4 ? 2 : 1 })
       return true
     })
@@ -919,41 +877,13 @@ export class PixelView {
 
   // Laser grids sit in front of the runner so the beam reads across the body.
   drawLasers(s) {
-    const { ctx } = this
     const left = this.cam.x - this.W / 2 / PPU - 4, right = this.cam.x + this.W / 2 / PPU + 4
-    const t = this.cam.time
     for (const c of s.level.chunksIn(left, right)) {
       if (!c.lasers) continue
       for (const l of c.lasers) {
         const x0 = this.sx(l.x0), x1 = this.sx(l.x1)
-        if (x1 < -4 || x0 > this.W + 4) continue
-        const y = this.sy((l.y0 + l.y1) / 2)
-        const floor = this.sy(c.roof)
-        const col = l.tripped ? TRIPPED : LASER
-        // emitter posts
-        for (const px of [x0 - 3, x1]) {
-          ctx.fillStyle = css([8, 6, 14])
-          ctx.fillRect(px, y - 3, 3, floor - y + 3)
-          ctx.fillStyle = css(HULL)
-          ctx.fillRect(px + 1, y - 2, 1, floor - y + 2)
-          ctx.fillStyle = css(col)
-          ctx.fillRect(px, y - 1, 3, 3)
-        }
-        // the beam
-        const on = l.tripped ? Math.floor(t * 6) & 1 : hash(Math.floor(t * 20), l.x0 * 10) > 0.08
-        if (!on) continue
-        const pulse = 0.5 + 0.5 * Math.sin(t * 14 + l.x0)
-        ctx.fillStyle = css(col, 0.18 + 0.12 * pulse)
-        ctx.fillRect(x0, y - 3, x1 - x0, 7)
-        ctx.fillStyle = css(col, 0.5)
-        ctx.fillRect(x0, y - 1, x1 - x0, 3)
-        ctx.fillStyle = css(col)
-        ctx.fillRect(x0, y, x1 - x0, 2)
-        ctx.fillStyle = 'rgba(255,240,250,0.9)'
-        ctx.fillRect(x0, y, x1 - x0, 1)
-        const spark = x0 + Math.floor(hash(Math.floor(t * 30), l.x1) * (x1 - x0))
-        ctx.fillStyle = '#ffffff'
-        ctx.fillRect(spark, y - 1, 2, 3)
+        if (x1 < -8 || x0 > this.W + 8) continue
+        drawLaser(this.ctx, x0, x1, this.sy((l.y0 + l.y1) / 2), this.sy(c.roof), this.cam.time, { tripped: l.tripped, seed: l.x0 })
       }
     }
   }
