@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Packet Loss · Art lab</title>
+</head>
+<body>
+  <header>
+    <a class="brand" href="#live"><span class="signal">▥</span> PACKET LOSS <span class="tag">ART LAB</span></a>
+    <nav aria-label="Lab sections"><a href="#live">Live</a><a href="#pipe-section">Pipes</a><a href="#runner-section">Runners</a><a href="#pose-section">Poses</a><a href="#obstacle-section">Obstacles</a><a href="#scenery-section">Scenery</a></nav>
+    <button id="close-lab" class="quiet">Back to game <kbd>F3</kbd></button>
+  </header>
+  <main>
+    <div class="intro"><div><p class="eyebrow">LOCAL WORKBENCH</p><h1>See it in motion.<br><span>Check every pixel.</span></h1></div><p>The game's actual sprites, palettes and physics.<br>Compare looks, inspect silhouettes, then return to your run.</p></div>
+    <div class="controls">
+      <div class="control"><label>Runner</label><div id="pick-runner" class="seg"></div></div>
+      <div class="control"><label>District</label><div id="pick-palette" class="seg"></div></div>
+      <div class="control"><label>Playback</label><div id="pick-speed" class="seg"></div></div>
+      <div class="control"><label>Pixel zoom</label><div id="pick-zoom" class="seg"></div></div>
+      <div class="control"><label for="seed">Course / asset seed</label><div class="inline"><input id="seed" type="number" step="1" value="20261008" /><button id="apply-seed">Apply</button><button id="shuffle-seed" title="Choose a new seed">↻</button></div></div>
+      <div class="control"><label>Inspect</label><div class="inline"><button id="pause">Pause</button><button id="step">Step 1/60 s</button><label class="check"><input id="hitboxes" type="checkbox" /> Collision boxes</label><label class="check"><input id="grid" type="checkbox" /> 8 px grid</label></div></div>
+    </div>
+    <section id="live"><div class="section-title"><h2>01 / Live course</h2><span id="readout"></span></div><p>Autopilot runs the same course in every look. Pause to inspect a landing, slide or vault.</p><div class="live-frame"><canvas id="main" width="640" height="210"></canvas></div></section>
+    <section id="pipe-section"><div class="section-title"><h2>02 / Pipework</h2><span>END-ON VIEW · ORTHOGRAPHIC</span></div><p>A straight orthographic view along the pipe bank: parallel tubes, constant thickness and rounded elbows.</p><div class="inline pipe-controls"><label for="pipe-count">Pipes</label><select id="pipe-count"><option value="2">2</option><option value="3" selected>3</option></select><button id="preview-slide" aria-pressed="false">Show slide pose</button><button id="export-pipe">Export pipe PNG</button></div><div id="pipes" class="pipe-grid"></div></section>
+    <section id="runner-section"><div class="section-title"><h2>03 / Runner comparison</h2><span>SYNCHRONIZED MOTION</span></div><p id="runner-note"></p><div id="closeups" class="closeups"></div></section>
+    <section id="pose-section"><div class="section-title"><h2>04 / Pose sheet</h2><button id="export-poses" class="quiet">Export PNG</button></div><p>Every traversal pose, at the same scale. Scroll horizontally to compare the whole movement set.</p><div class="pose-layout"><div id="pose-rows"></div><div class="scroll"><div id="pose-labels"></div><canvas id="poses"></canvas></div></div></section>
+    <section id="obstacle-section"><div class="section-title"><h2>05 / Obstacles by district</h2><span>IDENTICAL SEED IN EVERY PALETTE</span></div><p>Vault blocks, cabinets, pipe bundles, a ledge housing, springboard and live fence. The runner gives scale.</p><div id="obstacles" class="obstacle-strips"></div></section>
+    <section id="scenery-section"><div class="section-title"><h2>06 / Rooftops & city details</h2><span>BACKGROUND READABILITY</span></div><p>Roof props, facades and advertisements in the selected district. Background equipment carries no action red.</p><div id="scenery" class="scenery-grid"></div></section>
+    <footer>F3 / return to game <span>Space / pause · Period / step · PNG exports use native pixels</span></footer>
+  </main>
+  <script type="module" src="/src/lab/boot.js"></script>
+</body>
+</html>

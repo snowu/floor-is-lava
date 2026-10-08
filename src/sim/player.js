@@ -560,7 +560,22 @@ export function stepPlayer(p, input, dt, level, events) {
   finish(p, level, events)
 }
 
+// Touching a live fence (anywhere below its top) shocks you once: on the
+// ground you stumble, in the air you just lose your speed.
+function checkFences(p, level, events) {
+  if (!level?.fencesIn || !p.alive) return
+  const half = PHYS.W / 2
+  for (const f of level.fencesIn(p.x - half, p.x + half)) {
+    if (p.shockedBy === f.id || p.x + half < f.x0 || p.x - half > f.x1 || p.y >= f.y1) continue
+    p.shockedBy = f.id
+    p.speed = Math.min(p.speed, PHYS.STUMBLE_SPEED)
+    if (p.state === 'run' || p.state === 'slide' || p.state === 'roll') setState(p, 'stumble')
+    emit(events, 'shock', p, { x: Math.max(f.x0, Math.min(f.x1, p.x)) })
+  }
+}
+
 function finish(p, level, events) {
+  checkFences(p, level, events)
   if (p.y < level.killY(p.x)) {
     p.alive = false
     p.cause = 'fell'

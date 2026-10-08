@@ -31,6 +31,68 @@ const COLORS = {
   outline: hex(0x140c1c),
 }
 
+const far = (c) => mix(c, [12, 8, 22], 0.32)
+const palette = (o) => {
+  const c = { ...COLORS, ...o }
+  for (const k of ['skin', 'top', 'pants', 'shoe', 'glove', 'sleeve']) if (c[k] && !o[k + 'Far']) c[k + 'Far'] = far(c[k])
+  return c
+}
+
+// Looks for the runner. Lengths and thickness scale the same skeleton; cloth
+// is a list of verlet chains (coat tails, scarf) hung off joints, and a
+// female body adds a ponytail. `shade` darkens the side away from the light,
+// `fps` is the raster rate.
+export const RUNNER_STYLES = {
+  classic: {
+    name: 'Classic', scale: 1, thick: 1, head: 1, shade: 0, fps: 24, colors: COLORS,
+    ponytail: { n: 4, seg: 1.9, r0: 1.15, r1: 0.79, grav: 1, damp: 0.93 }, cloth: [],
+  },
+  courier: {
+    name: 'Courier', scale: 1.32, thick: 1.05, head: 1, shade: 0.35, fps: 30,
+    colors: palette({
+      top: hex(0xeeebf4), pants: hex(0x2a2440), pantsFar: hex(0x1c1830), shoe: hex(0xff3b30),
+      glove: hex(0xff3b30), band: hex(0xff3b30), hair: hex(0x1d1214), skin: hex(0xe9a882),
+    }),
+    sleeveless: true,
+    ponytail: { n: 5, seg: 2, r0: 1.25, r1: 0.7, grav: 0.15, damp: 0.9 },
+    cloth: [],
+  },
+  windbreaker: {
+    name: 'Windbreaker', scale: 1.32, thick: 1.15, head: 1.05, shade: 0.4, fps: 60,
+    colors: palette({
+      top: hex(0xff5a2a), sleeve: hex(0xff5a2a), pants: hex(0x24243a), pantsFar: hex(0x17172a),
+      shoe: hex(0xf2f0f6), shoeFar: hex(0xa8a4b8), glove: hex(0x1c1a28), band: hex(0x29f3ff),
+      hair: hex(0x1a1220), scarf: hex(0x29f3ff), skin: hex(0xd89a74),
+    }),
+    sleeves: true,
+    ponytail: { n: 4, seg: 1.9, r0: 1.2, r1: 0.75, grav: 0.15, damp: 0.9 },
+    cloth: [
+      { at: 'scarf', n: 5, seg: 2.1, r0: 1.1, r1: 0.8, col: 'scarf', grav: 0.1, damp: 0.9 },
+      { at: 'coat', n: 3, seg: 2.2, r0: 1.9, r1: 1.2, col: 'top', grav: 0.3, damp: 0.88 },
+    ],
+  },
+  techwear: {
+    name: 'Techwear', scale: 1.32, thick: 0.92, head: 0.95, shade: 0.45, fps: 60,
+    colors: palette({
+      top: hex(0x2c3046), sleeve: hex(0x2c3046), pants: hex(0x1d1f2e), pantsFar: hex(0x14151f),
+      shoe: hex(0xd9dbe6), shoeFar: hex(0x8e90a2), glove: hex(0x111219), band: hex(0x29f3ff),
+      hair: hex(0xe8e4f2), scarf: hex(0xff3b30), skin: hex(0xd8a080), trim: hex(0x29f3ff),
+    }),
+    sleeves: true, trim: true,
+    ponytail: { n: 4, seg: 1.9, r0: 1.1, r1: 0.75, grav: 0.15, damp: 0.9 },
+    cloth: [
+      { at: 'coat', n: 5, seg: 2.3, r0: 2.1, r1: 1.0, col: 'top', grav: 0.3, damp: 0.88 },
+      { at: 'scarf', n: 6, seg: 2.2, r0: 1.0, r1: 0.7, col: 'scarf', grav: 0.1, damp: 0.9 },
+    ],
+  },
+}
+
+// Picker order.
+export const RUNNERS = ['courier', 'windbreaker', 'techwear']
+
+// The ponytail is a cloth chain like the rest.
+const withPonytail = (base) => ({ ...base, cloth: [{ at: 'hair', col: 'hair', ...base.ponytail }, ...base.cloth] })
+
 const GROUNDED = new Set(['run', 'idle', 'blocked', 'stumble', 'slide', 'vault'])
 
 const JOINTS = ['torso', 'head', 'thighA', 'shinA', 'footA', 'thighB', 'shinB', 'footB', 'armA', 'foreA', 'armB', 'foreB', 'hip', 'hipX']
@@ -53,7 +115,10 @@ function segDist2(px, py, ax, ay, bx, by) {
 }
 
 export class RunnerSprite {
-  constructor() {
+  constructor(style = 'classic') {
+    this.style = withPonytail(RUNNER_STYLES[style] ?? RUNNER_STYLES.classic)
+    const sc = this.style.scale
+    this.L = Object.fromEntries(Object.entries(L).map(([k, v]) => [k, v * sc]))
     this.cur = pose({})
     this.vel = pose({})
     this.spin = 0
@@ -65,7 +130,7 @@ export class RunnerSprite {
     this.onStep = null
     this.buf = new PixelBuffer(SPRITE_W, SPRITE_H)
     this.ids = new Uint8Array(SPRITE_W * SPRITE_H)
-    this.hair = null
+    this.chains = null
     this.rim = hex(0xffd98a)
     this.rimDir = [-1, 1]
     this.state = 'idle'
@@ -306,6 +371,7 @@ export class RunnerSprite {
   // Joint positions in sprite space.
   solve() {
     const c = this.cur
+    const L = this.L, sc = this.style.scale
     const dir = (a) => [Math.sin(a), -Math.cos(a)]
     const up = (a) => [-Math.sin(a), Math.cos(a)]
     const add = (p, d, l) => [p[0] + d[0] * l, p[1] + d[1] * l]
@@ -330,15 +396,18 @@ export class RunnerSprite {
     const [elbowB, handB] = arm(c.armB, c.foreB)
     const [kneeA, ankleA, toeA] = leg(c.thighA, c.shinA, c.footA)
     const [kneeB, ankleB, toeB] = leg(c.thighB, c.shinB, c.footB)
-    const hairRoot = add(head, [-Math.cos(c.torso + c.head) * 1.0 - Math.sin(c.torso + c.head) * 1.9, -Math.sin(c.torso + c.head) * 1.0 + Math.cos(c.torso + c.head) * 1.4], 1)
-    const j = { pelvis, chest, shoulder, neck, head, elbowA, handA, elbowB, handB, kneeA, ankleA, toeA, kneeB, ankleB, toeB, hairRoot }
+    const hairRoot = add(head, [(-Math.cos(c.torso + c.head) * 1.0 - Math.sin(c.torso + c.head) * 1.9) * sc, (-Math.sin(c.torso + c.head) * 1.0 + Math.cos(c.torso + c.head) * 1.4) * sc], 1)
+    const back = [-Math.cos(c.torso), -Math.sin(c.torso)]
+    const coatRoot = add(add(pelvis, up(c.torso), L.torso * 0.3), back, 1.6 * sc)
+    const scarfRoot = add(neck, back, 1.1 * sc)
+    const j = { pelvis, chest, shoulder, neck, head, elbowA, handA, elbowB, handB, kneeA, ankleA, toeA, kneeB, ankleB, toeB, hairRoot, coatRoot, scarfRoot }
     // grounded poses never sink below the floor
     if (GROUNDED.has(this.state)) {
-      const low = Math.min(ankleA[1] - 0.6, toeA[1] - 0.5, ankleB[1] - 0.6, toeB[1] - 0.5)
+      const low = Math.min(ankleA[1] - 0.6 * sc, toeA[1] - 0.5 * sc, ankleB[1] - 0.6 * sc, toeB[1] - 0.5 * sc)
       if (low < 0) for (const key of Object.keys(j)) j[key] = [j[key][0], j[key][1] - low]
     }
     if (this.spin !== 0) {
-      const cx = 0, cy = 4.5
+      const cx = 0, cy = 4.5 * sc
       const s = Math.sin(this.spin), co = Math.cos(this.spin)
       for (const key of Object.keys(j)) {
         const [x, y] = j[key]
@@ -346,77 +415,98 @@ export class RunnerSprite {
       }
       if (this.state === 'roll') {
         let low = Infinity
-        for (const key of Object.keys(j)) low = Math.min(low, j[key][1] - 1.6)
+        for (const key of Object.keys(j)) if (key !== 'coatRoot' && key !== 'scarfRoot') low = Math.min(low, j[key][1] - 1.6 * sc)
         for (const key of Object.keys(j)) j[key] = [j[key][0], j[key][1] - low]
       }
     }
     return j
   }
 
-  // Ponytail: a short verlet chain in world pixels, so it trails real motion.
+  // Cloth (ponytail, coat tails, scarf): short verlet chains in world pixels,
+  // so they trail real motion.
   simulateHair(dt, wx, wy) {
-    const root = [wx + this.joints.hairRoot[0], wy + this.joints.hairRoot[1]]
-    const n = 4, seg = 1.9
-    if (!this.hair || Math.abs(this.hair[0].x - root[0]) > 40 || Math.abs(this.hair[0].y - root[1]) > 40) {
-      this.hair = Array.from({ length: n }, (_, i) => ({ x: root[0] - i * seg, y: root[1] - i * 0.6, px: root[0] - i * seg, py: root[1] - i * 0.6 }))
-    }
-    const h = this.hair
-    const steps = Math.max(1, Math.ceil(dt / (1 / 120)))
-    const sdt = Math.min(dt, 0.05) / steps
-    for (let s = 0; s < steps; s++) {
-      h[0].x = root[0]; h[0].y = root[1]
-      for (let i = 1; i < n; i++) {
-        const q = h[i]
-        const vx = (q.x - q.px) * 0.93, vy = (q.y - q.py) * 0.93
-        q.px = q.x; q.py = q.y
-        q.x += vx
-        q.y += vy - 70 * sdt * sdt * 60
+    const specs = this.style.cloth
+    const roots = { hair: this.joints.hairRoot, coat: this.joints.coatRoot, scarf: this.joints.scarfRoot }
+    const sc = this.style.scale
+    if (!this.chains) this.chains = specs.map(() => null)
+    this.chainsLocal = specs.map((spec, ci) => {
+      const r = roots[spec.at]
+      const root = [wx + r[0], wy + r[1]]
+      const seg = spec.seg * sc
+      let h = this.chains[ci]
+      if (!h || Math.abs(h[0].x - root[0]) > 40 * sc || Math.abs(h[0].y - root[1]) > 40 * sc) {
+        h = this.chains[ci] = Array.from({ length: spec.n }, (_, i) => ({ x: root[0] - i * seg, y: root[1] - i * 0.6, px: root[0] - i * seg, py: root[1] - i * 0.6 }))
       }
-      for (let it = 0; it < 3; it++) {
-        for (let i = 1; i < n; i++) {
-          const a = h[i - 1], b = h[i]
-          const dx = b.x - a.x, dy = b.y - a.y
-          const d = Math.hypot(dx, dy) || 1
-          const diff = (d - seg) / d
-          if (i === 1) { b.x -= dx * diff; b.y -= dy * diff }
-          else { a.x += dx * diff * 0.5; a.y += dy * diff * 0.5; b.x -= dx * diff * 0.5; b.y -= dy * diff * 0.5 }
+      const steps = Math.max(1, Math.ceil(dt / (1 / 120)))
+      const sdt = Math.min(dt, 0.05) / steps
+      for (let s = 0; s < steps; s++) {
+        h[0].x = root[0]; h[0].y = root[1]
+        for (let i = 1; i < h.length; i++) {
+          const q = h[i]
+          const vx = (q.x - q.px) * spec.damp, vy = (q.y - q.py) * spec.damp
+          q.px = q.x; q.py = q.y
+          q.x += vx
+          q.y += vy - 70 * spec.grav * sdt * sdt * 60
+        }
+        for (let it = 0; it < 3; it++) {
+          for (let i = 1; i < h.length; i++) {
+            const a = h[i - 1], b = h[i]
+            const dx = b.x - a.x, dy = b.y - a.y
+            const d = Math.hypot(dx, dy) || 1
+            const diff = (d - seg) / d
+            if (i === 1) { b.x -= dx * diff; b.y -= dy * diff }
+            else { a.x += dx * diff * 0.5; a.y += dy * diff * 0.5; b.x -= dx * diff * 0.5; b.y -= dy * diff * 0.5 }
+          }
         }
       }
-    }
-    this.hairLocal = h.map((q) => [q.x - wx, q.y - wy])
+      return h.map((q) => [q.x - wx, q.y - wy])
+    })
+    this.hairLocal = this.chainsLocal[specs.findIndex((c) => c.at === 'hair')] ?? null
   }
 
   // ── raster ─────────────────────────────────────────────────────────────
 
   parts() {
     const j = this.joints
-    const C = COLORS
+    const st = this.style
+    const C = st.colors
+    const k = st.scale * st.thick
     const out = []
-    const seg = (a, b, r, col, far = false) => out.push({ a, b, r, col, far })
+    const seg = (a, b, r, col, far = false) => out.push({ a, b, r: r * k, col, far })
+    const lerp = (a, b, t) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t]
+    const sleeve = st.sleeves ? C.sleeve : null
     // far side (B) first
-    seg(j.shoulder, j.elbowB, 1.15, C.skinFar, true)
-    seg(j.elbowB, j.handB, 0.95, C.skinFar, true)
+    seg(j.shoulder, j.elbowB, 1.15, sleeve ? C.sleeveFar : C.skinFar, true)
+    seg(j.elbowB, j.handB, 0.95, sleeve ? C.sleeveFar : C.skinFar, true)
     seg(j.handB, j.handB, 1.15, C.gloveFar, true)
     seg(j.pelvis, j.kneeB, 1.75, C.pantsFar, true)
     seg(j.kneeB, j.ankleB, 1.3, C.pantsFar, true)
     seg(j.ankleB, j.toeB, 1.0, C.shoeFar, true)
-    // ponytail
-    const hl = this.hairLocal || []
-    for (let i = 1; i < hl.length; i++) seg(hl[i - 1], hl[i], 1.15 - i * 0.12, C.hair)
+    // cloth trails behind the body
+    st.cloth.forEach((spec, ci) => {
+      const pts = this.chainsLocal?.[ci] || []
+      for (let i = 1; i < pts.length; i++) {
+        const t = i / Math.max(1, pts.length - 1)
+        out.push({ a: pts[i - 1], b: pts[i], r: (spec.r0 + (spec.r1 - spec.r0) * t) * st.scale, col: C[spec.col], far: spec.col === 'top' })
+      }
+    })
     // torso
-    seg(j.pelvis, j.chest, 2.05, C.pants)
-    seg([j.pelvis[0] * 0.5 + j.chest[0] * 0.5, j.pelvis[1] * 0.5 + j.chest[1] * 0.5], j.shoulder, 2.4, C.top)
+    seg(j.pelvis, j.chest, 2.05, st.colors.pantsTop ?? C.pants)
+    seg(lerp(j.pelvis, j.chest, 0.5), j.shoulder, 2.4, C.top)
+    if (st.cloth.some((c) => c.at === 'coat')) seg(j.pelvis, j.chest, 2.15, C.top)
+    if (st.trim) seg(lerp(j.pelvis, j.shoulder, 0.15), lerp(j.pelvis, j.shoulder, 0.85), 0.6, C.trim)
     seg(j.shoulder, j.neck, 1.0, C.skin)
     // head + hair cap
-    seg(j.head, j.head, 2.75, C.skin)
-    out.push({ hairCap: true, c: j.head, r: 2.95, col: C.hair })
+    seg(j.head, j.head, 2.75 * st.head, C.skin)
+    out.push({ hairCap: true, c: j.head, r: 2.95 * st.scale * st.head, col: C.hair })
     // near side (A)
     seg(j.pelvis, j.kneeA, 1.8, C.pants)
     seg(j.kneeA, j.ankleA, 1.35, C.pants)
     seg(j.ankleA, j.toeA, 1.05, C.shoe)
-    seg(j.shoulder, j.elbowA, 1.2, C.skin)
-    seg([j.shoulder[0] * 0.45 + j.elbowA[0] * 0.55, j.shoulder[1] * 0.45 + j.elbowA[1] * 0.55], [j.shoulder[0] * 0.4 + j.elbowA[0] * 0.6, j.shoulder[1] * 0.4 + j.elbowA[1] * 0.6], 1.2, C.band)
-    seg(j.elbowA, j.handA, 1.0, C.skin)
+    if (st.shade) seg(j.ankleA, j.toeA, 0.45, C.shoeFar)
+    seg(j.shoulder, j.elbowA, 1.2, sleeve ?? (st.sleeveless ? C.skin : C.skin))
+    seg(lerp(j.shoulder, j.elbowA, 0.55), lerp(j.shoulder, j.elbowA, 0.6), 1.2, C.band)
+    seg(j.elbowA, j.handA, 1.0, sleeve ?? C.skin)
     seg(j.handA, j.handA, 1.2, C.glove)
     return out
   }
@@ -432,14 +522,16 @@ export class RunnerSprite {
       if (part.hairCap) {
         const [cx, cy] = part.c
         const fx = Math.sin(-face), fy = Math.cos(-face)  // head "up" vector
-        for (let y = Math.floor(cy - 4); y <= cy + 4; y++) {
-          for (let x = Math.floor(cx - 4); x <= cx + 4; x++) {
+        const reach = part.r + 1
+        for (let y = Math.floor(cy - reach); y <= cy + reach; y++) {
+          for (let x = Math.floor(cx - reach); x <= cx + reach; x++) {
             const dx = x + 0.5 - cx, dy = y + 0.5 - cy
             if (dx * dx + dy * dy > part.r * part.r) continue
             // hair covers the back and the crown; the face stays clear
             const along = dx * fy - dy * fx         // + toward the face (forward)
             const upward = dx * fx + dy * fy
-            if (along > 0.9 && upward < 1.1) continue
+            const sc = this.style.scale
+            if (along > 0.9 * sc && upward < 1.1 * sc) continue
             const px = x + ORIGIN_X, py = ORIGIN_Y - y - 1
             if (px >= 0 && py >= 0 && px < W && py < H) ids[py * W + px] = pi + 1
           }
@@ -462,17 +554,26 @@ export class RunnerSprite {
     // colorize, rim light toward the light source, outline the silhouette
     const buf = this.buf
     buf.data.fill(0)
-    const outline = pack(COLORS.outline)
+    const st = this.style
+    const outline = pack(st.colors.outline ?? COLORS.outline)
     const [rdx, rdy] = this.rimDir
     const packed = parts.map((p) => pack(p.col))
     const rimmed = parts.map((p) => (p.far ? pack(p.col) : pack(mix(p.col, this.rim, 0.45))))
+    const shaded = parts.map((p) => pack(mix(p.col, [10, 6, 20], st.shade)))
+    // a pixel is shaded when, two steps away from the light, it leaves its part
+    const away = (x, y, d) => {
+      const nx = x - rdx * d, ny = y + rdy * d
+      return nx < 0 || ny < 0 || nx >= W || ny >= H ? 0 : ids[ny * W + nx]
+    }
     for (let y = 0; y < H; y++) {
       for (let x = 0; x < W; x++) {
         const id = ids[y * W + x]
         if (!id) continue
         const nx = x + rdx, ny = y - rdy
         const lit = nx < 0 || ny < 0 || nx >= W || ny >= H || ids[ny * W + nx] === 0
-        buf.data[y * W + x] = lit ? rimmed[id - 1] : packed[id - 1]
+        let c = lit ? rimmed[id - 1] : packed[id - 1]
+        if (st.shade && !lit && (away(x, y, 1) !== id || away(x, y, 2) !== id)) c = shaded[id - 1]
+        buf.data[y * W + x] = c
       }
     }
     for (let y = 0; y < H; y++) {
@@ -486,14 +587,16 @@ export class RunnerSprite {
     }
     // eye: one dark pixel on the face side
     const [hx, hy] = this.joints.head
-    const ex = Math.round(hx + Math.cos(face) * 1.3 - Math.sin(face) * 0.5)
-    const ey = Math.round(hy + Math.sin(face) * 1.3 + Math.cos(face) * 0.5)
+    const sc = st.scale
+    const ex = Math.round(hx + (Math.cos(face) * 1.3 - Math.sin(face) * 0.5) * sc)
+    const ey = Math.round(hy + (Math.sin(face) * 1.3 + Math.cos(face) * 0.5) * sc)
     const epx = ex + ORIGIN_X, epy = ORIGIN_Y - ey - 1
     // a glowing visor in place of an eye
-    const visor = pack(COLORS.visor)
+    const visor = pack(st.colors.visor ?? COLORS.visor)
     if (ids[epy * W + epx]) {
       buf.set(epx, epy, visor)
       if (ids[epy * W + epx - 1]) buf.set(epx - 1, epy, visor)
+      if (sc > 1.3 && ids[epy * W + epx + 1]) buf.set(epx + 1, epy, visor)
     }
     return buf
   }

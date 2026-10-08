@@ -57,6 +57,12 @@ export class Level {
     return out
   }
 
+  fencesIn(x0, x1) {
+    const out = []
+    for (const c of this.chunksIn(x0, x1)) for (const f of c.fences ?? []) if (f.x1 >= x0 && f.x0 <= x1) out.push(f)
+    return out
+  }
+
   padsIn(x0, x1) {
     const out = []
     for (const c of this.chunksIn(x0, x1)) for (const q of c.pads ?? []) if (q.x1 >= x0 && q.x0 <= x1) out.push(q)

@@ -13,7 +13,7 @@ export const MOVE_NAMES = {
   zipjump: 'ZIP DROP', spring: 'LAUNCH', padjump: 'PAD JUMP', grab: 'LEDGE', climb: 'CLIMB', slide: 'SLIDE', landslide: 'LANDING SLIDE', slidejump: 'SLIDE JUMP',
   airjump: 'AIR JUMP', takedown: 'TAKEDOWN',
 }
-const BREAKERS = new Set(['hardland', 'bonk', 'trip'])
+const BREAKERS = new Set(['hardland', 'bonk', 'trip', 'shock'])
 const SUSTAINED = { wallrun: 60, zip: 40 }   // points per second while doing it
 
 export const COMBO_WINDOW = 2.6

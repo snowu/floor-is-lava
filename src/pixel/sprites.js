@@ -6,8 +6,6 @@ import { ACCENT } from './palette.js'
 export const PPU = 14              // pixels per meter
 export const FACADE_DEPTH = 26     // meters of facade below a roof line
 
-const RED = pack(ACCENT)
-const WHITE = pack([245, 240, 235])
 
 function tones(base, pal) {
   return {
@@ -42,82 +40,7 @@ export function drawText(buf, text, x, y, c, scale = 1) {
 
 export const BRANDS = ['NOVA', 'HELIX', 'PULSE', 'ORBIT', 'KITE', 'VOLT', 'ZEN 24', 'STRATA']
 
-// ── rooftop obstacles ───────────────────────────────────────────────────
-// Obstacles use their own high-contrast look so they never melt into the
-// rooftops: dark steel bodies, a bright top face, a hard outline (added by
-// the view) and a runner-vision red edge.
-
-const STEEL = [44, 46, 62]
-const STEEL_TOP = [170, 178, 200]
-const HAZARD = pack([255, 214, 51])
 const INK = pack([10, 8, 16])
-
-export function bakeObstacle(sub, w, h, pal, seed = 0) {
-  const body = pack(mix(STEEL, pal.shadow, 0.25))
-  const bodyL = pack(mix(STEEL, STEEL_TOP, 0.25))
-  const bodyD = pack(mix(STEEL, [0, 0, 0], 0.35))
-  const top = pack(mix(STEEL_TOP, pal.light, 0.2))
-  if (sub === 'vent') {
-    const b = new PixelBuffer(w, h + 3)
-    b.rect(0, 3, w, h, body)
-    b.rect(0, 0, w, 3, top)
-    b.rect(0, 3, w, 2, RED)
-    for (let y = 8; y < h; y += 3) b.rect(2, y, w - 4, 1, bodyD)
-    b.rect(1, 6, 1, h - 4, bodyL)
-    b.rect(w - 2, 3, 2, h, bodyD)
-    return b
-  }
-  if (sub === 'highbox') {
-    const b = new PixelBuffer(w, h + 3)
-    const n = Math.max(1, Math.round(h / 10))
-    const bh = Math.floor(h / n)
-    for (let i = 0; i < n; i++) {
-      const y = 3 + h - (i + 1) * bh
-      b.rect(0, y, w, bh, body)
-      b.rect(0, y, w, 1, bodyL)
-      b.rect(0, y + bh - 1, w, 1, bodyD)
-      for (let x = 0; x < w; x++) if (((x + y) >> 2) & 1) b.set(x, y + bh - 3, HAZARD)
-    }
-    b.rect(0, 0, w, 3, top)
-    b.rect(0, 3, w, 2, RED)
-    b.rect(w - 2, 3, 2, h, bodyD)
-    return b
-  }
-  if (sub === 'housing') {
-    const b = new PixelBuffer(w, h + 4)
-    b.rect(0, 4, w, h, body)
-    b.rect(0, 0, w, 4, top)
-    b.rect(0, 4, w, 2, RED)                     // grab ledge
-    b.rect(0, 4, 4, 4, RED)
-    for (let y = 12; y < h; y += 6) b.rect(2, y, w - 4, 1, bodyD)
-    const dx = Math.min(10, w - 24)
-    b.rect(dx, h + 4 - 28, 14, 28, INK)
-    b.rect(dx + 1, h + 4 - 27, 12, 1, bodyL)
-    b.rect(dx + 10, h + 4 - 14, 2, 2, HAZARD)
-    const neon = pack(pal.neon[seed % pal.neon.length | 0])
-    b.rect(dx - 1, h + 4 - 33, 16, 2, neon)    // lit strip over the door
-    b.rect(w - 2, 4, 2, h, bodyD)
-    return b
-  }
-  if (sub === 'beam') {
-    const b = new PixelBuffer(w, h)
-    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) b.set(x, y, ((x + y) % 8) < 4 ? HAZARD : INK)
-    b.rect(0, 0, w, 1, pack([255, 240, 170]))
-    b.rect(0, h - 2, w, 2, RED)
-    return b
-  }
-  if (sub === 'spring') {
-    const b = new PixelBuffer(w, h + 2)
-    for (let x = 0; x < w; x++) {
-      const t = Math.round((1 - Math.min(1, x / (w * 0.85))) * (h - 2))
-      for (let y = t; y < h; y++) b.set(x, y + 2, y === t ? WHITE : RED)
-    }
-    for (let i = 0; i < 3; i++) b.line(4 + i * 6, h, 7 + i * 6, h - 3, WHITE)
-    b.rect(0, h + 1, w, 1, INK)
-    return b
-  }
-  return new PixelBuffer(1, 1)
-}
 
 // A hard dark outline around a sprite (grows it by 1px on every side).
 export function outlined(src, color = INK) {
@@ -129,23 +52,6 @@ export function outlined(src, color = INK) {
     }
   }
   b.blit(src, 1, 1)
-  return b
-}
-
-// Dithered halo around the opaque pixels (optionally only the top rows).
-export function glow(src, color, r = 3, rows = Infinity) {
-  const b = new PixelBuffer(src.w + r * 2, src.h + r * 2)
-  const c = pack(color)
-  const solid = (x, y) => x >= 0 && y >= 0 && x < src.w && y < Math.min(src.h, rows) && (src.data[y * src.w + x] >>> 24)
-  for (let y = 0; y < b.h; y++) {
-    for (let x = 0; x < b.w; x++) {
-      let best = Infinity
-      for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) {
-        if (solid(x - r + dx, y - r + dy)) best = Math.min(best, Math.hypot(dx, dy))
-      }
-      if (best <= r && dither(x, y, (1 - best / (r + 0.5)) * 0.9)) b.data[y * b.w + x] = c
-    }
-  }
   return b
 }
 
@@ -254,14 +160,6 @@ export function bakeDecor(type, variant, pal) {
     b.rect(0, 0, w, 20, dark)
     b.rect(1, 1, w - 2, 18, pack(bg))
     drawText(b, brand, 6, 5, pack(fg), 2)
-    return b
-  }
-  if (type === 'plant') {
-    const b = new PixelBuffer(16, 20)
-    const leaf = pack(mix([60, 140, 80], pal.shadow, 0.3)), leafL = pack(mix([120, 190, 100], pal.light, 0.25))
-    b.rect(5, 14, 6, 6, pack(mix(pal.walls[1], [160, 80, 60], 0.5)))
-    b.disc(8, 8, 6, leaf)
-    b.disc(6, 6, 3, leafL)
     return b
   }
   return new PixelBuffer(1, 1)

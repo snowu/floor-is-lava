@@ -243,7 +243,7 @@ export class Audio {
         this.tone(t + 0.04, 0.12, mtof(n + 7), mtof(n + 7), { gain: 0.04, type: 'square' })
         break
       }
-      case 'zap':
+      case 'zap': case 'shock':
         this.tone(t, 0.35, 1800, 90, { gain: 0.12, type: 'sawtooth' })
         this.noise(t, 0.3, { freq: 4000, q: 2, gain: 0.2 })
         break
