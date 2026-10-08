@@ -3,6 +3,7 @@ import { toCanvas, pack, mix, css, dither, hash, PixelBuffer } from './pixels.js
 import { paletteAt, districtName, ACCENT } from './palette.js'
 import { RunnerSprite, ORIGIN_X, ORIGIN_Y } from './runner.js'
 import { RoofWater } from './water.js'
+import { bakeLightHalo, drawLightHalo, drawSteam, ParkourFX } from './effects.js'
 import { drawRoofSurface, drawContactShadow, drawRunnerContact, equipmentLight } from './roof.js'
 import { PPU, bakeDecor, bakeBird, bakeCloud, bakeCar, recede, outlined } from './sprites.js'
 import { CITY, bakeTower, bakeFog, bakeFacade } from './city.js'
@@ -54,6 +55,7 @@ export class PixelView {
     this.birds = []
     this.particles = []
     this.water = new RoofWater()
+    this.effects = new ParkourFX()
     this.lines = []
     this.drops = []
     this.lightning = 0
@@ -116,6 +118,7 @@ export class PixelView {
 
   bind(level) {
     this.water = new RoofWater()
+    this.effects = new ParkourFX()
     for (const key of [...this.cache.keys()]) if (key.startsWith('c')) this.cache.delete(key)
     this.views.clear()
     this.birds = []
@@ -215,6 +218,7 @@ export class PixelView {
   }
 
   event(e, p) {
+    this.effects.event(e.type, p, e)
     if (['land', 'hardland', 'landslide'].includes(e.type)) this.water.splash(p.x, p.y, p.speed, this.weather.wet, e.impact ?? 12)
     switch (e.type) {
       case 'land':
@@ -397,6 +401,7 @@ export class PixelView {
     }
 
     if (s.mode !== 'paused') this.updateWeather(s.raw, pal)
+    this.lamps = []
     this.drawSky(pal, s.time)
     this.drawClouds(pal, s.time)
     this.drawLayers(pal)
@@ -405,6 +410,8 @@ export class PixelView {
     this.drawHeist(s, pal)
     this.drawBirds(s.dt, s.rx)
     this.drawGates(s, pal)
+    this.effects.update(s.dt, s.p, s.rx, s.ry)
+    this.effects.draw(ctx, (x) => this.sx(x), (y) => this.sy(y))
     this.drawGhost(s)
     this.drawRunner(s, pal)
     this.water.update(s.dt)
@@ -558,6 +565,12 @@ export class PixelView {
     if (x > this.W || x + s.w < 0 || y > H || y + s.h + 8 < 0) return
     const { ctx } = this
     const t = this.cam.time
+    const color = billboardLight(s, pal, t)
+    const panelH = s.ph ?? Math.min(s.h, 24)
+    const halo = this.sprite(`${key}:halo`, `${pal.version}:${color}`, () => bakeLightHalo(s.w + 64, panelH + 52, color))
+    const strength = pal.night * (s.place === 'far' || s.place === 'near' ? 0.48 : 0.95) * (0.65 + this.weather.rain * 0.35)
+    if (s.place === 'facade' || s.place === 'roof') this.lamps.push({ x: x + s.w / 2, y: y + panelH / 2, w: s.w / 2 + 18, h: panelH / 2 + 24, color })
+    drawLightHalo(ctx, halo, x + s.w / 2, y + panelH / 2, strength * (0.95 + 0.05 * Math.sin(t * 1.2 + s.seed)))
     const get = (f) => this.sprite(`${key}:${f}`, pal.version, () => bakeBillboard(s, pal, f))
     const h1 = hash(s.seed, 79)
     // Signs attached to the running building read as fixtures. Keep their
@@ -704,9 +717,7 @@ export class PixelView {
         if (bx > this.W || bx + cv.width < 0) continue
         drawContactShadow(ctx, bx + 2, by + cv.height, cv.width - 4, pal, 2)
         ctx.drawImage(cv, bx, by)
-        if (d.type === 'vents' && Math.random() < 0.06) {
-          this.particles.push({ x: d.x + (Math.random() - 0.5) * 0.8, y: c.roof + back * (v.roofH - 3) / PPU + 1, vx: -0.3, vy: 1 + Math.random(), life: 1.4, max: 1.4, color: mix(pal.haze, pal.light, 0.35), size: 2 })
-        }
+        if (['vents', 'ac'].includes(d.type) && hash(c.seed, Math.floor(d.x * PPU), 52) < 0.4) drawSteam(ctx, bx + cv.width / 2, by + 2, c.seed + Math.floor(d.x), this.cam.time, pal)
         if (d.type === 'antenna' && Math.sin(this.cam.time * 3 + d.x) > 0.4) {
           ctx.fillStyle = css(ACCENT)
           ctx.fillRect(bx + 5, by - 1, 3, 3)
@@ -1091,7 +1102,12 @@ export class PixelView {
       d.y += d.v * s.dt
       d.x += drift * s.dt * (d.near ? 1.4 : 1)
       if (d.y > H || d.x < -4) { d.y = -4; d.x = Math.random() * (this.W + 60) }
-      ctx.fillStyle = d.near ? 'rgba(210,235,245,0.75)' : 'rgba(170,200,215,0.45)'
+      let color = d.near ? [210, 235, 245] : [170, 200, 215]
+      for (const lamp of this.lamps) {
+        const distance = Math.hypot((d.x - lamp.x) / lamp.w, (d.y - lamp.y) / lamp.h)
+        if (distance < 1) color = mix(color, lamp.color, (1 - distance) * pal.night * 0.7)
+      }
+      ctx.fillStyle = css(color, d.near ? 0.75 : 0.45)
       ctx.fillRect(Math.round(d.x), Math.round(d.y), 1, d.near ? 4 : 3)
     }
     this.lightningClock -= s.raw
@@ -1167,8 +1183,8 @@ function bakeSky(W, pal) {
   }
   if (pal.sunSize > 0) {
     const cx = pal.sunX * W, cy = pal.sunY * H, r = pal.sunSize
-    for (let y = Math.floor(cy - r * 2.2); y < cy + r * 2.2; y++) {
-      for (let x = Math.floor(cx - r * 2.2); x < cx + r * 2.2; x++) {
+    for (let y = Math.floor(cy - r * 3); y < cy + r * 3; y++) {
+      for (let x = Math.floor(cx - r * 3); x < cx + r * 3; x++) {
         const d = Math.hypot(x + 0.5 - cx, y + 0.5 - cy)
         const idx = y * W + x
         if (x < 0 || y < 0 || x >= W || y >= H) continue
@@ -1180,6 +1196,9 @@ function bakeSky(W, pal) {
           b.data[idx] = pack(c)
         } else if (d < r * 1.6 && dither(x, y, 0.5 * (1 - (d - r) / (r * 0.6)))) {
           b.data[idx] = pack(mix(pal.sun, pal.sky[Math.min(n - 1, Math.floor(y / horizon * (n - 1)))], 0.55))
+        } else if (d < r * 3) {
+          const c = b.data[idx], air = [c & 255, (c >>> 8) & 255, (c >>> 16) & 255]
+          b.data[idx] = pack(mix(air, pal.sun, (1 - (d - r) / (r * 2)) ** 2 * 0.16))
         }
       }
     }

@@ -15,6 +15,7 @@ import { PPU } from '../pixel/sprites.js'
 import { toCanvas, css, mix, pack, PixelBuffer } from '../pixel/pixels.js'
 import { ACCENT } from '../pixel/palette.js'
 import { RoofWater } from '../pixel/water.js'
+import { bakeLightHalo, drawLightHalo, drawSteam, ParkourFX } from '../pixel/effects.js'
 import { drawRoofSurface, drawContactShadow, drawRunnerContact, equipmentLight } from '../pixel/roof.js'
 
 const $ = (id) => document.getElementById(id)
@@ -22,6 +23,8 @@ const runnerName = (id) => RUNNER_STYLES[id].name
 const makeRunner = (id) => new RunnerSprite(id)
 const state = { runner: 'courier', palette: 1, speed: 1, seed: 20261008, zoom: 2, paused: false, hitboxes: false, grid: false, pipeCount: 3, pipeSlide: false, wet: false }
 let water = new RoofWater()
+let motion = new ParkourFX()
+const previewFX = new ParkourFX()
 const closeupWater = RUNNERS.map(() => new RoofWater())
 let stepRequested = false, visible = true
 const gridOn = (ctx, W, H) => {
@@ -43,6 +46,7 @@ function collisionBox(ctx, x, y, w, h) {
 let level, bot, player, acc = 0, prev = { x: 0, y: 0 }
 function reset() {
   water = new RoofWater()
+  motion = new ParkourFX()
   closeupWater.forEach((fx) => { fx.drops = []; fx.ripples = [] })
   level = new Level(state.seed, { tutorial: false })
   level.ensure(300)
@@ -64,6 +68,7 @@ function step(dt) {
     level.ensure(player.x + 150)
     const events = []
     stepPlayer(player, bot.input(player), PHYS.FIXED_DT, level, events)
+    for (const e of events) motion.event(e.type, player, e)
     if (state.wet) for (const e of events) if (['land', 'hardland', 'landslide'].includes(e.type)) {
       water.splash(player.x, player.y, player.speed, 0.85, e.impact ?? 12)
       closeupWater.forEach((fx) => fx.splash(0, 0, player.speed, 0.85, e.impact ?? 12))
@@ -243,6 +248,8 @@ function frame(now) {
     r.update(dt, player, rx * PPU, ry * PPU, null)
   }
   const sel = sprite(`live:${state.runner}`, state.runner)
+  motion.update(dt, player, rx, ry)
+  motion.draw(mctx, sx, sy)
   const floor = level.roofAt(rx), chunk = level.chunks.find((c) => rx >= c.x0 && rx <= c.x1)
   if (floor !== null) drawRunnerContact(mctx, { x: sx(rx), y: sy(ry), floor: sy(floor), pal, joints: sel.joints, span: chunk && [sx(chunk.x0), sx(chunk.x1)] })
   mctx.drawImage(runnerCanvas(`m:${state.runner}`, sel, dt), sx(rx) - ORIGIN_X, sy(ry) - ORIGIN_Y)
@@ -269,6 +276,29 @@ function frame(now) {
     c.fig.setAttribute('aria-pressed', String(c.id === state.runner))
     gridOn(c.ctx, c.cv.width, c.cv.height)
   }
+  drawEffectsPreview(pal, dt)
+}
+
+function drawEffectsPreview(pal, dt) {
+  const cv = $('effects'), ctx = cv.getContext('2d'), base = 100
+  drawSky(ctx, cv.width, cv.height, pal)
+  ctx.drawImage(baked(`fx:roof:${pal.version}`, () => bakeFacade({ w: cv.width, roofH: 15, style: 2, seed: state.seed, pal, wall: 1 })), 0, base - 15)
+  let spec = specFor(state.seed, 'roof')
+  for (let i = 1; spec.kind !== 'board'; i++) spec = specFor(state.seed + i, 'roof')
+  const hue = billboardLight(spec, pal)
+  const halo = baked(`fx:halo:${pal.version}`, () => bakeLightHalo(spec.w + 64, spec.ph + 52, hue))
+  drawLightHalo(ctx, halo, 450 + spec.w / 2, base - 12 - spec.h + spec.ph / 2, pal.night * 0.9)
+  ctx.drawImage(baked(`fx:sign:${pal.version}`, () => bakeBillboard(spec, pal, 0)), 450, base - 12 - spec.h)
+  ctx.drawImage(baked(`fx:vent:${pal.version}`, () => bakeDecor('vents', 0.5, pal)), 320, base - 20)
+  drawSteam(ctx, 332, base - 20, state.seed, time, pal)
+  const r = sprite(`fx:${state.runner}`, state.runner)
+  const p = { ...createPlayer(0, 0), state: 'slide', speed: 12 }
+  r.rim = pal.rim; r.update(dt, p, time * 12 * PPU, 0)
+  previewFX.update(dt, p, 0, 0)
+  previewFX.draw(ctx, x => Math.round(190 + x * PPU), y => Math.round(base - y * PPU))
+  drawRunnerContact(ctx, { x: 190, y: base, floor: base, pal, joints: r.joints })
+  ctx.drawImage(runnerCanvas(`fx:${state.runner}`, r, dt), 190 - ORIGIN_X, base - ORIGIN_Y)
+  gridOn(ctx, cv.width, cv.height)
 }
 
 // ── pose sheet ───────────────────────────────────────────────────────────
@@ -574,6 +604,9 @@ $('seed').addEventListener('keydown', (e) => { if (e.code === 'Enter') applySeed
 $('shuffle-seed').addEventListener('click', () => { $('seed').value = crypto.getRandomValues(new Uint32Array(1))[0]; applySeed() })
 for (const key of ['hitboxes', 'grid']) $(key).addEventListener('change', () => { state[key] = $(key).checked; redrawSheets() })
 $('pipe-count').addEventListener('change', () => { state.pipeCount = Number($('pipe-count').value); drawPipeSheet() })
+for (const [id, type] of [['fx-landing', 'landslide'], ['fx-launch', 'spring'], ['fx-pickup', 'shard']]) {
+  $(id).addEventListener('click', () => previewFX.event(type, { x: 0, y: 0 }, { quality: 1, y: type === 'shard' ? 2 : 0 }))
+}
 $('wet-roof').addEventListener('change', (e) => { state.wet = e.target.checked; redrawSheets() })
 $('preview-slide').addEventListener('click', () => {
   state.pipeSlide = !state.pipeSlide
@@ -592,7 +625,7 @@ window.addEventListener('message', (e) => {
   if (e.origin === location.origin && e.source === window.parent && e.data?.type === 'lab-visibility') visible = e.data.open
 })
 document.addEventListener('visibilitychange', () => { visible = !document.hidden })
-window.__artLab = { state, get player() { return player }, get time() { return time } }
+window.__artLab = { state, get player() { return player }, get time() { return time }, get effects() { return previewFX } }
 
 pinPalette(state.palette)
 render()
