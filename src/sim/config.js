@@ -31,10 +31,14 @@ export const PHYS = {
 
   // ground moves
   SLIDE_TIME: 0.7,
-  SLIDE_DECEL: 1.0,
   ROLL_TIME: 0.5,
   ROLL_WINDOW: 0.45,
   HARD_LAND_V: 17,
+  // landing slide: press slide right as you touch down from a soft landing
+  LANDSLIDE_PRE: 0.1,   // seconds before touchdown that still count
+  LANDSLIDE_POST: 0.08, // seconds after touchdown that still count
+  LANDSLIDE_GAIN: 1.4,  // speed gained by a perfect landing slide at top speed
+  LANDSLIDE_MIN: 0.6,   // timing × pace below this is just a plain slide
   STUMBLE_TIME: 0.45,
   STUMBLE_SPEED: 5.5,
 
@@ -68,6 +72,9 @@ export const PHYS = {
   BONUS_ROLL: 0.8,
   BONUS_WALLRUN: 1.2,
   BONUS_SPRING: 0.3,
+  BONUS_PAD: 0.3,
+  PAD_CLEAR: 0.5,       // how far above the wall top a pad jump carries you
+  PAD_MAX_V: 24,
 }
 
 export const WORLD = {
@@ -77,6 +84,8 @@ export const WORLD = {
   BUILDING_FRONT_Z: 2,
   STREET_Y: -70,
   DIFFICULTY_DISTANCE: 3500,
+  PAD_MIN_DH: 3.8,      // climb walls at least this tall get a jump pad before the gap
+  PAD_LEN: 1.4,         // pad length at the roof edge
 }
 
 export const RUN = {
@@ -111,7 +120,7 @@ export const FOCUS = {
   TIME_SCALE: 0.4,
   DRAIN: 0.33,
   MIN_TO_START: 0.25,
-  GAIN: { vault: 0.08, clamber: 0.04, roll: 0.15, wallrun: 0.18, walljump: 0.1, zip: 0.1, spring: 0.05, grab: 0.04, airjump: 0.05, takedown: 0.2 },
+  GAIN: { vault: 0.08, clamber: 0.04, roll: 0.15, wallrun: 0.18, walljump: 0.1, zip: 0.1, spring: 0.05, padjump: 0.08, grab: 0.04, airjump: 0.05, takedown: 0.2 },
   GAIN_AT_SPEED: 0.03,
 }
 

@@ -26,7 +26,7 @@ export class Input {
     window.addEventListener('touchend', (e) => this.touchEnd(e), opts)
     window.addEventListener('touchcancel', (e) => this.touchEnd(e), opts)
     window.addEventListener('mousedown', (e) => {
-      if (e.target.closest('button, a, li')) return
+      if (e.target.closest('button, a, li, .city-pick')) return
       this.anyPressed = true
     })
   }
@@ -39,6 +39,8 @@ export class Input {
       // menu-level actions; main decides what they mean in each mode
       if (e.code === 'ArrowUp' || e.code === 'KeyW') this.handlers.nav?.(-1)
       if (e.code === 'ArrowDown' || e.code === 'KeyS') this.handlers.nav?.(1)
+      if (e.code === 'ArrowLeft' || e.code === 'KeyA') this.handlers.side?.(-1)
+      if (e.code === 'ArrowRight' || e.code === 'KeyD') this.handlers.side?.(1)
       if (e.code === 'Space') this.handlers.confirm?.()
       if (e.code === 'Enter') this.handlers.enter?.()
       if (e.code === 'KeyR') this.handlers.restart?.()
@@ -64,7 +66,7 @@ export class Input {
   }
 
   touchStart(e) {
-    if (e.target.closest && e.target.closest('button, a, li')) return
+    if (e.target.closest && e.target.closest('button, a, li, .city-pick')) return
     e.preventDefault()
     this.anyPressed = true
     for (const t of e.changedTouches) {

@@ -1,6 +1,6 @@
 {
-  "name": "Floor Is Lava",
-  "short_name": "Floor Is Lava",
+  "name": "Packet Loss",
+  "short_name": "Packet Loss",
   "description": "A cyberpunk rooftop runner: vault, slide, roll, wall-run and zip across a pixel-art city.",
   "start_url": "./",
   "scope": "./",

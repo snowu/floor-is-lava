@@ -1,5 +1,6 @@
-// Hand-picked district palettes for the pixel city. The run drifts through
-// them; blends are quantized into steps so baked sprites can be refreshed.
+// Hand-picked district palettes for the pixel city. The player either picks
+// one, or lets the run drift through them all; blends are quantized into steps
+// so baked sprites can be refreshed.
 import { hex, mix } from './pixels.js'
 
 const NUMERIC = new Set(['sunX', 'sunY', 'sunSize', 'clouds', 'night', 'stars', 'rain'])
@@ -109,10 +110,17 @@ function lerpValue(a, b, t) {
   return mix(a, b, t)
 }
 
+export const PALETTE_NAMES = KEYS.map((k) => k.name)
+
+// null drifts through every district; an index pins one for the whole run.
+let pinned = null
+export function pinPalette(i) { pinned = i === null ? null : i % KEYS.length }
+
 const cache = new Map()
 
 // Palette for a distance, quantized: `version` changes only when colors do.
 export function paletteAt(distance) {
+  if (pinned !== null) distance = pinned * CYCLE
   const d = Math.max(0, distance)
   const i = Math.floor(d / CYCLE) % KEYS.length
   const local = d % CYCLE
@@ -132,6 +140,7 @@ export function paletteAt(distance) {
 }
 
 export function districtName(distance) {
+  if (pinned !== null) return KEYS[pinned].name
   const d = Math.max(0, distance)
   return KEYS[Math.floor((d + BLEND / 2) / CYCLE) % KEYS.length].name
 }

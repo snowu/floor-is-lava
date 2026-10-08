@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { RunnerSprite } from '../src/pixel/runner.js'
-import { paletteAt } from '../src/pixel/palette.js'
+import { paletteAt, pinPalette, districtName, PALETTE_NAMES } from '../src/pixel/palette.js'
 
 const STATES = ['run', 'air', 'slide', 'roll', 'vault', 'mantle', 'climb', 'wallslide', 'wallrun', 'zip', 'stumble', 'blocked', 'dead']
 
@@ -36,5 +36,19 @@ describe('pixel palettes', () => {
     expect(paletteAt(100).version).toBe(paletteAt(200).version)
     expect(paletteAt(1400).version).not.toBe(paletteAt(100).version)
     for (const d of [0, 1300, 1450, 3000, 6000, 9000]) expect(paletteAt(d).sky.length).toBeGreaterThan(3)
+  })
+
+  it('stays on a pinned district for the whole run', () => {
+    pinPalette(2)
+    try {
+      const v = paletteAt(0).version
+      for (const d of [700, 1450, 4000, 9000]) {
+        expect(paletteAt(d).version).toBe(v)
+        expect(districtName(d)).toBe(PALETTE_NAMES[2])
+      }
+    } finally {
+      pinPalette(null)
+    }
+    expect(districtName(1600)).toBe(PALETTE_NAMES[1])
   })
 })

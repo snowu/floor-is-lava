@@ -5,14 +5,14 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
     <meta name="theme-color" content="#05040d" />
     <meta name="description" content="A cyberpunk rooftop runner. Vault, slide, roll, wall-run and zip across the city: beat the clock in time trials or chain combos in endless." />
-    <title>Floor Is Lava</title>
+    <title>Packet Loss</title>
     <link rel="manifest" href="/manifest.webmanifest" />
     <link rel="icon" type="image/png" href="/icon-192.png" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-    <meta name="apple-mobile-web-app-title" content="Floor Is Lava" />
+    <meta name="apple-mobile-web-app-title" content="Packet Loss" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@400;600;700&family=Silkscreen:wght@400;700&display=swap" rel="stylesheet" />
@@ -66,17 +66,18 @@
     <div id="title" class="screen">
       <div class="card">
         <div class="kicker"><i></i>DATA COURIER · ROOFTOP RUN</div>
-        <h1>FLOOR<br />IS <em>LAVA</em></h1>
+        <h1>PACKET<br /><em>LOSS</em></h1>
         <ul id="menu" class="menu"></ul>
-        <div class="menu-help key-only"><kbd>↑</kbd><kbd>↓</kbd> choose · <kbd>SPACE</kbd> run · <kbd>R</kbd> restart</div>
+        <div class="city-pick"><span>CITY</span><button id="city-prev" aria-label="Previous city palette">‹</button><em id="city-name">DRIFT</em><button id="city-next" aria-label="Next city palette">›</button></div>
+        <div class="menu-help key-only"><kbd>↑</kbd><kbd>↓</kbd> choose · <kbd>←</kbd><kbd>→</kbd> city · <kbd>SPACE</kbd> run · <kbd>R</kbd> restart</div>
         <dl class="controls key-only">
           <dt><kbd>SPACE</kbd></dt><dd>Jump — hold for height, into walls to climb</dd>
-          <dt><kbd>S</kbd></dt><dd>Slide — or just before landing to roll</dd>
+          <dt><kbd>S</kbd></dt><dd>Slide — right on touchdown to chain it, before a big drop to roll</dd>
           <dt><kbd>E</kbd></dt><dd>Focus — slow time when charged</dd>
         </dl>
         <dl class="controls touch-only">
           <dt>RIGHT</dt><dd>Jump — hold for height</dd>
-          <dt>LEFT</dt><dd>Slide — or just before landing to roll</dd>
+          <dt>LEFT</dt><dd>Slide — right on touchdown to chain it, before a big drop to roll</dd>
         </dl>
       </div>
       <div class="corner">

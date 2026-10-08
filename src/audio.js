@@ -180,6 +180,10 @@ export class Audio {
       case 'slide':
         this.noise(t, 0.6, { freq: 1800, sweep: 600, q: 0.6, gain: 0.16 })
         break
+      case 'landslide':
+        this.noise(t, 0.6, { freq: 1800, sweep: 600, q: 0.6, gain: 0.18 })
+        this.tone(t + 0.03, 0.3, 659, 1318, { gain: 0.05, type: 'triangle' })
+        break
       case 'vault': case 'clamber':
         this.noise(t, 0.05, { freq: 2500, q: 2, gain: 0.14 })
         this.noise(t + 0.06, 0.2, { freq: 900, sweep: 2000, q: 0.8, gain: 0.08 })
@@ -192,7 +196,7 @@ export class Audio {
         this.noise(t, 0.08, { freq: 2000, q: 1.5, gain: 0.15 })
         this.tone(t, 0.5, 392, 784, { gain: 0.05, type: 'triangle' })
         break
-      case 'spring':
+      case 'spring': case 'padjump':
         this.tone(t, 0.35, 180, 720, { gain: 0.2, type: 'triangle' })
         this.noise(t, 0.08, { freq: 300, type: 'lowpass', gain: 0.3 })
         break

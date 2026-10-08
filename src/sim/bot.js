@@ -2,7 +2,7 @@
 // generated courses are traversable; the title screen uses it as a demo run.
 
 import { PHYS } from './config.js'
-import { stepPlayer, clonePlayer, isDoomed } from './player.js'
+import { stepPlayer, clonePlayer, isDoomed, padUnder } from './player.js'
 
 const PENALTY_HORIZON = 1.2
 const NONE = { jump: false, jumpPressed: false, down: false, downPressed: false }
@@ -27,16 +27,27 @@ function planInput(plan, tick) {
 
 // Cheap instincts used after a plan runs out: roll before hard landings,
 // slide under beams, climb walls, hop low obstacles that would stop us.
+function landsHard(start, level) {
+  const p = clonePlayer(start)
+  const events = []
+  for (let i = 0; i < 40 && p.state === 'air'; i++) stepPlayer(p, NONE, PHYS.FIXED_DT, level, events)
+  return events.some((e) => e.type === 'hardland')
+}
+
 function reflex(p, level) {
   if (p.state === 'air' && p.vy < -12) {
+    // only for landings that will really be hard; pressing before a soft one
+    // would start a slide we don't need
     const roof = level.roofAt(p.x)
-    if (roof !== null && p.y - roof < 3.5) return { ...NONE, down: true, downPressed: true }
+    if (roof !== null && p.y - roof < 3.5 && landsHard(p, level)) return { ...NONE, down: true, downPressed: true }
   }
+  if (p.state === 'run' && padUnder(p, level)) return { ...NONE, jump: true, jumpPressed: true }
   if (p.state === 'blocked' || p.state === 'wallslide') return { ...NONE, jump: true, jumpPressed: true }
   if (p.state === 'climb' || p.state === 'air') return { ...NONE, jump: true }
   if (p.state === 'run') {
     for (const s of level.solidsIn(p.x, p.x + 2.2)) {
-      if (s.kind === 'beam' && s.x0 > p.x && s.x0 - p.x < 1.4 + p.speed * 0.05) return { ...NONE, down: true, downPressed: true }
+      if (s.kind !== 'beam' || s.x0 <= p.x || s.x0 - p.x >= 1.4 + p.speed * 0.05) continue
+      return { ...NONE, down: true, downPressed: true }
     }
   }
   return NONE

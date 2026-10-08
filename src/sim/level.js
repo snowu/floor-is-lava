@@ -57,6 +57,12 @@ export class Level {
     return out
   }
 
+  padsIn(x0, x1) {
+    const out = []
+    for (const c of this.chunksIn(x0, x1)) for (const q of c.pads ?? []) if (q.x1 >= x0 && q.x0 <= x1) out.push(q)
+    return out
+  }
+
   ziplinesIn(x0, x1) {
     const out = []
     for (const c of this.chunksIn(x0, x1)) for (const z of c.ziplines) if (z.bx >= x0 && z.ax <= x1) out.push(z)

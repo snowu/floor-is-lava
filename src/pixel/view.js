@@ -2,7 +2,10 @@
 import { toCanvas, pack, mix, css, dither, hash, PixelBuffer } from './pixels.js'
 import { paletteAt, districtName, ACCENT } from './palette.js'
 import { RunnerSprite, ORIGIN_X, ORIGIN_Y } from './runner.js'
-import { PPU, bakeBuilding, bakeObstacle, bakeDecor, bakeBird, bakeSkyline, bakeCloud, bakeSign, bakeCar, bakeHolo, outlined, glow, recede } from './sprites.js'
+import { PPU, bakeObstacle, bakeDecor, bakeBird, bakeCloud, bakeCar, outlined, glow, recede } from './sprites.js'
+import { CITY, bakeTower, bakeFog, bakeFacade } from './city.js'
+import { bakeBillboard, specFor, inks } from './billboard.js'
+import { drawBig, bigW } from './art.js'
 import { PHYS, HEIST } from '../sim/config.js'
 import { createRng } from '../sim/rng.js'
 
@@ -14,14 +17,16 @@ const SHARD = [41, 243, 255]
 const LASER = [255, 47, 160]
 const TRIPPED = [255, 170, 40]
 const HULL = [26, 24, 38]
+const CUE = [41, 243, 255]
+const CUE_IDLE = [150, 146, 176]
 
 const damp = (a, b, rate, dt) => a + (b - a) * (1 - Math.exp(-rate * dt))
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v))
 
 const LAYERS = [
-  { f: 0.08, fy: 0.06, w: [16, 44], h: [60, 150], gap: [0, 6], color: 'far', win: 'farWin', offset: -4, detail: 0.4 },
-  { f: 0.2, fy: 0.14, w: [24, 60], h: [40, 120], gap: [0, 10], color: 'mid', win: 'midWin', offset: 18, detail: 0.7 },
-  { f: 0.4, fy: 0.28, w: [34, 86], h: [26, 96], gap: [2, 18], color: 'near', win: 'midWin', offset: 40, detail: 1 },
+  { f: 0.08, fy: 0.06, w: [16, 44], h: [60, 150], gap: [0, 6], color: 'far', win: 'farWin', offset: -4 },
+  { f: 0.2, fy: 0.14, w: [24, 60], h: [40, 120], gap: [0, 10], color: 'mid', win: 'midWin', offset: 18 },
+  { f: 0.4, fy: 0.28, w: [34, 86], h: [26, 96], gap: [2, 18], color: 'near', win: 'midWin', offset: 40 },
 ]
 
 export class PixelView {
@@ -50,6 +55,7 @@ export class PixelView {
     this.drops = []
     this.lightning = 0
     this.lightningClock = 8
+    this.weather = { rain: 0, target: 0, clock: 0, ready: false }
     this.layers = LAYERS.map((L) => ({ ...L, items: [], cursor: null, rng: createRng(Math.floor(L.f * 1e4)) }))
     this.clouds = { items: [], cursor: null, rng: createRng(77) }
     this.cars = []
@@ -63,6 +69,9 @@ export class PixelView {
     this.passed = 0
     this.glitchAmt = 0
     this.wrecks = []
+    this.popups = []
+    this.blend = 0
+    this.rebakeAll = false
 
     window.addEventListener('resize', () => this.resize())
     this.resize()
@@ -88,6 +97,7 @@ export class PixelView {
     this.cache.delete('mist')
     this.cache.delete('vignette')
     this.cache.delete('alarm')
+    for (const key of [...this.cache.keys()]) if (key.startsWith('fog')) this.cache.delete(key)
   }
 
   // ── cached sprites, re-baked when the palette steps ─────────────────────
@@ -110,6 +120,7 @@ export class PixelView {
     this.particles = []
     this.wrecks = []
     this.glitchAmt = 0
+    this.weather.ready = false
     level.on('add', (c) => this.addChunk(c))
     level.on('remove', (c) => this.removeChunk(c))
     for (const c of level.chunks) this.addChunk(c)
@@ -125,16 +136,18 @@ export class PixelView {
       decor: [...c.decor].sort((a, b) => a.z - b.z),
       signs: [],
     }
+    // advertising bolted to the facade, spaced out along the wall
     const wpx = (c.x1 - c.x0) * PPU
-    const signCount = wpx > 160 ? rng.int(1, 3) : wpx > 90 ? 1 : 0
-    for (let i = 0; i < signCount; i++) {
-      view.signs.push({
-        vertical: rng.chance(0.6),
-        dx: Math.round(rng.range(4, wpx - 40)),
-        dy: rng.int(14, 70),
-        seed: rng.int(1, 1e6),
-        flicker: rng.chance(0.3),
-      })
+    for (let dx = rng.int(4, 40); dx < wpx - 30;) {
+      const spec = specFor(rng.int(1, 1e6), 'facade')
+      if (dx + spec.w > wpx - 4) break
+      view.signs.push({ spec, dx, dy: view.roofH + rng.int(10, 56) })
+      dx += spec.w + rng.int(30, 110)
+    }
+    // sometimes a big billboard stands at the back of the roof
+    if (wpx > 140 && rng.chance(0.4)) {
+      const spec = specFor(rng.int(1, 1e6), 'roof')
+      if (spec.w < wpx - 40) view.roofAd = { spec, dx: rng.int(16, Math.round(wpx - spec.w - 16)) }
     }
     for (const e of c.extras) {
       if (e.type !== 'birds') continue
@@ -217,7 +230,17 @@ export class PixelView {
         break
       case 'slide':
         this.burst(p.x, p.y, 8, { up: 0.8, forward: p.speed * 0.8 })
+        // a missed landing slide says why
+        if (e.quality !== undefined) this.popup(e.slow ? 'TOO SLOW' : e.side === 'early' ? 'EARLY' : 'LATE', [150, 146, 176], p)
         break
+      case 'landslide': {
+        const perfect = e.quality >= 0.9
+        this.burst(p.x, p.y, perfect ? 22 : 14, { spread: 1.6, up: 1, forward: p.speed * 0.9 })
+        this.burst(p.x, p.y, perfect ? 12 : 5, { spread: 2.2, up: 1.4, forward: p.speed * 0.6, color: CUE, life: 0.45 })
+        if (perfect) this.shake(0.12)
+        this.popup(perfect ? 'PERFECT' : e.quality >= 0.75 ? 'GREAT' : 'GOOD', perfect ? CUE : [235, 240, 255], p)
+        break
+      }
       case 'vault': case 'clamber':
         this.burst(p.x + 0.3, p.y, 4, { up: 1, forward: p.speed * 0.4 })
         break
@@ -231,6 +254,11 @@ export class PixelView {
       case 'spring':
         this.shake(0.25)
         this.burst(p.x, p.y, 10, { up: 3, color: ACCENT })
+        break
+      case 'padjump':
+        this.shake(0.2)
+        this.burst(p.x, p.y, 14, { spread: 1, up: 4, color: ACCENT, life: 0.5 })
+        this.burst(p.x, p.y, 8, { up: 1.2, forward: p.speed * 0.4 })
         break
       case 'grab':
         this.burst(p.x + 0.3, p.y + PHYS.H, 4, { up: 0.6, spread: 0.6 })
@@ -263,12 +291,76 @@ export class PixelView {
 
   districtName(d) { return districtName(d) }
 
+  // Floating move labels over the runner.
+  popup(text, color, p) {
+    this.popups.push({ text, color, x: p.x, y: p.y + PHYS.H + 0.4, t: 0 })
+  }
+
+  drawPopups(dt) {
+    const { ctx } = this
+    this.popups = this.popups.filter((q) => {
+      q.t += dt
+      if (q.t > 0.9) return false
+      const cv = this.sprite(`pop:${q.text}:${q.color}`, 0, () => {
+        const b = new PixelBuffer(bigW(q.text) + 2, 9)
+        drawBig(b, q.text, 1, 1, pack(q.color), null, pack([12, 10, 20]))
+        return b
+      })
+      ctx.globalAlpha = q.t > 0.6 ? (0.9 - q.t) / 0.3 : 1
+      ctx.drawImage(cv, this.sx(q.x) - (cv.width >> 1), this.sy(q.y) - Math.round(Math.min(1, q.t * 4) * 8) - cv.height)
+      ctx.globalAlpha = 1
+      return true
+    })
+  }
+
+  // Touchdown marker while falling: brackets close in on the landing spot and
+  // light up inside the timing window (cyan: landing slide, red: roll).
+  drawLandCue(s) {
+    const c = s.landCue
+    if (!c) return
+    const { ctx } = this
+    const win = c.hard ? PHYS.ROLL_WINDOW : PHYS.LANDSLIDE_PRE
+    const inWindow = c.t <= win
+    const color = c.hard ? ACCENT : c.fast ? CUE : CUE_IDLE
+    const x = this.sx(c.x), y = this.sy(c.y)
+    const gap = 3 + Math.round(Math.min(c.t, 0.6) * 50)
+    ctx.globalAlpha = c.armed ? 0.35 : inWindow ? 1 : 0.55
+    ctx.fillStyle = css(color)
+    for (const dir of [-1, 1]) {
+      const bx = x + dir * gap
+      ctx.fillRect(dir < 0 ? bx - 2 : bx, y - 7, 2, 8)
+      ctx.fillRect(dir < 0 ? bx - 2 : bx - 3, y - 1, 5, 2)
+    }
+    ctx.globalAlpha *= 0.5
+    ctx.fillRect(x - gap, y + 1, gap * 2, 1)
+    ctx.globalAlpha = c.armed ? 0.35 : 1
+    if (inWindow && !c.armed) {
+      // press now: a diamond over the spot
+      ctx.fillRect(x - 2, y - 11, 5, 1)
+      ctx.fillRect(x - 1, y - 12, 3, 3)
+      ctx.fillRect(x, y - 13, 1, 5)
+    }
+    ctx.globalAlpha = 1
+  }
+
+  // Cross-fade from the current picture after a palette swap, and re-bake
+  // everything at once so old and new colors never mix on screen.
+  crossfade() {
+    this.blendCanvas ??= document.createElement('canvas')
+    this.blendCanvas.width = this.W
+    this.blendCanvas.height = H
+    this.blendCanvas.getContext('2d').drawImage(this.canvas, 0, 0)
+    this.blend = 1
+    this.rebakeAll = true
+  }
+
   // ── frame ───────────────────────────────────────────────────────────────
 
   frame(s) {
     const pal = paletteAt(s.paletteD ?? s.distance)
     this.pal = pal
-    this.budget = 2
+    this.budget = this.rebakeAll ? Infinity : 2
+    this.rebakeAll = false
     const { ctx } = this
     const W = this.W
     this.runner.rim = pal.rim
@@ -278,6 +370,7 @@ export class PixelView {
       this.updateCamera(s.raw, s)
     }
 
+    if (s.mode !== 'paused') this.updateWeather(s.raw, pal)
     this.drawSky(pal, s.time)
     this.drawClouds(pal, s.time)
     this.drawLayers(pal)
@@ -288,9 +381,11 @@ export class PixelView {
     this.drawGates(s, pal)
     this.drawGhost(s)
     this.drawRunner(s, pal)
+    this.drawLandCue(s)
     this.drawBeams()
     this.drawLasers(s)
     this.drawParticles(s.dt, pal)
+    this.drawPopups(s.raw)
     this.drawMist(pal, s.time)
     this.drawWeather(s, pal)
     this.drawSpeedLines(s, pal)
@@ -308,16 +403,51 @@ export class PixelView {
     const flash = Math.max(s.flash, this.lightning)
     if (flash > 0) { ctx.fillStyle = `rgba(255,255,255,${Math.min(0.9, flash)})`; ctx.fillRect(0, 0, W, H) }
     if (s.fade > 0) { ctx.fillStyle = `rgba(8,6,16,${s.fade})`; ctx.fillRect(0, 0, W, H) }
+    if (this.blend > 0) {
+      ctx.globalAlpha = Math.min(1, this.blend)
+      ctx.drawImage(this.blendCanvas, 0, 0)
+      ctx.globalAlpha = 1
+      this.blend -= s.raw * 2.5
+    }
+  }
+
+  // Weather comes and goes on its own during a run. Districts that tend to
+  // rain (palette 'rain') start wet more often and stay dry for less time.
+  updateWeather(dt, pal) {
+    const w = this.weather
+    if (!w.ready) {
+      w.ready = true
+      w.target = w.rain = Math.random() < pal.rain * 0.5 ? 0.6 + Math.random() * 0.4 : 0
+      w.clock = 10 + Math.random() * 30
+    }
+    w.clock -= dt
+    if (w.clock <= 0) {
+      if (w.target > 0) {
+        w.target = 0
+        w.clock = (35 + Math.random() * 60) * (1 - pal.rain * 0.5)
+      } else {
+        w.target = 0.6 + Math.random() * 0.4
+        w.clock = (25 + Math.random() * 35) * (0.6 + pal.rain)
+      }
+    }
+    w.rain += clamp(w.target - w.rain, -dt / 8, dt / 8)
   }
 
   drawSky(pal, time) {
     const { ctx } = this
     ctx.drawImage(this.sprite('sky', pal.version, () => bakeSky(this.W, pal)), 0, 0)
-    if (pal.stars > 0.05) {
+    const wet = this.weather.rain
+    if (wet > 0.02) {
+      // overcast: the sky dulls toward the haze
+      ctx.fillStyle = css(mix(pal.haze, pal.sky[0], 0.3), wet * 0.45)
+      ctx.fillRect(0, 0, this.W, H)
+    }
+    const stars = pal.stars * (1 - wet)
+    if (stars > 0.05) {
       for (let i = 0; i < 70; i++) {
         const x = Math.floor(hash(i, 1) * this.W), y = Math.floor(hash(i, 2) * H * 0.5)
         const tw = Math.sin(time * (1 + hash(i, 3) * 3) + i)
-        if (tw < 0.2 - pal.stars * 0.6) continue
+        if (tw < 0.2 - stars * 0.6) continue
         ctx.fillStyle = tw > 0.8 ? '#ffffff' : '#c9c3ff'
         ctx.fillRect(x, y, 1, 1)
       }
@@ -325,7 +455,8 @@ export class PixelView {
   }
 
   drawClouds(pal, time) {
-    if (pal.clouds < 0.05) return
+    const density = Math.max(pal.clouds, this.weather.rain)
+    if (density < 0.05) return
     const C = this.clouds
     const f = 0.03
     const off = this.camPX * f + time * 2
@@ -333,7 +464,7 @@ export class PixelView {
     while (C.items.length && C.items[0].u + C.items[0].w - off < -40) C.items.shift()
     while (C.cursor - off < this.W + 40) {
       const w = C.rng.int(30, 80), h = C.rng.int(10, 22)
-      C.cursor += C.rng.range(30, 140) / pal.clouds
+      C.cursor += C.rng.range(30, 140) / density
       C.items.push({ u: C.cursor, w, h, y: C.rng.int(8, Math.round(H * 0.42)), seed: C.rng.int(1, 1e6) })
       C.cursor += w
     }
@@ -359,17 +490,129 @@ export class PixelView {
       }
       for (const it of L.items) {
         if (it.u - off > this.W) break
-        const cv = this.sprite(`L${li}:${it.seed}`, pal.version, () => bakeSkyline(it.w, it.h, pal[L.color], pal[L.win], pal, it.seed, L.detail))
+        const cv = this.sprite(`L${li}:${it.seed}`, pal.version, () => bakeTower(it.w, it.h, li, pal[L.color], pal[L.win], pal, it.seed))
         const x = Math.round(it.u - off)
         this.ctx.drawImage(cv, x, base - it.h)
-        if (li > 0 && hash(it.seed, 77) < 0.2 && hash(Math.floor(this.cam.time * 9), it.seed) > 0.06) {
-          const holo = this.sprite(`H${it.seed}`, pal.version, () => bakeHolo(it.seed, pal))
-          this.ctx.globalAlpha = 0.85
-          this.ctx.drawImage(holo, x + ((it.w - holo.width) >> 1), base - it.h - holo.height - 2)
-          this.ctx.globalAlpha = 1
+        if (li > 0 && hash(it.seed, 77) < CITY.holos) this.drawBillboard(it, x, base, li, pal)
+      }
+      // rain thickens the fog between layers, washing the skyline into haze
+      const wet = Math.round(this.weather.rain * 4) / 4
+      const fog = this.sprite(`fog${li}:${wet}`, pal.version, () => bakeFog(this.W, H, 70, pal, (CITY.fog + CITY.rainFog * wet) * (1 - li * 0.3)))
+      this.ctx.drawImage(fog, 0, base - 60)
+      if (li === 0) this.drawCars(pal)
+    }
+    // in the rain the whole skyline recedes behind a veil; the course stays crisp
+    if (this.weather.rain > 0.02) {
+      this.ctx.fillStyle = css(mix(pal.haze, pal.sky[pal.sky.length - 1], 0.4), this.weather.rain * 0.32)
+      this.ctx.fillRect(0, 0, this.W, H)
+    }
+  }
+
+  // Billboards on skyline towers: on top, hung off a side, or across the face.
+  drawBillboard(it, x, base, li, pal) {
+    const s = (it.ad ??= specFor(it.seed, li === 2 ? 'near' : 'far'))
+    const top = base - it.h
+    let ax = x + ((it.w - s.w) >> 1), ay = top - s.h + 2
+    if (s.kind === 'holo') ay = top - s.h - 5
+    else if (s.kind === 'banner') { ax = hash(it.seed, 80) < 0.5 ? x - 2 : x + it.w - s.w + 2; ay = top + 8 }
+    else if (s.kind === 'screen' || s.kind === 'ticker') {
+      if (s.w > it.w - 4) return
+      ay = top + 6
+    }
+    this.drawAd(`bb${it.seed}`, s, ax, ay, pal)
+  }
+
+  // One billboard of any kind, animated: ads rotate with a top-down refresh,
+  // holos spin and flicker, neon stutters, screens chart, tickers scroll.
+  drawAd(key, s, x, y, pal) {
+    if (x > this.W || x + s.w < 0 || y > H || y + s.h + 8 < 0) return
+    const { ctx } = this
+    const t = this.cam.time
+    const get = (f) => this.sprite(`${key}:${f}`, pal.version, () => bakeBillboard(s, pal, f))
+    const h1 = hash(s.seed, 79)
+    if (s.kind === 'neon') {
+      const off = h1 < 0.35 && hash(Math.floor(t * 11), s.seed) < 0.15
+      ctx.drawImage(get(off ? 1 : 0), x, y)
+      return
+    }
+    if (s.kind === 'ticker') {
+      ctx.drawImage(get(0), x, y)
+      const strip = get(1), iw = s.w - 4
+      const off = Math.floor(t * 22 + h1 * 500) % strip.width
+      const take = Math.min(iw, strip.width - off)
+      ctx.drawImage(strip, off, 0, take, 7, x + 2, y + 2, take, 7)
+      if (take < iw) ctx.drawImage(strip, 0, 0, iw - take, 7, x + 2 + take, y + 2, iw - take, 7)
+      return
+    }
+    if (s.kind === 'screen') {
+      ctx.drawImage(get(0), x, y)
+      const c = inks(s.ads[0], pal)
+      const ix = x + 3, iy = y + 10, iw = s.w - 6, ih = s.h - 13
+      ctx.fillStyle = css(c.hue)
+      if (s.show === 'bars') {
+        for (let i = 0; i * 4 < iw - 2; i++) {
+          const bh = Math.max(1, Math.round((0.25 + 0.75 * Math.abs(Math.sin(t * (2 + (i % 3)) + i * 1.7))) * ih))
+          ctx.fillRect(ix + 1 + i * 4, iy + ih - bh, 3, bh)
+        }
+      } else if (s.show === 'ekg') {
+        const head = Math.floor(t * 26) % iw
+        for (let i = 0; i < iw; i++) {
+          const u = (i + Math.floor(t * 26 / iw) * 17) % 24
+          const v = u === 10 ? 0.9 : u === 11 ? -0.6 : u === 9 || u === 12 ? 0.2 : 0
+          const behind = (head - i + iw) % iw
+          ctx.globalAlpha = Math.max(0.15, 1 - behind / iw)
+          ctx.fillRect(ix + i, Math.round(iy + ih / 2 - v * ih / 2), 1, 1)
+        }
+        ctx.globalAlpha = 1
+      } else {
+        for (let i = 0; i < iw; i++) {
+          const v = 0.35 * Math.sin(i * 0.31 + t * 1.3 + h1 * 9) + 0.5 * Math.sin(i * 0.09 + t * 0.4)
+          const py = Math.round(iy + ih / 2 - v * ih / 2)
+          ctx.fillRect(ix + i, py, 1, 1)
+          ctx.globalAlpha = 0.25
+          ctx.fillRect(ix + i, py + 1, 1, Math.max(0, iy + ih - py - 1))
+          ctx.globalAlpha = 1
         }
       }
-      if (li === 0) this.drawCars(pal)
+      return
+    }
+    if (s.kind === 'holo') {
+      if (hash(Math.floor(t * 12), s.seed) < 0.03) return
+      const period = 8, u = (t + h1 * period) % period
+      const frame = Math.floor((t + h1 * period) / period) & 1
+      const cv = get(frame)
+      const spin = u < 1.2 ? Math.abs(Math.cos((u / 1.2) * Math.PI)) : 1
+      const dw = Math.max(1, Math.round(s.w * spin))
+      const c = inks(s.ads[frame], pal)
+      // emitter and light cone
+      ctx.fillStyle = css(mix(pal.shadow, [46, 44, 60], 0.5))
+      ctx.fillRect(x + (s.w >> 1) - 3, y + s.h + 3, 7, 2)
+      ctx.fillStyle = css(c.hue, 0.12)
+      for (let i = 0; i < 4; i++) ctx.fillRect(x + (s.w >> 1) - 1 - i * 3, y + s.h + 2 - i, 3 + i * 6, 1)
+      ctx.globalAlpha = 0.85
+      ctx.drawImage(cv, x + ((s.w - dw) >> 1), y, dw, s.h)
+      ctx.globalAlpha = 1
+      ctx.fillStyle = 'rgba(255,255,255,0.2)'
+      ctx.fillRect(x + ((s.w - dw) >> 1), y + Math.floor(t * 14) % s.h, dw, 1)
+      return
+    }
+    // boards, round signs, banners, posters: rotate between two ads
+    if (s.kind === 'poster') { ctx.drawImage(get(0), x, y); return }
+    const period = 5 + hash(s.seed, 78) * 4
+    const phase = t / period + h1
+    const frame = Math.floor(phase) & 1
+    const since = (phase % 1) * period
+    const cv = get(frame)
+    if (since < 0.3) {
+      // refresh: the new ad rolls down over the old one
+      const old = get(frame ^ 1)
+      const rows = Math.floor((since / 0.3) * cv.height)
+      if (rows < old.height) ctx.drawImage(old, 0, rows, old.width, old.height - rows, x, y + rows, old.width, old.height - rows)
+      if (rows > 0) ctx.drawImage(cv, 0, 0, cv.width, rows, x, y, cv.width, rows)
+      ctx.fillStyle = 'rgba(255,255,255,0.5)'
+      ctx.fillRect(x + 2, y + rows, cv.width - 4, 1)
+    } else {
+      ctx.drawImage(cv, x, y)
     }
   }
 
@@ -380,7 +623,7 @@ export class PixelView {
     const dt = Math.min(0.1, this.cam.time - (this.carTime ?? this.cam.time))
     this.carTime = this.cam.time
     const r = this.carRng
-    while (this.cars.length < 12) {
+    while (this.cars.length < CITY.cars) {
       const dir = r.chance(0.5) ? 1 : -1
       this.cars.push({ u: off + r.range(-60, this.W + 60), y: Math.round(H * r.range(0.14, 0.42)), v: dir * r.range(25, 90), dir, seed: r.int(1, 1e6) })
     }
@@ -418,7 +661,7 @@ export class PixelView {
         const rh = 6
         const m0 = rh + 5 + Math.round((e.top - panel.y1) * PPU)
         const m1 = rh + 5 + Math.round((e.top - panel.y0 + 0.4) * PPU)
-        const cv = this.sprite(`c${c.id}:wall`, ver, () => bakeBuilding({ w, roofH: rh, style: (c.seed >> 3) % 2 === 0 ? 0 : 2, seed: c.seed + 5, pal, wall: 2, mural: [m0, m1] }))
+        const cv = this.sprite(`c${c.id}:wall`, ver, () => bakeFacade({ w, roofH: rh, style: (c.seed >> 3) % 2 === 0 ? 0 : 2, seed: c.seed + 5, pal, wall: 2, mural: [m0, m1] }))
         ctx.drawImage(cv, this.sx(e.x0), this.sy(e.top) - rh)
       }
     }
@@ -436,18 +679,15 @@ export class PixelView {
     // buildings, then what stands on them
     for (const [c, v] of visible) {
       const w = Math.round((c.x1 - c.x0) * PPU)
-      const cv = this.sprite(`c${c.id}:b`, ver, () => bakeBuilding({ w, roofH: v.roofH, style: c.style, seed: c.seed, pal, wall: v.wall, accentCap: v.cap }))
+      const cv = this.sprite(`c${c.id}:b`, ver, () => bakeFacade({ w, roofH: v.roofH, style: c.style, seed: c.seed, pal, wall: v.wall, accentCap: v.cap }))
       ctx.drawImage(cv, this.sx(c.x0), this.sy(c.roof) - v.roofH)
     }
-    // neon signage bolted to the facades
+    // advertising on the facades, and billboards standing on the roofs
     const t = this.cam.time
     for (const [c, v] of visible) {
-      v.signs.forEach((sg, i) => {
-        const off = sg.flicker && hash(Math.floor(t * 11), sg.seed) < 0.18
-        const key = `c${c.id}:s${i}:${off ? 'dim' : 'on'}`
-        const cv = this.sprite(key, ver, () => bakeSign(sg.seed, pal, sg.vertical)[off ? 1 : 0])
-        ctx.drawImage(cv, this.sx(c.x0) + sg.dx, this.sy(c.roof) + sg.dy)
-      })
+      const x0 = this.sx(c.x0), top = this.sy(c.roof) - v.roofH
+      v.signs.forEach((sg, i) => this.drawAd(`c${c.id}:a${i}`, sg.spec, x0 + sg.dx, top + sg.dy, pal))
+      if (v.roofAd) this.drawAd(`c${c.id}:r`, v.roofAd.spec, x0 + v.roofAd.dx, top - v.roofAd.spec.h + 3, pal)
     }
     this.beams = []
     for (const [c, v] of visible) {
@@ -491,6 +731,7 @@ export class PixelView {
         ctx.fillStyle = css(ACCENT)
         ctx.fillRect(this.sx(e.x), this.sy(e.y), 5, 2)
       }
+      for (const q of c.pads ?? []) this.drawPad(q, s.p, t)
     }
     // beam posts sit behind the runner
     ctx.fillStyle = css(mix(pal.shadow, [30, 30, 40], 0.3))
@@ -512,6 +753,39 @@ export class PixelView {
       }
     }
   }
+
+  // Jump pad at a tall wall's edge: a red plate with chevrons rising off it,
+  // white-hot while the runner is on it (that's the moment to jump).
+  drawPad(q, p, t) {
+    const { ctx } = this
+    const x0 = this.sx(q.x0), x1 = this.sx(q.x1), y = this.sy(q.y)
+    if (x1 < 0 || x0 > this.W) return
+    const on = p.x >= q.x0 && p.x <= q.x1 && Math.abs(p.y - q.y) < 0.05
+    const w = x1 - x0
+    const hot = on ? '#ffffff' : css(ACCENT)
+    // a column of light marks the spot from a distance
+    ctx.fillStyle = css(ACCENT, on ? 0.3 : 0.12 + 0.06 * Math.sin(t * 6))
+    ctx.fillRect(x0 + 2, y - 34, w - 4, 30)
+    ctx.fillStyle = css(ACCENT, on ? 0.2 : 0.08)
+    ctx.fillRect(x0 - 1, y - 20, w + 2, 16)
+    // the plate: dark steel, lit edge, hazard ticks
+    ctx.fillStyle = css(HULL)
+    ctx.fillRect(x0 - 2, y - 4, w + 4, 4)
+    ctx.fillStyle = hot
+    ctx.fillRect(x0 - 1, y - 5, w + 2, 2)
+    for (let x = x0 + 1; x < x1 - 1; x += 4) ctx.fillRect(x, y - 2, 2, 1)
+    // chevrons drifting up
+    const cx = (x0 + x1) >> 1
+    for (let i = 0; i < 3; i++) {
+      const k = (t * 1.4 + i / 3) % 1
+      ctx.globalAlpha = (on ? 1 : 0.8) * (1 - k * 0.8)
+      const cy = y - 9 - Math.round(k * 22)
+      ctx.fillRect(cx - 5, cy + 3, 2, 2); ctx.fillRect(cx - 3, cy + 1, 2, 2); ctx.fillRect(cx - 1, cy - 1, 2, 2)
+      ctx.fillRect(cx + 1, cy + 1, 2, 2); ctx.fillRect(cx + 3, cy + 3, 2, 2)
+    }
+    ctx.globalAlpha = 1
+  }
+
 
   // Checkpoint pylons and the finish gate, standing at the front edge of the roof.
   drawGates(s, pal) {
@@ -785,8 +1059,10 @@ export class PixelView {
 
   drawWeather(s, pal) {
     const { ctx } = this
-    if (pal.rain < 0.05) { this.drops.length = 0; return }
-    const n = Math.floor(160 * pal.rain)
+    const rain = this.weather.rain
+    if (rain < 0.05) { this.drops.length = 0; this.lightning = 0; return }
+    const n = Math.floor(160 * rain)
+    if (this.drops.length > n) this.drops.length = n
     while (this.drops.length < n) this.drops.push({ x: Math.random() * this.W, y: Math.random() * H, v: 260 + Math.random() * 160, near: Math.random() < 0.3 })
     const drift = -(s.p.speed * PPU * 0.5 + 30)
     for (const d of this.drops) {
@@ -797,7 +1073,7 @@ export class PixelView {
       ctx.fillRect(Math.round(d.x), Math.round(d.y), 1, d.near ? 4 : 3)
     }
     this.lightningClock -= s.raw
-    if (this.lightningClock <= 0) {
+    if (this.lightningClock <= 0 && rain > 0.7) {
       this.lightningClock = 5 + Math.random() * 9
       this.lightning = 0.55
     }
