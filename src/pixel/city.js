@@ -171,15 +171,15 @@ export function bakeFacade({ w, roofH, style, seed, pal, wall, accentCap, mural 
   const top = roofH
   b.rect(0, top, w, 2, accentCap ? pack(mix(raw, pal.lit[0], 0.55)) : t.light)
   b.rect(0, top + 2, w, 2, t.base)
-  b.rect(0, top + 4, w, 1, t.deep)
-  const bodyTop = top + 5
+  b.rect(0, top + 4, w, 2, t.deep)
+  const bodyTop = top + 6
   b.rect(0, bodyTop, w, H - bodyTop, t.base)
 
   // per-building rhythm so neighbours never share a module
   const floorH = [40, 44, 48, 54][Math.floor(r(1) * 4)]
-  const ww = style === 1 ? 0 : [6, 8, 10, 12][Math.floor(r(2) * 4)]
+  const ww = style === 1 ? 0 : [10, 12, 14, 16][Math.floor(r(2) * 4)]
   const wh = style === 3 ? 6 : Math.min(Math.round(floorH * 0.42), [12, 16, 20, 24][Math.floor(r(3) * 4)])
-  const gap = [4, 6, 8, 10][Math.floor(r(4) * 4)]
+  const gap = [7, 8, 10, 12][Math.floor(r(4) * 4)]
   const bay = 2 + Math.floor(r(5) * 3)                  // windows between piers
   const pier = 6
   const tint = pickOf(pal.lit, r(6)), alt = pickOf(pal.lit, r(7))
@@ -190,10 +190,16 @@ export function bakeFacade({ w, roofH, style, seed, pal, wall, accentCap, mural 
   const glassL = pack(pal.glass[0]), glassD = pack(pal.glass[1]), winDark = pack(pal.winDark)
   const rate = L.litRate * (0.2 + night) * (0.6 + r(8) * 0.8)
 
-  // quiet wall texture
+  // Material joins stay subdued; larger structural bays carry the detail.
+  const mortar = pack(mix(raw, pal.shadow, 0.13))
   for (let y = bodyTop; y < H; y++) {
     const ry = y - bodyTop
-    if (style === 0 && ry % 4 === 3) b.rect(0, y, w, 1, t.shade)
+    if (style === 0 && ry % 6 === 5) {
+      b.rect(0, y, w, 1, mortar)
+      const offset = Math.floor(ry / 6) % 2 ? 8 : 0
+      for (let x = offset; x < w; x += 16) b.rect(x, y - 5, 1, 5, mortar)
+    }
+    if (style === 3) for (let x = 0; x < w; x += 5) b.set(x, y, mortar)
     if (style === 2 && ry % floorH === floorH - 1) b.rect(0, y, w, 1, t.shade)
   }
 
@@ -240,19 +246,28 @@ export function bakeFacade({ w, roofH, style, seed, pal, wall, accentCap, mural 
           const px = wx + x, py = wy + y
           let c
           if (on) {
-            c = hash(k, f, seed + 43) < 0.15 ? altC : litC
-            if (y === 1) c = lampC
+            c = y > wh * 0.65 ? roomC : hash(k, f, seed + 43) < 0.15 ? altC : litC
+            if (y === 2 && x > 2 && x < ww - 2) c = lampC
             if (blind && y < wh * 0.4) c = t.deep
             lit[py * w + px] = 1
           } else {
-            c = reflect(px, py) ? glassL : dither(px, py, 0.35 - y / wh * 0.3) ? glassD : winDark
+            c = y < 3 || reflect(px, py) ? glassL : y < wh * 0.6 ? glassD : winDark
           }
           b.set(px, py, c)
         }
       }
+      // Recessed lintel and jambs, then a projecting sill with a cast shadow.
+      b.rect(wx - 1, wy - 1, ww + 2, 1, t.shade)
+      b.rect(wx, wy, ww, 1, t.deep)
+      b.rect(wx - 1, wy, 1, wh, sunLeft ? t.light : t.shade)
+      b.rect(wx + ww, wy, 1, wh, sunLeft ? t.shade : t.light)
+      if (ww >= 12) b.rect(wx + Math.floor(ww / 2), wy + 1, 1, wh - 1, t.deep)
+      b.rect(wx - 2, wy + wh, ww + 4, 1, t.light)
+      b.rect(wx - 1, wy + wh + 1, ww + 2, 1, t.shade)
+      b.rect(wx, wy + wh + 2, ww + 1, 1, t.deep)
       if (balcony) {
         b.rect(wx - 2, wy + wh - 6, ww + 4, 1, t.light)
-        for (let x = wx - 2; x < wx + ww + 2; x += 2) b.rect(x, wy + wh - 5, 1, 5, t.deep)
+        for (let x = wx - 2; x < wx + ww + 2; x += 4) b.rect(x, wy + wh - 5, 1, 5, t.deep)
         b.rect(wx - 2, wy + wh, ww + 4, 2, t.deep)
       }
     }
@@ -260,23 +275,36 @@ export function bakeFacade({ w, roofH, style, seed, pal, wall, accentCap, mural 
     for (let i = 1; i < bays; i++) {
       const px = x0 + i * bayW - pier
       b.rect(px + 1, fy - 8, pier - 2, floorH, t.shade)
+      b.rect(sunLeft ? px + 1 : px + pier - 2, fy - 8, 1, floorH, t.light)
+    }
+    if (style === 2) {
+      b.rect(0, fy + floorH - 10, w, 1, t.shade)
+      b.rect(0, fy + floorH - 9, w, 1, pack(mix(raw, pal.light, 0.1)))
     }
   }
 
   // clutter: drain pipes and hanging AC units
   const metal = pack(mix(pal.shadow, [40, 40, 50], 0.4))
-  const pipes = 1 + Math.floor(r(9) * 2)
+  const pipes = w > 160 ? 2 : 1
   for (let i = 0; i < pipes; i++) {
-    const px = Math.floor(w * (0.15 + 0.7 * r(10 + i)))
+    const px = i === 0 ? 3 : w - 6
     b.rect(px, bodyTop, 2, H - bodyTop, metal)
+    b.rect(px, bodyTop, 1, H - bodyTop, t.shade)
     for (let y = bodyTop + 10; y < H; y += 26) b.rect(px - 1, y, 4, 1, metal)
   }
   for (let f = 0; f < 4; f++) {
     if (r(20 + f) > 0.55) continue
-    const ax = Math.floor(r(24 + f) * (w - 12)), ay = bodyTop + 8 + f * floorH + floorH - 12
-    b.rect(ax, ay, 9, 6, pack(mix(pal.roof, pal.shadow, 0.1)))
-    b.rect(ax, ay, 9, 1, t.light)
-    b.rect(ax + 2, ay + 3, 5, 1, t.deep)
+    const ax = x0 + Math.floor(r(24 + f) * bays) * bayW, ay = bodyTop + 8 + f * floorH + floorH - 10
+    b.rect(ax + 1, ay + 2, 17, 10, t.deep)
+    b.rect(ax, ay, 17, 9, pack(mix([133, 141, 151], raw, 0.5)))
+    b.rect(ax, ay, 17, 1, t.light)
+    for (let y = ay + 2; y < ay + 8; y += 2) b.rect(ax + 2, y, 6, 1, t.deep)
+    b.disc(ax + 12, ay + 5, 3, metal)
+    b.line(ax + 10, ay + 3, ax + 14, ay + 7, t.shade)
+    b.line(ax + 14, ay + 3, ax + 10, ay + 7, t.shade)
+    b.set(ax + 11, ay + 3, t.light)
+    b.rect(ax + 2, ay + 9, 2, 2, metal)
+    b.rect(ax + 13, ay + 9, 2, 2, metal)
   }
 
   // mural: the red chevron band used by wall-run walls
@@ -304,7 +332,7 @@ export function bakeFacade({ w, roofH, style, seed, pal, wall, accentCap, mural 
       const k = Math.min(1, (y - start) / span) * L.fade * 6
       for (let x = 0; x < w; x++) {
         const i = y * w + x
-        const step = Math.floor(k) + (dither(x, y, k - Math.floor(k)) ? 1 : 0)
+        const step = Math.round(k)
         if (!step) continue
         const amt = (step / 6) * (lit[i] ? 0.6 : 0.9)
         b.data[i] = pack(mix(unpack(b.data[i]), sink, amt))

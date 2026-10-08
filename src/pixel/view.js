@@ -2,6 +2,7 @@
 import { toCanvas, pack, mix, css, dither, hash, PixelBuffer } from './pixels.js'
 import { paletteAt, districtName, ACCENT } from './palette.js'
 import { RunnerSprite, ORIGIN_X, ORIGIN_Y } from './runner.js'
+import { RoofWater } from './water.js'
 import { PPU, bakeDecor, bakeBird, bakeCloud, bakeCar, recede, outlined } from './sprites.js'
 import { CITY, bakeTower, bakeFog, bakeFacade } from './city.js'
 import { bakeBillboard, specFor, inks } from './billboard.js'
@@ -51,6 +52,7 @@ export class PixelView {
     this.views = new Map()
     this.birds = []
     this.particles = []
+    this.water = new RoofWater()
     this.lines = []
     this.drops = []
     this.lightning = 0
@@ -112,6 +114,7 @@ export class PixelView {
   // ── course binding ──────────────────────────────────────────────────────
 
   bind(level) {
+    this.water = new RoofWater()
     for (const key of [...this.cache.keys()]) if (key.startsWith('c')) this.cache.delete(key)
     this.views.clear()
     this.birds = []
@@ -136,14 +139,14 @@ export class PixelView {
     }
     // advertising bolted to the facade, spaced out along the wall
     const wpx = (c.x1 - c.x0) * PPU
-    for (let dx = rng.int(4, 40); dx < wpx - 30;) {
+    for (let dx = rng.int(24, 72); dx < wpx - 30;) {
       const spec = specFor(rng.int(1, 1e6), 'facade')
       if (dx + spec.w > wpx - 4) break
-      view.signs.push({ spec, dx, dy: view.roofH + rng.int(10, 56) })
-      dx += spec.w + rng.int(30, 110)
+      view.signs.push({ spec, dx, dy: view.roofH + rng.int(30, 64) })
+      dx += spec.w + rng.int(100, 190)
     }
     // sometimes a big billboard stands at the back of the roof
-    if (wpx > 140 && rng.chance(0.4)) {
+    if (wpx > 180 && rng.chance(0.24)) {
       const spec = specFor(rng.int(1, 1e6), 'roof')
       if (spec.w < wpx - 40) view.roofAd = { spec, dx: rng.int(16, Math.round(wpx - spec.w - 16)) }
     }
@@ -211,6 +214,7 @@ export class PixelView {
   }
 
   event(e, p) {
+    if (['land', 'hardland', 'landslide'].includes(e.type)) this.water.splash(p.x, p.y, p.speed, this.weather.rain, e.impact ?? 12)
     switch (e.type) {
       case 'land':
         this.runner.land(e.impact ?? 0)
@@ -300,7 +304,13 @@ export class PixelView {
     if (id === this.runnerId) return
     this.runnerId = id
     this.runner = new RunnerSprite(id)
-    this.runner.onStep = (k) => this.onStep?.(k)
+    this.runner.onStep = (k) => {
+      this.onStep?.(k)
+      if (k === 'run' && this.stepPoint) {
+        const foot = this.runner.joints?.[(this.runner.lastStep & 1) ? 'ankleB' : 'ankleA']
+        this.water.splash(this.stepPoint.x + (foot?.[0] ?? 0) / PPU, this.stepPoint.y, this.stepPoint.speed, this.weather.rain)
+      }
+    }
     this.ghostRunner = new RunnerSprite(id)
     this.rasterClock = 0
   }
@@ -380,6 +390,7 @@ export class PixelView {
     this.runner.rim = pal.rim
     this.runner.rimDir = pal.sunX < 0.5 ? [-1, 1] : [1, 1]
     if (s.mode !== 'paused') {
+      this.stepPoint = { x: s.rx, y: s.ry, speed: s.p.speed }
       this.runner.update(s.dt, s.p, s.rx * PPU, s.ry * PPU, s.idle ? 'idle' : null)
       this.updateCamera(s.raw, s)
     }
@@ -395,6 +406,8 @@ export class PixelView {
     this.drawGates(s, pal)
     this.drawGhost(s)
     this.drawRunner(s, pal)
+    this.water.update(s.dt)
+    this.water.draw(ctx, (x) => this.sx(x), (y) => this.sy(y), pal)
     this.drawLandCue(s)
     this.drawBeams()
     this.drawLasers(s)
@@ -537,57 +550,26 @@ export class PixelView {
   }
 
   // One billboard of any kind, animated: ads rotate with a top-down refresh,
-  // holos spin and flicker, neon stutters, screens chart, tickers scroll.
+  // holos spin and flicker, tickers scroll.
   drawAd(key, s, x, y, pal) {
     if (x > this.W || x + s.w < 0 || y > H || y + s.h + 8 < 0) return
     const { ctx } = this
     const t = this.cam.time
     const get = (f) => this.sprite(`${key}:${f}`, pal.version, () => bakeBillboard(s, pal, f))
     const h1 = hash(s.seed, 79)
-    if (s.kind === 'neon') {
-      const off = h1 < 0.35 && hash(Math.floor(t * 11), s.seed) < 0.15
-      ctx.drawImage(get(off ? 1 : 0), x, y)
+    // Signs attached to the running building read as fixtures. Keep their
+    // panels steady while the distant city carries the animated advertising.
+    if (s.place === 'facade') {
+      ctx.drawImage(get(0), x, y)
       return
     }
     if (s.kind === 'ticker') {
       ctx.drawImage(get(0), x, y)
       const strip = get(1), iw = s.w - 4
-      const off = Math.floor(t * 22 + h1 * 500) % strip.width
+      const off = Math.floor(t * (s.place === 'facade' ? 9 : 22) + h1 * 500) % strip.width
       const take = Math.min(iw, strip.width - off)
       ctx.drawImage(strip, off, 0, take, 7, x + 2, y + 2, take, 7)
       if (take < iw) ctx.drawImage(strip, 0, 0, iw - take, 7, x + 2 + take, y + 2, iw - take, 7)
-      return
-    }
-    if (s.kind === 'screen') {
-      ctx.drawImage(get(0), x, y)
-      const c = inks(s.ads[0], pal)
-      const ix = x + 3, iy = y + 10, iw = s.w - 6, ih = s.h - 13
-      ctx.fillStyle = css(c.hue)
-      if (s.show === 'bars') {
-        for (let i = 0; i * 4 < iw - 2; i++) {
-          const bh = Math.max(1, Math.round((0.25 + 0.75 * Math.abs(Math.sin(t * (2 + (i % 3)) + i * 1.7))) * ih))
-          ctx.fillRect(ix + 1 + i * 4, iy + ih - bh, 3, bh)
-        }
-      } else if (s.show === 'ekg') {
-        const head = Math.floor(t * 26) % iw
-        for (let i = 0; i < iw; i++) {
-          const u = (i + Math.floor(t * 26 / iw) * 17) % 24
-          const v = u === 10 ? 0.9 : u === 11 ? -0.6 : u === 9 || u === 12 ? 0.2 : 0
-          const behind = (head - i + iw) % iw
-          ctx.globalAlpha = Math.max(0.15, 1 - behind / iw)
-          ctx.fillRect(ix + i, Math.round(iy + ih / 2 - v * ih / 2), 1, 1)
-        }
-        ctx.globalAlpha = 1
-      } else {
-        for (let i = 0; i < iw; i++) {
-          const v = 0.35 * Math.sin(i * 0.31 + t * 1.3 + h1 * 9) + 0.5 * Math.sin(i * 0.09 + t * 0.4)
-          const py = Math.round(iy + ih / 2 - v * ih / 2)
-          ctx.fillRect(ix + i, py, 1, 1)
-          ctx.globalAlpha = 0.25
-          ctx.fillRect(ix + i, py + 1, 1, Math.max(0, iy + ih - py - 1))
-          ctx.globalAlpha = 1
-        }
-      }
       return
     }
     if (s.kind === 'holo') {
@@ -610,9 +592,8 @@ export class PixelView {
       ctx.fillRect(x + ((s.w - dw) >> 1), y + Math.floor(t * 14) % s.h, dw, 1)
       return
     }
-    // boards, round signs, banners, posters: rotate between two ads
-    if (s.kind === 'poster') { ctx.drawImage(get(0), x, y); return }
-    const period = 5 + hash(s.seed, 78) * 4
+    // Boards, round signs and banners rotate between two ads.
+    const period = 12 + hash(s.seed, 78) * 6
     const phase = t / period + h1
     const frame = Math.floor(phase) & 1
     const since = (phase % 1) * period

@@ -40,7 +40,7 @@ const palette = (o) => {
 
 // Looks for the runner. Lengths and thickness scale the same skeleton; cloth
 // is a list of verlet chains (coat tails, scarf) hung off joints, and a
-// female body adds a ponytail. `shade` darkens the side away from the light,
+// ponytail gives the character a distinct silhouette. `shade` darkens the side away from the light,
 // `fps` is the raster rate.
 export const RUNNER_STYLES = {
   classic: {
@@ -48,38 +48,38 @@ export const RUNNER_STYLES = {
     ponytail: { n: 4, seg: 1.9, r0: 1.15, r1: 0.79, grav: 1, damp: 0.93 }, cloth: [],
   },
   courier: {
-    name: 'Courier', scale: 1.32, thick: 1.05, head: 1, shade: 0.35, fps: 30,
+    name: 'Courier', scale: 1.18, thick: 0.92, head: 1, shade: 0.28, fps: 30, face: true,
     colors: palette({
       top: hex(0xeeebf4), pants: hex(0x2a2440), pantsFar: hex(0x1c1830), shoe: hex(0xff3b30),
       glove: hex(0xff3b30), band: hex(0xff3b30), hair: hex(0x1d1214), skin: hex(0xe9a882),
     }),
     sleeveless: true,
-    ponytail: { n: 5, seg: 2, r0: 1.25, r1: 0.7, grav: 0.15, damp: 0.9 },
+    ponytail: { n: 5, seg: 1.7, r0: 1.05, r1: 0.45, grav: 0.28, damp: 0.91 },
     cloth: [],
   },
   windbreaker: {
-    name: 'Windbreaker', scale: 1.32, thick: 1.15, head: 1.05, shade: 0.4, fps: 60,
+    name: 'Windbreaker', scale: 1.18, thick: 1, head: 1, shade: 0.32, fps: 60, face: true,
     colors: palette({
       top: hex(0xff5a2a), sleeve: hex(0xff5a2a), pants: hex(0x24243a), pantsFar: hex(0x17172a),
       shoe: hex(0xf2f0f6), shoeFar: hex(0xa8a4b8), glove: hex(0x1c1a28), band: hex(0x29f3ff),
       hair: hex(0x1a1220), scarf: hex(0x29f3ff), skin: hex(0xd89a74),
     }),
     sleeves: true,
-    ponytail: { n: 4, seg: 1.9, r0: 1.2, r1: 0.75, grav: 0.15, damp: 0.9 },
+    ponytail: { n: 5, seg: 1.65, r0: 1, r1: 0.45, grav: 0.28, damp: 0.91 },
     cloth: [
       { at: 'scarf', n: 5, seg: 2.1, r0: 1.1, r1: 0.8, col: 'scarf', grav: 0.1, damp: 0.9 },
       { at: 'coat', n: 3, seg: 2.2, r0: 1.9, r1: 1.2, col: 'top', grav: 0.3, damp: 0.88 },
     ],
   },
   techwear: {
-    name: 'Techwear', scale: 1.32, thick: 0.92, head: 0.95, shade: 0.45, fps: 60,
+    name: 'Techwear', scale: 1.18, thick: 0.9, head: 1, shade: 0.36, fps: 60, face: true,
     colors: palette({
       top: hex(0x2c3046), sleeve: hex(0x2c3046), pants: hex(0x1d1f2e), pantsFar: hex(0x14151f),
       shoe: hex(0xd9dbe6), shoeFar: hex(0x8e90a2), glove: hex(0x111219), band: hex(0x29f3ff),
       hair: hex(0xe8e4f2), scarf: hex(0xff3b30), skin: hex(0xd8a080), trim: hex(0x29f3ff),
     }),
     sleeves: true, trim: true,
-    ponytail: { n: 4, seg: 1.9, r0: 1.1, r1: 0.75, grav: 0.15, damp: 0.9 },
+    ponytail: { n: 5, seg: 1.65, r0: 1, r1: 0.45, grav: 0.28, damp: 0.91 },
     cloth: [
       { at: 'coat', n: 5, seg: 2.3, r0: 2.1, r1: 1.0, col: 'top', grav: 0.3, damp: 0.88 },
       { at: 'scarf', n: 6, seg: 2.2, r0: 1.0, r1: 0.7, col: 'scarf', grav: 0.1, damp: 0.9 },
@@ -145,27 +145,37 @@ export class RunnerSprite {
 
   runPose(phase, k) {
     const leg = (ph) => {
-      const swing = Math.sin(ph)
-      const recover = Math.max(0, Math.cos(ph + 0.45))
-      const stance = Math.max(0, -Math.cos(ph + 0.2))
-      return {
-        thigh: 0.22 + swing * (0.78 + 0.32 * k),
-        shin: -(0.18 + Math.pow(recover, 1.3) * (1.5 + 0.55 * k) + stance * 0.28),
-        foot: -0.15 + Math.sin(ph + 0.9) * 0.45,
+      // Contact, compression, push-off, heel recovery and knee drive each
+      // have their own shape. A sine swing kept the legs too straight and
+      // gave the airborne and planted halves the same mechanical timing.
+      const keys = [
+        [0.85, -0.45, -0.3], [0.25, -0.65, 0.15],
+        [-0.35, -0.45, 0.3], [-0.8, -0.3, 0.2],
+        [-0.65, -1.45, -0.4], [0.15, -2.05, -0.6],
+        [1.0, -1.75, -0.4], [1.15, -1.0, -0.25],
+      ]
+      const u = ((ph / (Math.PI * 2)) % 1 + 1) % 1 * keys.length
+      const i = Math.floor(u), t = u - i
+      const sample = (axis) => {
+        const a = keys[(i + 7) % 8][axis], b = keys[i][axis]
+        const c = keys[(i + 1) % 8][axis], d = keys[(i + 2) % 8][axis]
+        return 0.5 * (2 * b + (c - a) * t + (2 * a - 5 * b + 4 * c - d) * t * t + (3 * b - a - 3 * c + d) * t * t * t)
       }
+      return { thigh: sample(0) * (0.9 + k * 0.2), shin: sample(1), foot: sample(2) }
     }
     const a = leg(phase), b = leg(phase + Math.PI)
-    const pump = 0.85 + 0.35 * k
-    const lean = -0.2 - 0.24 * k
+    const pump = 0.9 + 0.3 * k
+    const lean = -0.18 - 0.2 * k
+    const swing = Math.sin(phase + 0.22)
     return pose({
-      torso: lean - 0.05 * Math.cos(phase * 2),
-      head: -lean * 0.55 + 0.04,
+      torso: lean - 0.075 * Math.sin(phase * 2 + 0.4),
+      head: -lean * 0.7 + 0.04 + 0.045 * Math.sin(phase * 2 - 0.35),
       thighA: a.thigh, shinA: a.shin, footA: a.foot,
       thighB: b.thigh, shinB: b.shin, footB: b.foot,
-      armA: -Math.sin(phase) * pump + 0.2, foreA: 1.45 + Math.max(0, -Math.sin(phase)) * 0.5,
-      armB: Math.sin(phase) * pump + 0.2, foreB: 1.45 + Math.max(0, Math.sin(phase)) * 0.5,
-      hip: -0.4 + Math.abs(Math.sin(phase + 0.35)) * 1.3,
-      hipX: 0.3 * k,
+      armA: -swing * pump + 0.12, foreA: 1.15 + Math.max(0, -swing) * 0.65,
+      armB: swing * pump + 0.12, foreB: 1.15 + Math.max(0, swing) * 0.65,
+      hip: 0.2 - 0.9 * Math.cos(phase * 2 - 0.5),
+      hipX: 0.3 * k + 0.45 * Math.sin(phase * 2 + 0.2),
     })
   }
 
@@ -175,7 +185,7 @@ export class RunnerSprite {
     switch (p.state) {
       case 'run':
       case 'wallrun': {
-        this.phase += dt * Math.PI * 2 * (p.speed / (3.3 + p.speed * 0.13)) * (p.state === 'wallrun' ? 1.15 : 1)
+        this.phase += dt * Math.PI * 2 * (p.speed / (5.2 + p.speed * 0.06)) * (p.state === 'wallrun' ? 1.15 : 1)
         const o = this.runPose(this.phase, k)
         if (p.state === 'wallrun') { o.torso += 0.18; o.hip += 0.6 }
         return o
@@ -335,7 +345,7 @@ export class RunnerSprite {
 
     // springy joints: a touch of overshoot keeps motion loose
     const fast = state === 'run' || state === 'wallrun' || state === 'climb'
-    const k = fast ? 900 : 420
+    const k = fast ? 1400 : 420
     const c = 2 * Math.sqrt(k) * (fast ? 0.85 : 0.62)
     // substep so long frames can't blow the springs up
     const n = Math.max(1, Math.ceil(dt / (1 / 240)))
@@ -471,6 +481,7 @@ export class RunnerSprite {
     const st = this.style
     const C = st.colors
     const k = st.scale * st.thick
+    const graceful = st.face
     const out = []
     const seg = (a, b, r, col, far = false) => out.push({ a, b, r: r * k, col, far })
     const lerp = (a, b, t) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t]
@@ -478,10 +489,10 @@ export class RunnerSprite {
     // far side (B) first
     seg(j.shoulder, j.elbowB, 1.15, sleeve ? C.sleeveFar : C.skinFar, true)
     seg(j.elbowB, j.handB, 0.95, sleeve ? C.sleeveFar : C.skinFar, true)
-    seg(j.handB, j.handB, 1.15, C.gloveFar, true)
-    seg(j.pelvis, j.kneeB, 1.75, C.pantsFar, true)
-    seg(j.kneeB, j.ankleB, 1.3, C.pantsFar, true)
-    seg(j.ankleB, j.toeB, 1.0, C.shoeFar, true)
+    seg(j.handB, j.handB, graceful ? 0.8 : 1.15, C.gloveFar, true)
+    seg(j.pelvis, j.kneeB, graceful ? 1.5 : 1.75, C.pantsFar, true)
+    seg(j.kneeB, j.ankleB, graceful ? 1.05 : 1.3, C.pantsFar, true)
+    seg(j.ankleB, j.toeB, graceful ? 0.8 : 1.0, C.shoeFar, true)
     // cloth trails behind the body
     st.cloth.forEach((spec, ci) => {
       const pts = this.chainsLocal?.[ci] || []
@@ -491,23 +502,25 @@ export class RunnerSprite {
       }
     })
     // torso
-    seg(j.pelvis, j.chest, 2.05, st.colors.pantsTop ?? C.pants)
-    seg(lerp(j.pelvis, j.chest, 0.5), j.shoulder, 2.4, C.top)
-    if (st.cloth.some((c) => c.at === 'coat')) seg(j.pelvis, j.chest, 2.15, C.top)
+    seg(j.pelvis, j.chest, graceful ? 1.8 : 2.05, st.colors.pantsTop ?? C.pants)
+    seg(lerp(j.pelvis, j.chest, 0.35), j.shoulder, graceful ? 1.95 : 2.4, C.top)
+    if (st.cloth.some((c) => c.at === 'coat')) seg(j.pelvis, j.chest, 1.95, C.top)
     if (st.trim) seg(lerp(j.pelvis, j.shoulder, 0.15), lerp(j.pelvis, j.shoulder, 0.85), 0.6, C.trim)
     seg(j.shoulder, j.neck, 1.0, C.skin)
     // head + hair cap
-    seg(j.head, j.head, 2.75 * st.head, C.skin)
-    out.push({ hairCap: true, c: j.head, r: 2.95 * st.scale * st.head, col: C.hair })
+    if (graceful) out.push({ face: true, c: j.head, r: 2.65 * st.scale, col: C.skin })
+    else seg(j.head, j.head, 2.75 * st.head, C.skin)
+    out.push({ hairCap: true, c: j.head, r: 2.7 * st.scale * st.head, col: C.hair })
     // near side (A)
-    seg(j.pelvis, j.kneeA, 1.8, C.pants)
-    seg(j.kneeA, j.ankleA, 1.35, C.pants)
-    seg(j.ankleA, j.toeA, 1.05, C.shoe)
+    seg(j.pelvis, j.kneeA, graceful ? 1.65 : 1.8, C.pants)
+    seg(j.kneeA, j.ankleA, graceful ? 1.2 : 1.35, C.pants)
+    seg(j.ankleA, j.toeA, graceful ? 0.95 : 1.05, C.shoe)
     if (st.shade) seg(j.ankleA, j.toeA, 0.45, C.shoeFar)
-    seg(j.shoulder, j.elbowA, 1.2, sleeve ?? (st.sleeveless ? C.skin : C.skin))
-    seg(lerp(j.shoulder, j.elbowA, 0.55), lerp(j.shoulder, j.elbowA, 0.6), 1.2, C.band)
-    seg(j.elbowA, j.handA, 1.0, sleeve ?? C.skin)
-    seg(j.handA, j.handA, 1.2, C.glove)
+    seg(j.shoulder, j.elbowA, graceful ? 1 : 1.2, sleeve ?? C.skin)
+    seg(lerp(j.shoulder, j.elbowA, 0.55), lerp(j.shoulder, j.elbowA, 0.6), graceful ? 1 : 1.2, C.band)
+    seg(j.elbowA, j.handA, graceful ? 0.8 : 1.0, sleeve ?? C.skin)
+    seg(j.handA, j.handA, graceful ? 1 : 1.2, C.glove)
+    if (graceful) seg(j.hairRoot, j.hairRoot, 0.6, C.band)
     return out
   }
 
@@ -519,19 +532,26 @@ export class RunnerSprite {
     const face = this.cur.torso + this.cur.head + this.spin
     for (let pi = 0; pi < parts.length; pi++) {
       const part = parts[pi]
-      if (part.hairCap) {
+      if (part.hairCap || part.face) {
         const [cx, cy] = part.c
         const fx = Math.sin(-face), fy = Math.cos(-face)  // head "up" vector
         const reach = part.r + 1
         for (let y = Math.floor(cy - reach); y <= cy + reach; y++) {
           for (let x = Math.floor(cx - reach); x <= cx + reach; x++) {
             const dx = x + 0.5 - cx, dy = y + 0.5 - cy
-            if (dx * dx + dy * dy > part.r * part.r) continue
             // hair covers the back and the crown; the face stays clear
             const along = dx * fy - dy * fx         // + toward the face (forward)
             const upward = dx * fx + dy * fy
             const sc = this.style.scale
-            if (along > 0.9 * sc && upward < 1.1 * sc) continue
+            if (part.face) {
+              // An oval crown and a gently tapered jaw, rather than a round
+              // helmet. Clothing and athletic proportions carry the body.
+              const width = (upward < -0.7 * sc ? 1.65 : 2.15) * sc
+              if ((along / width) ** 2 + (upward / part.r) ** 2 > 1) continue
+            } else {
+              if (dx * dx + dy * dy > part.r * part.r) continue
+              if (along > (this.style.face ? 0 : 0.9) * sc && upward < 1.1 * sc) continue
+            }
             const px = x + ORIGIN_X, py = ORIGIN_Y - y - 1
             if (px >= 0 && py >= 0 && px < W && py < H) ids[py * W + px] = pi + 1
           }
@@ -558,7 +578,7 @@ export class RunnerSprite {
     const outline = pack(st.colors.outline ?? COLORS.outline)
     const [rdx, rdy] = this.rimDir
     const packed = parts.map((p) => pack(p.col))
-    const rimmed = parts.map((p) => (p.far ? pack(p.col) : pack(mix(p.col, this.rim, 0.45))))
+    const rimmed = parts.map((p) => (p.far ? pack(p.col) : pack(mix(p.col, this.rim, st.face ? 0.18 : 0.45))))
     const shaded = parts.map((p) => pack(mix(p.col, [10, 6, 20], st.shade)))
     // a pixel is shaded when, two steps away from the light, it leaves its part
     const away = (x, y, d) => {
@@ -572,7 +592,7 @@ export class RunnerSprite {
         const nx = x + rdx, ny = y - rdy
         const lit = nx < 0 || ny < 0 || nx >= W || ny >= H || ids[ny * W + nx] === 0
         let c = lit ? rimmed[id - 1] : packed[id - 1]
-        if (st.shade && !lit && (away(x, y, 1) !== id || away(x, y, 2) !== id)) c = shaded[id - 1]
+        if (st.shade && !lit && (away(x, y, 1) !== id || (!st.face && away(x, y, 2) !== id))) c = shaded[id - 1]
         buf.data[y * W + x] = c
       }
     }
@@ -591,12 +611,11 @@ export class RunnerSprite {
     const ex = Math.round(hx + (Math.cos(face) * 1.3 - Math.sin(face) * 0.5) * sc)
     const ey = Math.round(hy + (Math.sin(face) * 1.3 + Math.cos(face) * 0.5) * sc)
     const epx = ex + ORIGIN_X, epy = ORIGIN_Y - ey - 1
-    // a glowing visor in place of an eye
-    const visor = pack(st.colors.visor ?? COLORS.visor)
+    const visor = pack(st.face ? COLORS.outline : st.colors.visor ?? COLORS.visor)
     if (ids[epy * W + epx]) {
       buf.set(epx, epy, visor)
-      if (ids[epy * W + epx - 1]) buf.set(epx - 1, epy, visor)
-      if (sc > 1.3 && ids[epy * W + epx + 1]) buf.set(epx + 1, epy, visor)
+      if (!st.face && ids[epy * W + epx - 1]) buf.set(epx - 1, epy, visor)
+      if (!st.face && sc > 1.3 && ids[epy * W + epx + 1]) buf.set(epx + 1, epy, visor)
     }
     return buf
   }

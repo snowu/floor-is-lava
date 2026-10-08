@@ -14,11 +14,14 @@ import { paletteAt, pinPalette, PALETTE_NAMES } from '../pixel/palette.js'
 import { PPU } from '../pixel/sprites.js'
 import { toCanvas, css, mix, pack, PixelBuffer } from '../pixel/pixels.js'
 import { ACCENT } from '../pixel/palette.js'
+import { RoofWater } from '../pixel/water.js'
 
 const $ = (id) => document.getElementById(id)
 const runnerName = (id) => RUNNER_STYLES[id].name
 const makeRunner = (id) => new RunnerSprite(id)
-const state = { runner: 'courier', palette: 1, speed: 1, seed: 20261008, zoom: 2, paused: false, hitboxes: false, grid: false, pipeCount: 3, pipeSlide: false }
+const state = { runner: 'courier', palette: 1, speed: 1, seed: 20261008, zoom: 2, paused: false, hitboxes: false, grid: false, pipeCount: 3, pipeSlide: false, wet: false }
+let water = new RoofWater()
+const closeupWater = RUNNERS.map(() => new RoofWater())
 let stepRequested = false, visible = true
 const gridOn = (ctx, W, H) => {
   if (!state.grid) return
@@ -38,6 +41,8 @@ function collisionBox(ctx, x, y, w, h) {
 
 let level, bot, player, acc = 0, prev = { x: 0, y: 0 }
 function reset() {
+  water = new RoofWater()
+  closeupWater.forEach((fx) => { fx.drops = []; fx.ripples = [] })
   level = new Level(state.seed, { tutorial: false })
   level.ensure(300)
   player = createPlayer(0, level.roofAt(0))
@@ -56,7 +61,12 @@ function step(dt) {
     acc -= PHYS.FIXED_DT
     prev = { x: player.x, y: player.y }
     level.ensure(player.x + 150)
-    stepPlayer(player, bot.input(player), PHYS.FIXED_DT, level, [])
+    const events = []
+    stepPlayer(player, bot.input(player), PHYS.FIXED_DT, level, events)
+    if (state.wet) for (const e of events) if (['land', 'hardland', 'landslide'].includes(e.type)) {
+      water.splash(player.x, player.y, player.speed, 0.85, e.impact ?? 12)
+      closeupWater.forEach((fx) => fx.splash(0, 0, player.speed, 0.85, e.impact ?? 12))
+    }
     level.prune(player.x - 80)
     if (!player.alive) {
       const r = level.respawnPoint(player.x)
@@ -218,12 +228,22 @@ function frame(now) {
   // every style follows the same player, so the close-ups stay in sync
   for (const id of RUNNERS) {
     const r = sprite(`live:${id}`, id)
+    const fx = closeupWater[RUNNERS.indexOf(id)]
+    r.onStep = (kind) => {
+      if (!state.wet || kind !== 'run') return
+      const foot = r.joints?.[(r.lastStep & 1) ? 'ankleB' : 'ankleA']
+      const dx = (foot?.[0] ?? 0) / PPU
+      fx.splash(dx, 0, player.speed, 0.85)
+      if (id === state.runner) water.splash(rx + dx, ry, player.speed, 0.85)
+    }
     r.rim = rim
     r.rimDir = pal.sunX < 0.5 ? [-1, 1] : [1, 1]
     r.update(dt, player, rx * PPU, ry * PPU, null)
   }
   const sel = sprite(`live:${state.runner}`, state.runner)
   mctx.drawImage(runnerCanvas(`m:${state.runner}`, sel, dt), sx(rx) - ORIGIN_X, sy(ry) - ORIGIN_Y)
+  water.update(dt)
+  water.draw(mctx, sx, sy, pal)
   for (const f of foreground) mctx.drawImage(f.cv, f.x, f.y)
   for (const b of boxes) collisionBox(mctx, b.x, b.y, b.w, b.h)
   if (state.hitboxes) collisionBox(mctx, sx(rx) - PHYS.W * PPU / 2, sy(ry) - bodyHeight(player) * PPU, PHYS.W * PPU, bodyHeight(player) * PPU)
@@ -236,6 +256,9 @@ function frame(now) {
     c.ctx.fillStyle = css(pal.roof)
     c.ctx.fillRect(0, 58, c.cv.width, 14)
     c.ctx.drawImage(runnerCanvas(`c:${c.id}`, r, dt), 48 - ORIGIN_X, 58 - ORIGIN_Y)
+    const fx = closeupWater[RUNNERS.indexOf(c.id)]
+    fx.update(dt)
+    fx.draw(c.ctx, (x) => 48 + x * PPU, (y) => 58 - y * PPU, pal)
     c.fig.classList.toggle('on', c.id === state.runner)
     c.fig.setAttribute('aria-pressed', String(c.id === state.runner))
     gridOn(c.ctx, c.cv.width, c.cv.height)
@@ -377,9 +400,9 @@ function pick(kind, v) {
 const NOTES = {
   runner: {
     classic: 'Today’s runner: dark top, white pants, red shoes, ponytail. Rasterized at 24 fps.',
-    courier: 'The default (all three runners are now the same height). White top that pops against the night, dark pants, red gloves and shoes, a ponytail that streams behind, shading on the side away from the light. 30 fps.',
-    windbreaker: 'Unlocks with gold on any trial. Thicker build: orange windbreaker with a flapping hem, cyan scarf and ponytail trailing, white shoes. 60 fps.',
-    techwear: 'Unlocks with gold on Sprint, Relay and Gauntlet. Slimmest: dark long coat streaming behind, red scarf, cyan trim, white hair. 60 fps.',
+    courier: 'Compact athletic runner: white training top, dark trousers, red gloves and shoes. Clear face profile, tapered ponytail and a relaxed arm swing. 30 fps.',
+    windbreaker: 'Unlocks with gold on any trial. Same compact height in an orange windbreaker, with a loose hem, cyan scarf and soft ponytail. 60 fps.',
+    techwear: 'Unlocks with gold on Sprint, Relay and Gauntlet. Same compact height, dark long coat, red scarf, cyan trim and white ponytail. 60 fps.',
   },
 }
 
@@ -428,10 +451,25 @@ function drawScenerySheet() {
   const pal = paletteAt(0), host = $('scenery')
   host.replaceChildren()
   const items = ['tank', 'antenna', 'ac', 'dish', 'skylight', 'vents', 'solar', 'sign'].map((type, i) => ({ name: type === 'ac' ? 'Rear AC · scenery' : type, asset: recede(bakeDecor(type, ((state.seed + i * 17) % 100) / 100, pal), pal.mid, 0.32) }))
-  for (let style = 0; style < 3; style++) items.push({ name: ['Brick facade', 'Concrete facade', 'Corrugated facade'][style], asset: bakeFacade({ w: 96, roofH: 10, style, seed: state.seed, pal, wall: style }) })
+  const facades = $('facades')
+  facades.replaceChildren()
+  for (let style = 0; style < 4; style++) {
+    const cv = document.createElement('canvas')
+    cv.width = 240; cv.height = 136
+    const ctx = cv.getContext('2d')
+    drawSky(ctx, cv.width, cv.height, pal)
+    ctx.drawImage(toCanvas(bakeFacade({ w: cv.width, roofH: 10, style, seed: state.seed, pal, wall: style })), 0, 32)
+    ctx.drawImage(sampleRunner(pal), 194 - ORIGIN_X, 42 - ORIGIN_Y)
+    gridOn(ctx, cv.width, cv.height)
+    const fig = document.createElement('figure'), cap = document.createElement('figcaption')
+    cap.textContent = ['Brick / recessed windows', 'Glass / curtain wall', 'Concrete / panel bays', 'Metal / ribbed cladding'][style]
+    fig.append(cv, cap)
+    facades.append(fig)
+  }
+  for (let i = 0; i < 3; i++) items.push({ name: 'Wall billboard', asset: bakeBillboard(specFor(state.seed + i * 19, 'facade'), pal, 0) })
   // Use the same generator as the world and include each advertising mount.
   const seen = new Set()
-  for (let i = 0; i < 120 && seen.size < 8; i++) {
+  for (let i = 0; i < 120 && seen.size < 5; i++) {
     const spec = specFor(state.seed + i, i % 2 ? 'near' : 'facade')
     if (seen.has(spec.kind)) continue
     seen.add(spec.kind)
@@ -496,6 +534,7 @@ $('seed').addEventListener('keydown', (e) => { if (e.code === 'Enter') applySeed
 $('shuffle-seed').addEventListener('click', () => { $('seed').value = crypto.getRandomValues(new Uint32Array(1))[0]; applySeed() })
 for (const key of ['hitboxes', 'grid']) $(key).addEventListener('change', () => { state[key] = $(key).checked; redrawSheets() })
 $('pipe-count').addEventListener('change', () => { state.pipeCount = Number($('pipe-count').value); drawPipeSheet() })
+$('wet-roof').addEventListener('change', (e) => { state.wet = e.target.checked })
 $('preview-slide').addEventListener('click', () => {
   state.pipeSlide = !state.pipeSlide
   $('preview-slide').setAttribute('aria-pressed', String(state.pipeSlide))

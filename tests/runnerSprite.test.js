@@ -4,9 +4,9 @@ import { paletteAt, pinPalette, districtName, PALETTE_NAMES } from '../src/pixel
 
 const STATES = ['run', 'air', 'slide', 'roll', 'vault', 'mantle', 'climb', 'wallslide', 'wallrun', 'zip', 'stumble', 'blocked', 'dead']
 
-describe('pixel runner sprite', () => {
+describe.each(['classic', 'courier', 'windbreaker', 'techwear'])('%s pixel runner sprite', (style) => {
   it('stays stable through long frames in every state', () => {
-    const r = new RunnerSprite()
+    const r = new RunnerSprite(style)
     let x = 0
     for (const state of STATES) {
       for (let i = 0; i < 30; i++) {
@@ -22,7 +22,7 @@ describe('pixel runner sprite', () => {
   })
 
   it('rasterizes an outlined figure', () => {
-    const r = new RunnerSprite()
+    const r = new RunnerSprite(style)
     for (let i = 0; i < 20; i++) r.update(1 / 60, { state: 'run', speed: 12, vy: 0, t: 0 }, i * 3, 100, null)
     const buf = r.raster()
     const opaque = buf.data.filter((c) => c >>> 24).length
