@@ -4,7 +4,7 @@
 // a seed alone; bakeBillboard() paints it with the current palette; the view
 // animates tickers, holos and ad rotation on top.
 import { PixelBuffer, pack, mix, hash, dither } from './pixels.js'
-import { drawText } from './sprites.js'
+import { drawText, outlined } from './sprites.js'
 import { artSize, artColors, drawArt, drawBig, bigW, drawKanji } from './art.js'
 
 const ADS = [
@@ -20,11 +20,20 @@ const ADS = [
   { brand: 'MARS', tag: 'NEW COLONY', art: null, bg: 'sunset' },
   { brand: 'ORBIT AIR', tag: 'FLY HIGH', art: 'planet' },
   { brand: 'SYNTH', tag: 'UPGRADE NOW', art: 'face' },
-  { brand: 'OKAMI', tag: 'SAKE', art: null },
+  { brand: 'OKAMI', tag: 'SAKE', art: 'bottle' },
   { brand: 'NEXA', tag: 'TRUST US', art: 'eye' },
+  { brand: 'OBEY', tag: 'CURFEW 22.00', art: 'badge' },
+  { brand: 'CITIZEN', tag: 'SCORE 742', art: 'badge' },
 ]
 const BGS = ['plain', 'bands']
-const TICKERS = ['CURFEW 22.00', 'SLEEP IS OPTIONAL', 'NKO +3.2%', 'YOUR DATA OUR FUTURE', 'RAIN 80%', 'REPORT UNLICENSED RUNNERS']
+// LED news crawls. Each channel has a badge, a colour and its own feed;
+// market items are [symbol, change] and get an up or down arrow.
+export const CHANNELS = [
+  { label: 'CH9', color: [96, 206, 255], feed: ['CURFEW 22.00', 'RAIN 80%', 'BLACKOUT SECTOR 7', 'WATER RATION -20%', 'TRANSIT DELAYED', 'AIR INDEX 312'] },
+  { label: '!!!', color: [255, 72, 64], feed: ['REPORT UNLICENSED RUNNERS', 'STAY INDOORS', 'CITIZEN SCORE AUDIT', 'ID CHECK AHEAD', 'DRONE PATROL ACTIVE'] },
+  { label: 'NKO', color: [120, 236, 132], feed: [['NKO', 3.2], ['HLX', -1.4], ['KOI', 0.8], ['SYN', -6.1], ['NEXA', 12.5], ['ORB', -0.3]] },
+  { label: 'PSA', color: [255, 196, 84], feed: ['SLEEP IS OPTIONAL', 'YOUR DATA OUR FUTURE', 'OBEY THE CURFEW', 'HAPPY WORKERS', 'TRUST THE GRID'] },
+]
 
 // Which mounts appear where, with weights.
 const KINDS = {
@@ -47,6 +56,7 @@ const adFor = (seed) => ({
   bgStyle: BGS[Math.floor(hash(seed, 3) * BGS.length)],
   layout: Math.floor(hash(seed, 4) * 3),
   flip: hash(seed, 5) < 0.5,
+  seed,
 })
 
 // Shape of a billboard from its seed and placement: kind and pixel size.
@@ -56,8 +66,8 @@ export function specFor(seed, place) {
   const big = place === 'roof' || place === 'facade' ? 2 : place === 'near' ? 1 : 0
   const s = { kind, seed, place, ads: [adFor(seed * 3 + 1), adFor(seed * 3 + 2)] }
   if (kind === 'board') {
-    s.pw = [38, 62, 112][big] + Math.floor(r(2) * [8, 12, 10][big])
-    s.ph = [17, 28, 42][big] + Math.floor(r(3) * 4)
+    s.pw = [54, 84, 112][big] + Math.floor(r(2) * [8, 12, 10][big])
+    s.ph = [25, 36, 42][big] + Math.floor(r(3) * 4)
     s.legs = place === 'facade' ? 0 : [8, 10, 14][big]
     s.w = s.pw + 4; s.h = s.ph + 7 + s.legs
   } else if (kind === 'round') {
@@ -71,8 +81,12 @@ export function specFor(seed, place) {
     s.kanji = r(5) < 0.55
     s.w = 13; s.h = s.glyphs * 9 + 10
   } else if (kind === 'ticker') {
-    s.text = TICKERS[Math.floor(r(7) * TICKERS.length)]
-    s.w = place === 'facade' ? 70 + Math.floor(r(8) * 40) : 48; s.h = 11
+    s.channel = Math.floor(r(7) * CHANNELS.length)
+    const feed = CHANNELS[s.channel].feed, start = Math.floor(r(9) * feed.length)
+    s.items = [0, 1, 2].map((i) => feed[(start + i) % feed.length])
+    s.w = place === 'facade' ? 70 + Math.floor(r(8) * 40) : 46 + Math.floor(r(8) * 18); s.h = 16
+    s.badge = 15
+    s.screen = [s.badge + 1, 4, s.w - s.badge - 2, 9]                // x, y, w, h of the LED field
 
   }
   return s
@@ -89,15 +103,25 @@ const BOARD_THEMES = {
   koi: [[246, 166, 130], [36, 49, 61]],
   shoe: [[238, 152, 94], [38, 29, 52]],
   planet: [[137, 196, 233], [28, 30, 64]],
+  bottle: [[232, 112, 96], [40, 26, 38]],
+  badge: [[240, 92, 84], [24, 26, 40]],
 }
+const THEME_PLAIN = [[236, 210, 165], [46, 32, 56]]
+// A second, contrasting colour per campaign for bursts, washes and stickers.
+const POP = {
+  can: [255, 90, 160], face: [236, 96, 180], bowl: [255, 230, 120], cat: [255, 100, 110],
+  skull: [140, 240, 200], eye: [255, 160, 70], pill: [255, 120, 170], koi: [100, 200, 230],
+  shoe: [120, 220, 255], planet: [255, 140, 200], bottle: [255, 214, 120], badge: [90, 170, 255],
+}
+const STICKERS = ['NEW', '24H', 'HOT', 'NOW', 'TRY', 'ONLY']
 
 // Match the visible campaign, including the roof board rotation.
 export function billboardLight(s, pal, time = 0) {
   const period = 12 + hash(s.seed, 78) * 6
   const frame = s.place === 'facade' ? 0 : Math.floor(time / period + hash(s.seed, 79)) & 1
   const ad = s.ads[frame]
-  return s.kind === 'board' && s.pw >= 90 && s.ph >= 38
-    ? (BOARD_THEMES[ad.art]?.[0] ?? [236, 210, 165]) : inks(ad, pal).hue
+  if (s.kind === 'ticker') return CHANNELS[s.channel].color
+  return s.kind === 'board' ? (BOARD_THEMES[ad.art] ?? THEME_PLAIN)[0] : inks(ad, pal).hue
 }
 
 // ── palettes ─────────────────────────────────────────────────────────────
@@ -180,19 +204,11 @@ function background(b, a, c, x, y, w, h) {
   for (let yy = 0; yy < h; yy++) b.rect(x, y + yy, w, 1, bands[Math.min(2, Math.floor((yy / h) * 3))])
 }
 
-function paintAd(b, a, pal, x, y, w, h) {
-  const c = inks(a, pal)
-  const big = w >= 90 && h >= 38
-  if (!big) {
-    background(b, a, c, x, y, w, h)
-    const word = a.brand.split(' ')[0]
-    if (bigW(word) <= w - 8) drawBig(b, word, x + 4, y + Math.floor((h - 7) / 2), c.ink)
-    else drawText(b, word.slice(0, Math.floor((w - 7) / 4)), x + 4, y + Math.floor((h - 5) / 2), c.ink)
-    return
-  }
+function paintAd(b, a, pal, x, y, w, h, skyline) {
+  if (skyline) { paintSmall(b, a, pal, x, y, w, h); return }
   // Printed campaigns have their own brand colors. District lighting nudges
   // the paper and frame, instead of turning every ad into the same dark UI.
-  const [accent, ground] = BOARD_THEMES[a.art] ?? [[236, 210, 165], [46, 32, 56]]
+  const [accent, ground] = BOARD_THEMES[a.art] ?? THEME_PLAIN
   const base = mix(ground, pal.shadow, 0.12)
   const paper = mix([241, 235, 220], pal.light, 0.06)
   const copy = pack(paper), secondary = pack(mix(paper, accent, 0.4))
@@ -234,19 +250,265 @@ function paintAd(b, a, pal, x, y, w, h) {
 
 }
 
+// ── small skyline boards ─────────────────────────────────────────────────
+// Seen from blocks away, so they lean on one strong shape: a hero sprite, a
+// colour block and a short line of copy. Each ad is a backlit screen
+// (scanlines, glowing type) on a dark or brand-flooded field, and picks one of three
+// layouts. Grime and graffiti come from the seed.
+
+const firstFit = (list, room, width) => list.find((t) => t && width(t) <= room)
+
+function wrap(text, room, width = smallW) {
+  const lines = []
+  for (const word of text.split(' ')) {
+    const last = lines.length - 1
+    if (last >= 0 && width(`${lines[last]} ${word}`) <= room) lines[last] += ` ${word}`
+    else if (width(word) <= room) lines.push(word)
+    else break
+  }
+  return lines
+}
+
+// Slogan lines in the 5x7 face when the whole slogan fits the box, else 3x5.
+function slogan(b, text, x, y, room, height, color) {
+  const big = wrap(text, room, bigW)
+  const useBig = big.join(' ') === text && big.length * 9 - 2 <= height
+  const lines = useBig ? big : wrap(text, room)
+  const step = useBig ? 9 : 6
+  let ty = y
+  for (const line of lines) {
+    if (ty + step - 1 > y + height) break
+    if (useBig) drawBig(b, line, x, ty, color); else drawText(b, line, x, ty, color)
+    ty += step
+  }
+  return ty
+}
+
+// Rows a cropped sprite keeps in view, so a portrait keeps its eyes.
+const FOCUS = { face: 9 }
+
+// Sprite centred in a box and cropped to it, so tall portraits read as close-ups.
+function artIn(b, name, x, y, w, h, colors, flip) {
+  const [aw, ah] = artSize(name)
+  const clip = new PixelBuffer(w, h)
+  const top = ah <= h ? (h - ah) >> 1 : Math.max(h - ah, Math.min(0, (h >> 1) - (FOCUS[name] ?? ah >> 1)))
+  drawArt(clip, name, (w - aw) >> 1, top, colors, 1, flip)
+  b.blit(clip, x, y)
+}
+
+// Alternating wedges radiating from (cx, cy), filling a box.
+function rays(b, cx, cy, x0, y0, w, h, c1, c2, n = 10) {
+  for (let py = y0; py < y0 + h; py++) for (let px = x0; px < x0 + w; px++) {
+    const k = Math.floor((Math.atan2(py - cy, px - cx) + Math.PI) / (2 * Math.PI) * n * 2)
+    b.set(px, py, k & 1 ? c1 : c2)
+  }
+}
+
+// A round promo sticker with a short word on it.
+function sticker(b, x, y, text, color, ink) {
+  const w = smallW(text) + 5, r = (w >> 1) + 0.5
+  b.disc(x + r, y + r - 1, r + 1, pack(mix(color, [0, 0, 0], 0.5)))
+  b.disc(x + r, y + r - 1, r, pack(color))
+  drawText(b, text, x + 3, y + Math.round(r) - 3, ink)
+}
+
+function kanjiColumn(b, seed, x, y, h, color) {
+  for (let i = 0, gy = y; gy + 5 <= y + h; i++, gy += 7) drawKanji(b, seed * 7 + i, x, gy, color, 5)
+}
+
+function paintSmall(b, a, pal, x, y, w, h) {
+  const r = (k) => hash(a.seed, k, 33)
+  const [accent, ground] = BOARD_THEMES[a.art] ?? THEME_PLAIN
+  const near = w >= 80
+  // every board is a backlit display: a dark one, or one flooded with the brand colour
+  const bg = r(1) < 0.45 ? mix(accent, pal.shadow, 0.7) : mix(ground, pal.shadow, 0.15)
+  const copy = mix(accent, [255, 255, 255], 0.75)
+  const pop = POP[a.art] ?? [255, 120, 170]
+  const quiet = mix(pop, bg, 0.3)
+  const ink = pack(mix(ground, [0, 0, 0], 0.4))
+  const stick = STICKERS[Math.floor(r(20) * STICKERS.length)]
+  const art = artColors(accent, pal, [70, 58, 83])
+  art.e = pack(mix(accent, [255, 255, 255], 0.6))
+  const [aw, ah] = a.art ? artSize(a.art) : [0, 0]
+  const title = (room) => firstFit([a.brand, a.brand.split(' ')[0]], room, smallW)
+  const titleBig = (room) => firstFit([a.brand, a.brand.split(' ')[0]], room, bigW)
+  const lit = (text, tx, ty, big) => {
+    const g = new PixelBuffer(big ? bigW(text) : smallW(text), big ? 7 : 5)
+    if (big) drawBig(g, text, 0, 0, pack(copy)); else drawText(g, text, 0, 0, pack(copy))
+    if (a.bg === 'sunset') b.blit(outlined(g, pack(mix(ground, [0, 0, 0], 0.5))), tx - 1, ty - 1)
+    neon(b, g, tx, ty, accent)
+  }
+
+  if (a.bg === 'sunset') background(b, a, inks(a, pal), x, y, w, h)
+  else {
+    b.rect(x, y, w, h, pack(bg))
+    for (let yy = 0; yy < h; yy++) {                                 // a banded wash of the pop colour from the top
+      const t = Math.round((1 - yy / h) * 3) / 3
+      b.rect(x, y + yy, w, 1, pack(mix(bg, pop, t * 0.2)))
+    }
+    for (let yy = 0; yy < h; yy++) {                                 // backlight falloff
+      const t = Math.abs(yy / h - 0.4)
+      if (t > 0.3) b.rect(x, y + yy, w, 1, pack(mix(bg, [0, 0, 0], (t - 0.3) * 0.8)))
+    }
+  }
+  // far boards are too small for the product stack unless the brand fits beside the sprite
+  const farProduct = a.art && smallW(a.brand.split(' ')[0]) <= w - Math.min(aw + 6, Math.floor(w * 0.45)) - 6
+  const layout = !a.art ? 2 : a.layout === 1 && (near || farProduct) ? 1 : 0
+  let tagArea = null                                                  // where graffiti may land
+
+  if (layout === 0) {
+    // poster: hero sprite on a halo, brand on a solid strip along the bottom
+    const brandBig = firstFit([a.brand, a.brand.split(' ')[0]], w - 4, bigW)
+    const strip = brandBig ? 9 : 7, artH = h - strip
+    const ax = a.flip ? x + 2 : x + w - Math.min(aw, Math.floor(w * 0.55)) - 2
+    const boxW = Math.min(aw, Math.floor(w * 0.55))
+    const cx = ax + (boxW >> 1), cy = y + (artH >> 1)
+    const rx0 = Math.max(x, ax - 8), rx1 = Math.min(x + w, ax + boxW + 8)
+    rays(b, cx, cy, rx0, y, rx1 - rx0, artH, pack(mix(bg, pop, 0.3)), pack(mix(bg, accent, 0.2)))
+    b.rect(a.flip ? rx1 : rx0 - 1, y, 1, artH, pack(mix(bg, pop, 0.5)))
+    b.disc(cx + 0.5, cy + 0.5, Math.min(artH, boxW) * 0.42 + 1, pack(mix(bg, accent, 0.35)))
+    artIn(b, a.art, ax, y + 1, boxW, artH - 1, art, a.flip)
+    tagArea = [ax, y + 2, boxW, artH - 4]
+    b.rect(x, y + artH, w, strip, pack(accent))
+    b.rect(x, y + artH, w, 1, pack(mix(accent, [255, 255, 255], 0.4)))
+    if (brandBig) drawBig(b, brandBig, x + 2, y + artH + 1, ink)
+    else if (title(w - 4)) drawText(b, title(w - 4), x + 2, y + artH + 1, ink)
+    // a promo sticker slapped on the end of the strip, if the brand leaves room; else hazard slashes
+    const brandEnd = x + 2 + (brandBig ? bigW(brandBig) : smallW(title(w - 4) ?? ''))
+    const sw = smallW(stick) + 7
+    if (near && brandEnd < x + w - sw - 3) sticker(b, x + w - sw - 2, y + artH - 6, stick, pop, ink)
+    else for (let i = 0; i < 3; i++) b.line(x + w - 12 + i * 4, y + artH - 1, x + w - 8 + i * 4, y + artH - 5, pack(pop))
+    const side = a.flip ? x + boxW + 4 : x + 2, room = w - boxW - 6
+    const ty = artH >= 12 ? slogan(b, a.tag, side, y + 2, room, artH - 3, pack(copy)) : y + 2
+    if (ty > y + 2) b.rect(side, ty - 1, Math.min(room, 18), 1, pack(pop))
+    if (room >= 5) kanjiColumn(b, a.seed, a.flip ? x + w - 7 : side, ty + 1, y + artH - ty - 2, pack(quiet))
+  } else if (layout === 1) {
+    // product: hero panel on one side, copy stack and a kanji rail on the other
+    const heroW = Math.min(aw + 6, Math.floor(w * 0.45))
+    const hx = a.flip ? x + w - heroW : x
+    const hero = mix(bg, accent, 0.25)
+    rays(b, hx + (heroW >> 1), y + (h >> 1), hx, y, heroW, h, pack(hero), pack(mix(hero, pop, 0.35)), 8)
+    b.rect(a.flip ? hx : hx + heroW - 1, y, 1, h, pack(mix(bg, pop, 0.7)))
+    artIn(b, a.art, hx + 1, y + 1, heroW - 2, h - 2, art, a.flip)
+    if (near) sticker(b, a.flip ? x + w - smallW(stick) - 7 : x + 1, y + h - 12, stick, pop, ink)
+    tagArea = [hx, y + (h >> 1), heroW, h >> 1]
+    const rail = near ? 8 : 0
+    const cx = a.flip ? x + 3 + rail : x + heroW + 3, room = w - heroW - 6 - rail
+    const big = titleBig(room)
+    const t = big || title(room)
+    let ty = y + (near ? 4 : 2)
+    if (t) { lit(t, cx, ty, !!big); ty += big ? 10 : 7 }
+    ty = slogan(b, a.tag, cx, ty, room, y + h - 2 - ty, pack(mix(copy, accent, 0.45)))
+    const bar = new PixelBuffer(Math.min(room, 14), 1); bar.rect(0, 0, bar.w, 1, pack(pop))
+    if (ty <= y + h - 5) neon(b, bar, cx, y + h - 4, pop)
+    if (rail) {
+      const rx = a.flip ? x + 1 : x + w - rail
+      b.rect(rx, y, rail - 1, h, pack(mix(mix(bg, pop, 0.25), [0, 0, 0], 0.3)))
+      kanjiColumn(b, a.seed, rx + 1, y + 3, h - 5, pack(mix(pop, [255, 255, 255], 0.3)))
+    }
+  } else {
+    // type: the brand alone in big glowing letters, slogan in an inverted tab
+    const big = titleBig(w - 6), t = big || title(w - 6)
+    const tw = big ? bigW(t) : smallW(t)
+    const ty = y + Math.max(2, Math.floor(h * 0.18))
+    lit(t, x + ((w - tw) >> 1), ty, !!big)
+    const gy = ty + (big ? 10 : 7)
+    const tagBig = h >= 30 && firstFit([a.tag], w - 8, bigW)
+    const tag = tagBig || firstFit([a.tag, a.tag.split(' ')[0]], w - 8, smallW)
+    const tw2 = tagBig ? bigW(tag) : smallW(tag ?? ''), th = tagBig ? 9 : 7
+    if (tag && gy + th <= y + h) {
+      const tx = x + ((w - tw2) >> 1), ink = pack(mix(ground, [0, 0, 0], 0.4))
+      b.rect(tx - 2, gy - 1, tw2 + 4, th, pack(accent))
+      if (tagBig) drawBig(b, tag, tx, gy, ink); else drawText(b, tag, tx, gy, ink)
+    }
+    if (h >= 26) for (let i = 0, n = Math.floor((w - 8) / 7); i < n; i++) drawKanji(b, a.seed * 3 + i, x + 4 + i * 7, y + h - 7, pack(quiet), 5)
+    if (h >= 26) tagArea = [x, y + h - 9, w, 8]
+  }
+
+  // wear: scanlines, a dead LED module, sometimes a graffiti tag
+  for (let yy = y + 1; yy < y + h; yy += 2) for (let xx = x; xx < x + w; xx++) {
+    const v = b.get(xx, yy)
+    b.set(xx, yy, pack(mix([v & 255, (v >>> 8) & 255, (v >>> 16) & 255], [0, 0, 0], 0.1)))
+  }
+  if (tagArea && r(2) < 0.45) {
+    const [ax, ay, aw2, ah2] = tagArea, dw = Math.min(aw2, 3 + Math.floor(r(3) * 4)), dh = Math.min(ah2, 2 + Math.floor(r(4) * 3))
+    b.rect(ax + Math.floor(r(5) * (aw2 - dw)), ay + Math.floor(r(6) * (ah2 - dh)), dw, dh, pack(mix(bg, [0, 0, 0], 0.6)))
+  }
+  if (tagArea && tagArea[2] >= 14 && r(7) < 0.35) {
+    const [ax, ay, aw2, ah2] = tagArea
+    const spray = pack(pal.neon[Math.floor(r(8) * pal.neon.length)])
+    const gx = ax + 1 + Math.floor(r(9) * (aw2 - 13)), gy = ay + Math.min(ah2 - 3, 2 + Math.floor(r(6) * ah2))
+    for (let i = 0; i < 12; i++) b.set(gx + i, gy + Math.round(Math.sin(i * 1.3 + a.seed) * 2), spray)
+    b.line(gx + 2, gy - 2, gx + 4, gy + 3, spray); b.line(gx + 8, gy + 3, gx + 11, gy - 2, spray)
+  }
+}
+
+// ── tickers ──────────────────────────────────────────────────────────────
+
+const ARROW = { up: ['00100', '01110', '11111'], down: ['11111', '01110', '00100'] }
+
+// The lit crawl: every feed item in its own colour, diamonds between them,
+// led in by a blank screen's width so text enters from the right.
+function bakeTickerStrip(s) {
+  const ch = CHANNELS[s.channel], lead = s.screen[2]
+  const pieces = []
+  const light = mix(ch.color, [255, 255, 255], 0.55)
+  for (const item of s.items) {
+    if (Array.isArray(item)) {
+      const [sym, d] = item, up = d >= 0
+      const tone = up ? [120, 236, 132] : [255, 84, 76]
+      pieces.push([sym, [230, 236, 244]], [up ? 'up' : 'down', tone], [`${up ? '+' : ''}${d.toFixed(1)}%`, tone])
+    } else pieces.push([item, light])
+    pieces.push(['sep', ch.color])
+  }
+  const width = (p) => p === 'sep' ? 7 : p === 'up' || p === 'down' ? 7 : bigW(p) + 4
+  const strip = new PixelBuffer(lead + pieces.reduce((n, [p]) => n + width(p), 0), 7)
+  let x = lead
+  for (const [p, c] of pieces) {
+    if (p === 'sep') { strip.rect(x + 1, 3, 3, 1, pack(c)); strip.rect(x + 2, 2, 1, 3, pack(c)) }
+    else if (ARROW[p]) ARROW[p].forEach((row, ry) => { for (let i = 0; i < 5; i++) if (row[i] === '1') strip.set(x + i, 2 + ry, pack(c)) })
+    else drawBig(strip, p, x, 0, pack(c))
+    x += width(p)
+  }
+  return strip
+}
+
+// Glass over the LED field: a dot mask that breaks lit text into diodes,
+// a soft glare, and sometimes a dead column.
+function bakeTickerGlass(s) {
+  const [sx, sy, sw, sh] = s.screen
+  const b = new PixelBuffer(s.w, s.h)
+  for (let y = sy; y < sy + sh; y++) for (let x = sx; x < sx + sw; x++) if ((x + y) & 1) b.set(x, y, pack([0, 0, 0], 70))
+  for (let i = 0; i < 3; i++) b.line(sx + 6 + i, sy, sx + 6 + i - sh + 1, sy + sh - 1, pack([255, 255, 255], 18))
+  if (hash(s.seed, 94) < 0.5) b.rect(sx + 4 + Math.floor(hash(s.seed, 95) * (sw - 8)), sy, 1 + Math.floor(hash(s.seed, 96) * 2), sh, pack([6, 6, 12], 230))
+  return b
+}
+
+// Draw a ticker at time t. `get(frame)` returns baked frames as canvases.
+export function drawTicker(ctx, s, get, x, y, t) {
+  const [sx, sy, sw] = s.screen
+  ctx.drawImage(get(0), x, y)
+  const strip = get(1)
+  let off = Math.floor(t * 20 + hash(s.seed, 79) * 500) % strip.width
+  if (hash(Math.floor(t * 4), s.seed, 97) < 0.03) off = (off + 3) % strip.width          // signal hiccup
+  const take = Math.min(sw, strip.width - off)
+  ctx.drawImage(strip, off, 0, take, 7, x + sx, y + sy + 1, take, 7)
+  if (take < sw) ctx.drawImage(strip, 0, 0, sw - take, 7, x + sx + take, y + sy + 1, sw - take, 7)
+  ctx.drawImage(get(2), x, y)
+  const ch = CHANNELS[s.channel]
+  const on = s.channel === 1 ? Math.floor(t * 4) & 1 : Math.floor(t * 1.5 + s.seed) & 1
+  ctx.fillStyle = `rgb(${on ? ch.color.join(',') : '40,20,24'})`
+  ctx.fillRect(x + 2, y + sy + 7, 2, 1)
+}
+
 // ── mounts ───────────────────────────────────────────────────────────────
 
 export function bakeBillboard(s, pal, frame) {
   const metal = METAL(pal), metalL = METAL_L(pal)
   const a = s.ads[frame & 1]
 
-  if (s.kind === 'ticker' && frame === 1) {
-    // the lit text strip the view scrolls through the housing
-    const c = inks(a, pal)
-    const strip = new PixelBuffer(bigW(s.text) + s.w, 7)
-    drawBig(strip, s.text, s.w, 0, pack(mix(c.hue, [255, 220, 120], 0.35)))
-    return strip
-  }
+  if (s.kind === 'ticker' && frame === 1) return bakeTickerStrip(s)
+  if (s.kind === 'ticker' && frame === 2) return bakeTickerGlass(s)
   const b = new PixelBuffer(s.w, s.h)
 
   if (s.kind === 'board') {
@@ -264,7 +526,7 @@ export function bakeBillboard(s, pal, frame) {
     b.rect(0, 3, s.w, 1, metalL)
     b.rect(0, 4, 1, ph + 2, metalL)
     b.rect(s.w - 1, 4, 1, ph + 3, shadow)
-    paintAd(b, a, pal, 2, 5, pw, ph)
+    paintAd(b, a, pal, 2, 5, pw, ph, s.place === 'far' || s.place === 'near')
     const lamps = pw > 50 ? 3 : 2
     const c = inks(a, pal)
     const beam = pack(mix(c.top, [255, 244, 214], 0.3))
@@ -332,10 +594,27 @@ export function bakeBillboard(s, pal, frame) {
   }
 
   if (s.kind === 'ticker') {
-    const c = inks(a, pal)
-    b.rect(0, 0, s.w, s.h, metal)
-    const off = pack(mix(c.hue, [6, 4, 12], 0.82))
-    for (let y = 2; y < s.h - 2; y++) for (let x = 2; x < s.w - 2; x++) if ((x + y) & 1) b.set(x, y, off)
+    const ch = CHANNELS[s.channel], [sx, sy, sw, sh] = s.screen
+    const shadow = pack(mix(pal.shadow, [6, 8, 15], 0.55))
+    for (const bx of [4, s.w - 6]) { b.rect(bx, 0, 2, 3, metal); b.set(bx, 0, metalL) }       // hangers
+    b.rect(0, 2, s.w, 13, metal)
+    b.rect(0, 2, s.w, 1, metalL)
+    b.rect(0, 14, s.w, 1, shadow)
+    for (const bx of [1, s.w - 2]) b.set(bx, 3, metalL)                                         // bolts
+    // channel badge: label over a "live" lamp the view blinks
+    b.rect(1, sy, s.badge - 1, sh, pack(mix(ch.color, pal.shadow, 0.2)))
+    b.rect(1, sy, s.badge - 1, 1, pack(mix(ch.color, [255, 255, 255], 0.35)))
+    drawText(b, ch.label, 1 + ((s.badge - 1 - smallW(ch.label)) >> 1), sy + 1, pack(mix(ch.color, [0, 0, 0], 0.8)))
+    b.rect(2, sy + 7, s.badge - 3, 1, pack(mix(ch.color, [0, 0, 0], 0.7)))
+    b.rect(s.badge, sy, 1, sh, shadow)
+    // dark LED field with unlit diodes
+    const field = mix(ch.color, [4, 4, 10], 0.9)
+    b.rect(sx, sy, sw, sh, pack(field))
+    for (let y = sy; y < sy + sh; y++) for (let x = sx; x < sx + sw; x++) if (!((x + y) & 1)) b.set(x, y, pack(mix(ch.color, [4, 4, 10], 0.8)))
+    // power cable sagging off one end, rust under the bolts
+    const cx = hash(s.seed, 91) < 0.5 ? 3 : s.w - 4, dir = cx < 8 ? 1 : -1
+    for (let i = 0; i < 7; i++) b.set(cx + dir * i, 15 + (i > 1 && i < 6 ? 1 : 0), pack([18, 16, 26]))
+    for (const bx of [1, s.w - 2]) if (hash(s.seed, bx, 92) < 0.6) b.rect(bx, 4, 1, 2 + Math.floor(hash(s.seed, bx, 93) * 4), pack(mix(pal.shadow, [120, 70, 50], 0.5)))
     return b
   }
 

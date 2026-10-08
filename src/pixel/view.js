@@ -7,7 +7,7 @@ import { bakeLightHalo, drawLightHalo, drawSteam, ParkourFX } from './effects.js
 import { drawRoofSurface, drawContactShadow, drawRunnerContact, equipmentLight } from './roof.js'
 import { PPU, bakeDecor, bakeBird, bakeCloud, bakeCar, recede, outlined } from './sprites.js'
 import { CITY, bakeTower, bakeFog, bakeFacade } from './city.js'
-import { bakeBillboard, specFor, inks, billboardLight } from './billboard.js'
+import { bakeBillboard, specFor, inks, billboardLight, drawTicker } from './billboard.js'
 import { drawBig, bigW } from './art.js'
 import { bakeObstacle, lipOf, bakePipe, bakePipeFront, pipeFrame, bakeFence, drawFenceLive } from './obstacles.js'
 import { PHYS, HEIST } from '../sim/config.js'
@@ -550,6 +550,7 @@ export class PixelView {
     const s = (it.ad ??= specFor(it.seed, li === 2 ? 'near' : 'far'))
     const top = base - it.h
     let ax = x + ((it.w - s.w) >> 1), ay = top - s.h + 2
+    if (s.kind === 'board' && s.w > it.w + 16) return                 // too heavy for a slim tower
     if (s.kind === 'holo') ay = top - s.h - 5
     else if (s.kind === 'banner') { ax = hash(it.seed, 80) < 0.5 ? x - 2 : x + it.w - s.w + 2; ay = top + 8 }
     else if (s.kind === 'screen' || s.kind === 'ticker') {
@@ -579,15 +580,7 @@ export class PixelView {
       ctx.drawImage(get(0), x, y)
       return
     }
-    if (s.kind === 'ticker') {
-      ctx.drawImage(get(0), x, y)
-      const strip = get(1), iw = s.w - 4
-      const off = Math.floor(t * (s.place === 'facade' ? 9 : 22) + h1 * 500) % strip.width
-      const take = Math.min(iw, strip.width - off)
-      ctx.drawImage(strip, off, 0, take, 7, x + 2, y + 2, take, 7)
-      if (take < iw) ctx.drawImage(strip, 0, 0, iw - take, 7, x + 2 + take, y + 2, iw - take, 7)
-      return
-    }
+    if (s.kind === 'ticker') { drawTicker(ctx, s, get, x, y, t); return }
     if (s.kind === 'holo') {
       if (hash(Math.floor(t * 12), s.seed) < 0.03) return
       const period = 8, u = (t + h1 * period) % period

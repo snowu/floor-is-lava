@@ -377,6 +377,23 @@ figcaption {
   border:1px solid var(--line)
 }
 
+#skyline-ads canvas {
+  width:100%;
+  height:auto
+}
+
+.billboard-grid {
+  display:grid;
+  grid-template-columns:repeat(4,minmax(0,1fr));
+  gap:12px;
+  margin-top:16px
+}
+
+.billboard-grid canvas {
+  width:100%;
+  border:1px solid var(--line)
+}
+
 footer {
   margin-top:36px;
   border-top:1px solid var(--line);
@@ -404,7 +421,7 @@ footer {
   .intro>p {
     max-width:260px
   }
-  .scenery-grid {
+  .scenery-grid, .billboard-grid {
     grid-template-columns:repeat(2,minmax(0,1fr))
   }
 }

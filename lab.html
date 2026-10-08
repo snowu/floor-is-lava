@@ -8,7 +8,7 @@
 <body>
   <header>
     <a class="brand" href="#live"><span class="signal">▥</span> PACKET LOSS <span class="tag">ART LAB</span></a>
-    <nav aria-label="Lab sections"><a href="#live">Live</a><a href="#pipe-section">Pipes</a><a href="#runner-section">Runners</a><a href="#pose-section">Poses</a><a href="#obstacle-section">Obstacles</a><a href="#scenery-section">Scenery</a><a href="#lighting-section">Lighting</a><a href="#effects-section">Effects</a></nav>
+    <nav aria-label="Lab sections"><a href="#live">Live</a><a href="#pipe-section">Pipes</a><a href="#runner-section">Runners</a><a href="#pose-section">Poses</a><a href="#obstacle-section">Obstacles</a><a href="#scenery-section">Scenery</a><a href="#lighting-section">Lighting</a><a href="#effects-section">Effects</a><a href="#billboard-section">Billboards</a><a href="#ticker-section">Tickers</a></nav>
     <button id="close-lab" class="quiet">Back to game <kbd>F3</kbd></button>
   </header>
   <main>
@@ -29,6 +29,8 @@
     <section id="scenery-section"><div class="section-title"><h2>06 / Rooftops & city details</h2><span>BACKGROUND READABILITY</span></div><p>Roof props, facades and advertisements in the selected district. Background equipment carries no action red.</p><div id="facades" class="pipe-grid"></div><div id="scenery" class="scenery-grid"></div></section>
     <section id="lighting-section"><div class="section-title"><h2>07 / Roof lighting & water</h2><span>DRY / WET · SAME SCENE</span></div><p>Contact shadows, shallow puddles and light from the nearby billboard. Compare districts and runner outfits above; wet surfaces leave the front roof edge clear.</p><div id="lighting" class="pipe-grid"></div></section>
     <section id="effects-section"><div class="section-title"><h2>08 / Light & motion</h2><span>LIVE EFFECTS PREVIEW</span></div><p>Sign glow, slow vent steam and slide sparks. Trigger a movement accent; pause and step to inspect it.</p><div class="inline"><button id="fx-landing">Perfect landing</button><button id="fx-launch">Launch</button><button id="fx-pickup">Data pickup</button></div><div class="live-frame"><canvas id="effects" width="640" height="140"></canvas></div></section>
+    <section id="billboard-section"><div class="section-title"><h2>09 / Skyline billboards</h2><button id="billboard-compare" class="quiet" aria-pressed="false">Show master version</button></div><p>Small boards on the far and mid skyline, sized for readable 5×7 type. Each is a backlit screen, dark or flooded with the brand colour, in a poster, product or type layout. A second pop colour drives sunbursts, washes and promo stickers; dead LEDs and graffiti come from the seed. Toggle to compare the master version.</p><div id="skyline-ads" class="live-frame"></div><div id="billboards" class="billboard-grid"></div></section>
+    <section id="ticker-section"><div class="section-title"><h2>10 / LED tickers</h2><button id="ticker-compare" class="quiet" aria-pressed="false">Show master version</button></div><p>News crawls bolted across mid-skyline towers. Four channels: state broadcast, alert, market and propaganda. Each has its own badge, live lamp, colours and feed. Animated with the lab clock, so Pause, Step and Playback apply.</p><div class="live-frame"><canvas id="ticker-skyline" width="480" height="120"></canvas></div><div id="tickers" class="billboard-grid"></div></section>
     <footer>F3 / return to game <span>Space / pause · Period / step · PNG exports use native pixels</span></footer>
   </main>
   <script type="module" src="/src/lab/boot.js"></script>

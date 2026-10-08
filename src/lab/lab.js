@@ -8,11 +8,13 @@ import { PHYS } from '../sim/config.js'
 import { RunnerSprite, RUNNER_STYLES, RUNNERS, ORIGIN_X, ORIGIN_Y } from '../pixel/runner.js'
 import { bakeObstacle, lipOf, bakePipe, bakePipeFront, pipeFrame, bakeFence, drawFenceLive } from '../pixel/obstacles.js'
 import { bakeDecor, recede } from '../pixel/sprites.js'
-import { specFor, bakeBillboard, billboardLight } from '../pixel/billboard.js'
-import { bakeFacade } from '../pixel/city.js'
+import { specFor, bakeBillboard, billboardLight, inks, drawTicker, CHANNELS } from '../pixel/billboard.js'
+import { bakeFacade, bakeTower } from '../pixel/city.js'
+import { drawBig, bigW } from '../pixel/art.js'
+import { drawText } from '../pixel/sprites.js'
 import { paletteAt, pinPalette, PALETTE_NAMES } from '../pixel/palette.js'
 import { PPU } from '../pixel/sprites.js'
-import { toCanvas, css, mix, pack, PixelBuffer } from '../pixel/pixels.js'
+import { toCanvas, css, mix, pack, hash, PixelBuffer } from '../pixel/pixels.js'
 import { ACCENT } from '../pixel/palette.js'
 import { RoofWater } from '../pixel/water.js'
 import { bakeLightHalo, drawLightHalo, drawSteam, ParkourFX } from '../pixel/effects.js'
@@ -21,7 +23,7 @@ import { drawRoofSurface, drawContactShadow, drawRunnerContact, equipmentLight }
 const $ = (id) => document.getElementById(id)
 const runnerName = (id) => RUNNER_STYLES[id].name
 const makeRunner = (id) => new RunnerSprite(id)
-const state = { runner: 'courier', palette: 1, speed: 1, seed: 20261008, zoom: 2, paused: false, hitboxes: false, grid: false, pipeCount: 3, pipeSlide: false, wet: false }
+const state = { tickersMaster: false, billboardsMaster: false, runner: 'courier', palette: 1, speed: 1, seed: 20261008, zoom: 2, paused: false, hitboxes: false, grid: false, pipeCount: 3, pipeSlide: false, wet: false }
 let water = new RoofWater()
 let motion = new ParkourFX()
 const previewFX = new ParkourFX()
@@ -277,6 +279,73 @@ function frame(now) {
     gridOn(c.ctx, c.cv.width, c.cv.height)
   }
   drawEffectsPreview(pal, dt)
+  drawTickerPreview(pal)
+}
+
+// One ticker per channel, found with the world's own generator.
+function tickerSpecs() {
+  const out = []
+  for (let seed = state.seed % 100000; out.length < CHANNELS.length; seed++) {
+    const spec = specFor(seed, 'near')
+    if (spec.kind === 'ticker' && !out.some((o) => o.channel === spec.channel)) out.push(spec)
+  }
+  return out.sort((a, b) => a.channel - b.channel)
+}
+
+// The ticker as it ships on master: a dotted housing and one line of text.
+function drawMasterTicker(ctx, s, x, y, t, pal) {
+  const c = inks(s.ads[0], pal)
+  const housing = baked(`tk:m0:${s.seed}:${pal.version}`, () => {
+    const b = new PixelBuffer(48, 11)
+    b.rect(0, 0, 48, 11, pack(mix(pal.shadow, [46, 44, 60], 0.5)))
+    for (let yy = 2; yy < 9; yy++) for (let xx = 2; xx < 46; xx++) if ((xx + yy) & 1) b.set(xx, yy, pack(mix(c.hue, [6, 4, 12], 0.82)))
+    return b
+  })
+  const text = s.items[0].join ? `${s.items[0][0]} ${s.items[0][1] > 0 ? '+' : ''}${s.items[0][1]}%` : s.items[0]
+  const strip = baked(`tk:m1:${s.seed}:${pal.version}`, () => {
+    const b = new PixelBuffer(text.length * 6 - 1 + 48, 7)
+    drawBig(b, text, 48, 0, pack(mix(c.hue, [255, 220, 120], 0.35)))
+    return b
+  })
+  ctx.drawImage(housing, x, y)
+  const off = Math.floor(t * 22 + hash(s.seed, 79) * 500) % strip.width, take = Math.min(44, strip.width - off)
+  ctx.drawImage(strip, off, 0, take, 7, x + 2, y + 2, take, 7)
+  if (take < 44) ctx.drawImage(strip, 0, 0, 44 - take, 7, x + 2 + take, y + 2, 44 - take, 7)
+}
+
+function paintTicker(ctx, s, x, y, pal) {
+  if (state.tickersMaster) return drawMasterTicker(ctx, s, x, y, time, pal)
+  drawTicker(ctx, s, (f) => baked(`tk:${s.seed}:${f}:${pal.version}`, () => bakeBillboard(s, pal, f)), x, y, time)
+}
+
+function drawTickerPreview(pal) {
+  const specs = tickerSpecs()
+  const cv = $('ticker-skyline'), ctx = cv.getContext('2d'), base = cv.height
+  const g = ctx.createLinearGradient(0, 0, 0, base)
+  pal.sky.forEach((c, i) => g.addColorStop(i / (pal.sky.length - 1), css(c)))
+  ctx.fillStyle = g; ctx.fillRect(0, 0, cv.width, base)
+  specs.forEach((s, i) => {
+    const w = s.w + 14 + (i * 11) % 16, h = 70 + (i * 23) % 36, x = 8 + i * 118
+    ctx.drawImage(baked(`tk:tower:${i}:${state.seed}:${pal.version}`, () => bakeTower(w, h, 2, pal.near, pal.midWin, pal, state.seed + i * 13)), x, base - h)
+    paintTicker(ctx, s, x + ((w - s.w) >> 1), base - h + 6, pal)
+  })
+  gridOn(ctx, cv.width, cv.height)
+  const host = $('tickers')
+  if (host.children.length !== specs.length) {
+    host.replaceChildren()
+    for (const s of specs) {
+      const fig = document.createElement('figure'), c = document.createElement('canvas'), cap = document.createElement('figcaption')
+      c.width = 80; c.height = 30
+      cap.textContent = `${['state broadcast', 'alert', 'market', 'propaganda'][s.channel]} · ${CHANNELS[s.channel].label} · ${s.w}×${s.h}`
+      fig.append(c, cap); host.append(fig)
+    }
+  }
+  specs.forEach((s, i) => {
+    const c = host.children[i].querySelector('canvas'), cx = c.getContext('2d')
+    cx.fillStyle = css(mix(pal.near, pal.shadow, 0.5)); cx.fillRect(0, 0, c.width, c.height)
+    paintTicker(cx, s, (c.width - (state.tickersMaster ? 48 : s.w)) >> 1, 7, pal)
+    gridOn(cx, c.width, c.height)
+  })
 }
 
 function drawEffectsPreview(pal, dt) {
@@ -529,7 +598,69 @@ function drawScenerySheet() {
   }
 }
 
+// The small board as it ships on master: the brand's first word on bands.
+function masterBoard(spec, pal) {
+  const b = bakeBillboard(spec, pal, 0), a = spec.ads[0], c = inks(a, pal)
+  const x = 2, y = 5, w = spec.pw, h = spec.ph
+  const bands = [pack(c.top), pack(mix(c.top, c.bottom, 0.5)), pack(c.bottom)]
+  for (let yy = 0; yy < h; yy++) b.rect(x, y + yy, w, 1, a.bgStyle === 'plain' ? bands[2] : bands[Math.min(2, Math.floor((yy / h) * 3))])
+  const word = a.brand.split(' ')[0]
+  if (bigW(word) <= w - 8) drawBig(b, word, x + 4, y + Math.floor((h - 7) / 2), c.ink)
+  else drawText(b, word.slice(0, Math.floor((w - 7) / 4)), x + 4, y + Math.floor((h - 5) / 2), c.ink)
+  return b
+}
+
+function skylineBoards(place, count) {
+  const out = []
+  for (let seed = state.seed % 100000; out.length < count; seed++) {
+    const spec = specFor(seed, place)
+    if (spec.kind === 'board') out.push(spec)
+  }
+  return out
+}
+
+function drawBillboardSheet() {
+  const pal = paletteAt(0), bake = (s) => state.billboardsMaster ? masterBoard(s, pal) : bakeBillboard(s, pal, 0)
+  $('billboard-compare').setAttribute('aria-pressed', state.billboardsMaster)
+  $('billboard-compare').textContent = state.billboardsMaster ? 'Show proposed version' : 'Show master version'
+  // In context: a slice of skyline at native scale, far towers behind near ones.
+  const sky = document.createElement('canvas')
+  sky.width = 480; sky.height = 150
+  const ctx = sky.getContext('2d'), base = 150
+  const g = ctx.createLinearGradient(0, 0, 0, base)
+  pal.sky.forEach((c, i) => g.addColorStop(i / (pal.sky.length - 1), css(c)))
+  ctx.fillStyle = g; ctx.fillRect(0, 0, sky.width, base)
+  for (const [li, place, color, win, n, x0] of [[1, 'far', 'mid', 'midWin', 6, 4], [2, 'near', 'near', 'midWin', 4, 40]]) {
+    let x = x0
+    skylineBoards(place, n).forEach((spec, i) => {
+      const w = spec.w - 6 + (i * 13) % 20, h = (li === 1 ? 84 : 34) + (i * 29) % 26
+      ctx.drawImage(toCanvas(bakeTower(w, h, li, pal[color], pal[win], pal, state.seed + i * 7 + li)), x, base - h)
+      ctx.drawImage(toCanvas(bake(spec)), x + ((w - spec.w) >> 1), base - h - spec.h + 2)
+      x += w + (li === 1 ? 14 : 30)
+    })
+  }
+  gridOn(ctx, sky.width, sky.height)
+  $('skyline-ads').replaceChildren(sky)
+  // Close-ups: far boards then mid-skyline boards, the same seeds in both versions.
+  const host = $('billboards')
+  host.replaceChildren()
+  for (const [place, n] of [['far', 8], ['near', 8]]) for (const spec of skylineBoards(place, n)) {
+    const asset = bake(spec)
+    const cv = document.createElement('canvas')
+    cv.width = 128; cv.height = 64
+    const c = cv.getContext('2d')
+    c.fillStyle = css(mix(pal.sky[1], pal.shadow, 0.4)); c.fillRect(0, 0, cv.width, cv.height)
+    c.drawImage(toCanvas(asset), (cv.width - asset.w) >> 1, (cv.height - asset.h) >> 1)
+    gridOn(c, cv.width, cv.height)
+    const fig = document.createElement('figure'), cap = document.createElement('figcaption')
+    const a = spec.ads[0]
+    cap.textContent = `${place} · ${a.brand} · ${spec.pw}×${spec.ph}`
+    fig.append(cv, cap); host.append(fig)
+  }
+}
+
 function redrawSheets() {
+  drawBillboardSheet()
   drawPoseSheet()
   drawObstacleSheet()
   drawPipeSheet()
@@ -607,6 +738,12 @@ $('pipe-count').addEventListener('change', () => { state.pipeCount = Number($('p
 for (const [id, type] of [['fx-landing', 'landslide'], ['fx-launch', 'spring'], ['fx-pickup', 'shard']]) {
   $(id).addEventListener('click', () => previewFX.event(type, { x: 0, y: 0 }, { quality: 1, y: type === 'shard' ? 2 : 0 }))
 }
+$('ticker-compare').addEventListener('click', () => {
+  state.tickersMaster = !state.tickersMaster
+  $('ticker-compare').setAttribute('aria-pressed', String(state.tickersMaster))
+  $('ticker-compare').textContent = state.tickersMaster ? 'Show proposed version' : 'Show master version'
+})
+$('billboard-compare').addEventListener('click', () => { state.billboardsMaster = !state.billboardsMaster; drawBillboardSheet() })
 $('wet-roof').addEventListener('change', (e) => { state.wet = e.target.checked; redrawSheets() })
 $('preview-slide').addEventListener('click', () => {
   state.pipeSlide = !state.pipeSlide
