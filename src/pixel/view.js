@@ -6,7 +6,9 @@ import { PPU, bakeBuilding, bakeObstacle, bakeDecor, bakeBird, bakeSkyline, bake
 import { PHYS, HEIST } from '../sim/config.js'
 import { createRng } from '../sim/rng.js'
 
-const H = 270
+// Internal resolution: 270px tall in landscape; portrait screens get a taller
+// canvas instead of a letterboxed strip. Module-level so the bakers share it.
+let H = 270
 const RASTER_FPS = 24
 const SHARD = [41, 243, 255]
 const LASER = [255, 47, 160]
@@ -68,7 +70,13 @@ export class PixelView {
 
   resize() {
     const aspect = window.innerWidth / window.innerHeight
-    this.W = clamp(Math.round(H * aspect), 320, 720)
+    if (aspect >= 1.2) {
+      H = 270
+      this.W = clamp(Math.round(H * aspect), 320, 720)
+    } else {
+      this.W = 360
+      H = clamp(Math.round(this.W / aspect), 270, 800)
+    }
     this.canvas.width = this.W
     this.canvas.height = H
     const scale = Math.min(window.innerWidth / this.W, window.innerHeight / H)

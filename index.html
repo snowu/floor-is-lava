@@ -6,6 +6,13 @@
     <meta name="theme-color" content="#05040d" />
     <meta name="description" content="A cyberpunk rooftop runner. Vault, slide, roll, wall-run and zip across the city: beat the clock in time trials or chain combos in endless." />
     <title>Floor Is Lava</title>
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="icon" type="image/png" href="/icon-192.png" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Floor Is Lava" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@400;600;700&family=Silkscreen:wght@400;700&display=swap" rel="stylesheet" />
@@ -31,6 +38,7 @@
       </div>
       <div class="hud-tr">
         <button id="btn-focus" class="icon-btn touch-only" aria-label="Focus">◎</button>
+        <button class="icon-btn fs-toggle" aria-label="Fullscreen"><svg class="fs-enter" viewBox="0 0 16 16" aria-hidden="true"><path d="M1 1h5v2H3v3H1zM10 1h5v5h-2V3h-3zM1 10h2v3h3v2H1zM13 10h2v5h-5v-2h3z"/></svg><svg class="fs-exit" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 1h2v5H1V4h3zM10 1h2v3h3v2h-5zM1 10h5v5H4v-3H1zM10 10h5v2h-3v3h-2z"/></svg></button>
         <button id="btn-mute" class="icon-btn" aria-label="Mute">♪</button>
         <button id="btn-pause" class="icon-btn" aria-label="Pause">❚❚</button>
       </div>
@@ -71,7 +79,11 @@
           <dt>LEFT</dt><dd>Slide — or just before landing to roll</dd>
         </dl>
       </div>
+      <div class="corner">
+        <button class="icon-btn fs-toggle" aria-label="Fullscreen"><svg class="fs-enter" viewBox="0 0 16 16" aria-hidden="true"><path d="M1 1h5v2H3v3H1zM10 1h5v5h-2V3h-3zM1 10h2v3h3v2H1zM13 10h2v5h-5v-2h3z"/></svg><svg class="fs-exit" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 1h2v5H1V4h3zM10 1h2v3h3v2h-5zM1 10h5v5H4v-3H1zM10 10h5v2h-3v3h-2z"/></svg></button>
+      </div>
       <div class="rotate touch-only">Turn your phone sideways for a wider view</div>
+      <div class="ios-tip">Play fullscreen: tap <b>Share</b> → <b>Add to Home Screen</b></div>
     </div>
 
     <div id="over" class="screen is-hidden">
