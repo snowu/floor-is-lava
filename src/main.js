@@ -58,6 +58,30 @@ if (localLab) {
   }))
 }
 
+// F4 (local only): clarity checks. Compare against the look before the
+// clarity pass, or judge the frame by value (grayscale) and at a squint.
+if (localLab) {
+  const CLARITY = [
+    { name: '', classic: false, filter: '' },
+    { name: 'CLASSIC LOOK', classic: true, filter: '' },
+    { name: 'VALUE CHECK', classic: false, filter: 'grayscale(1)' },
+    { name: 'SQUINT CHECK', classic: false, filter: 'blur(5px)' },
+  ]
+  let clarity = 0
+  const badge = Object.assign(document.createElement('div'), { className: 'clarity-badge' })
+  document.body.append(badge)
+  window.addEventListener('keydown', (e) => {
+    if (e.code !== 'F4' || artLabOpen) return
+    e.preventDefault()
+    if (e.repeat) return
+    clarity = (clarity + 1) % CLARITY.length
+    const c = CLARITY[clarity]
+    view.setClassic(c.classic)
+    view.canvas.style.filter = c.filter
+    badge.textContent = c.name ? `${c.name} · F4` : ''
+  })
+}
+
 const MODES = [{ kind: 'heist' }, { kind: 'endless' }, ...TRACKS.map((track) => ({ kind: 'trial', track })), { kind: 'trial', daily: true }]
 
 // The daily course comes from the date when you look at it or start it, so a

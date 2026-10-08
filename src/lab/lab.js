@@ -24,7 +24,7 @@ import { drawRoofSurface, drawContactShadow, drawRunnerContact, equipmentLight }
 const $ = (id) => document.getElementById(id)
 const runnerName = (id) => RUNNER_STYLES[id].name
 const makeRunner = (id) => new RunnerSprite(id)
-const state = { tickersMaster: false, billboardsMaster: false, runner: 'courier', palette: 1, speed: 1, seed: 20261008, zoom: 2, paused: false, hitboxes: false, grid: false, pipeCount: 3, pipeSlide: false, wet: false }
+const state = { tickersMaster: false, billboardsMaster: false, runner: 'courier', palette: 1, speed: 1, seed: 20261008, zoom: 2, paused: false, hitboxes: false, grid: false, pipeCount: 3, pipeSlide: false, pipesMaster: false, wet: false }
 let water = new RoofWater()
 let motion = new ParkourFX()
 const previewFX = new ParkourFX()
@@ -678,7 +678,7 @@ function drawPipeSheet() {
     const cv = document.createElement('canvas')
     cv.width = 240; cv.height = 104
     const ctx = cv.getContext('2d'), w = count === 3 ? 38 : 28, h = 6, drop = 14
-    const options = { count }
+    const options = { count, legacy: state.pipesMaster }
     const f = pipeFrame('beam', w, h, drop, state.seed, options)
     const laneX = 90 - w / 2
     const x = laneX - f.ox, y = 76 - drop - h - f.oy
@@ -690,7 +690,7 @@ function drawPipeSheet() {
     if (state.hitboxes) collisionBox(ctx, laneX, 76 - drop - h, w, h)
     gridOn(ctx, cv.width, cv.height)
     const fig = document.createElement('figure'), cap = document.createElement('figcaption')
-    cap.textContent = `${count} parallel pipes / rear vent · scenery`
+    cap.textContent = `${count} parallel pipes / rear vent · ${state.pipesMaster ? 'master' : 'red band and strap at head height'}`
     fig.append(cv, cap)
     host.append(fig)
   }
@@ -883,6 +883,12 @@ for (const [id, type] of [['fx-landing', 'landslide'], ['fx-launch', 'spring'], 
   $(id).addEventListener('click', () => previewFX.event(type, { x: 0, y: 0 }, { quality: 1, y: type === 'shard' ? 2 : 0 }))
 }
 $('trace-run').addEventListener('click', runTraceSim)
+$('pipe-compare').addEventListener('click', () => {
+  state.pipesMaster = !state.pipesMaster
+  $('pipe-compare').setAttribute('aria-pressed', String(state.pipesMaster))
+  $('pipe-compare').textContent = state.pipesMaster ? 'Show proposed version' : 'Show master version'
+  drawPipeSheet()
+})
 $('ticker-compare').addEventListener('click', () => {
   state.tickersMaster = !state.tickersMaster
   $('ticker-compare').setAttribute('aria-pressed', String(state.tickersMaster))

@@ -489,3 +489,5 @@ body.pixel .rotate { white-space: normal; text-align: center; width: max-content
 @media (max-width: 600px) { .app-update { gap: 12px; padding: 12px; } .app-update strong, .app-update p, .app-update button { font-size: 10px; } }
 /* the version label takes that corner while paused */
 body:has(#paused:not(.is-hidden)) .hud-bl { visibility: hidden; }
+.clarity-badge { position: fixed; z-index: 50; top: 50%; right: 0; padding: 6px 10px; font: 400 11px/1 'Silkscreen', monospace; color: #05040d; background: #29f3ff; pointer-events: none; }
+.clarity-badge:empty { display: none; }
