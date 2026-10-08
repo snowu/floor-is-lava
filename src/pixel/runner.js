@@ -486,10 +486,24 @@ export class RunnerSprite {
     const seg = (a, b, r, col, far = false) => out.push({ a, b, r: r * k, col, far })
     const lerp = (a, b, t) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t]
     const sleeve = st.sleeves ? C.sleeve : null
+    const hand = (wrist, elbow, distant) => {
+      if (!graceful) { seg(wrist, wrist, 1.15, distant ? C.gloveFar : C.glove, distant); return }
+      const length = Math.hypot(wrist[0] - elbow[0], wrist[1] - elbow[1]) || 1
+      const d = [(wrist[0] - elbow[0]) / length, (wrist[1] - elbow[1]) / length]
+      const point = (along, across = 0) => [wrist[0] + (d[0] * along - d[1] * across) * st.scale, wrist[1] + (d[1] * along + d[0] * across) * st.scale]
+      const glove = distant ? C.gloveFar : C.glove, skin = distant ? C.skinFar : C.skin
+      // A cuff, directional palm, exposed knuckles and a separate thumb.
+      // The fingers extend for a reaching hand, and gather during the run.
+      const reach = ['climb', 'mantle', 'wallslide', 'zip', 'vault'].includes(this.state)
+      seg(point(-0.7), point(-0.2), 0.85, glove, distant)
+      seg(point(0), point(reach ? 1.2 : 0.5), 0.7, glove, distant)
+      seg(point(reach ? 1.6 : 0.85), point(reach ? 2.1 : 1), 0.45, skin, distant)
+      seg(point(0.1, -0.8), point(0.7, -0.8), 0.4, skin, distant)
+    }
     // far side (B) first
     seg(j.shoulder, j.elbowB, 1.15, sleeve ? C.sleeveFar : C.skinFar, true)
     seg(j.elbowB, j.handB, 0.95, sleeve ? C.sleeveFar : C.skinFar, true)
-    seg(j.handB, j.handB, graceful ? 0.8 : 1.15, C.gloveFar, true)
+    hand(j.handB, j.elbowB, true)
     seg(j.pelvis, j.kneeB, graceful ? 1.5 : 1.75, C.pantsFar, true)
     seg(j.kneeB, j.ankleB, graceful ? 1.05 : 1.3, C.pantsFar, true)
     seg(j.ankleB, j.toeB, graceful ? 0.8 : 1.0, C.shoeFar, true)
@@ -501,16 +515,28 @@ export class RunnerSprite {
         out.push({ a: pts[i - 1], b: pts[i], r: (spec.r0 + (spec.r1 - spec.r0) * t) * st.scale, col: C[spec.col], far: spec.col === 'top' })
       }
     })
-    // torso
-    seg(j.pelvis, j.chest, graceful ? 1.8 : 2.05, st.colors.pantsTop ?? C.pants)
-    seg(lerp(j.pelvis, j.chest, 0.35), j.shoulder, graceful ? 1.95 : 2.4, C.top)
-    if (st.cloth.some((c) => c.at === 'coat')) seg(j.pelvis, j.chest, 1.95, C.top)
+    // A continuous, lightly fitted athletic top: rounded hips, a modest
+    // waist taper and soft shoulders. Its contour follows the posed torso.
+    if (graceful) {
+      const coat = st.cloth.some((c) => c.at === 'coat')
+      seg(j.pelvis, j.pelvis, 1.95, st.colors.pantsTop ?? C.pants)
+      out.push({
+        torso: true, a: lerp(j.pelvis, j.shoulder, 0.06), b: j.shoulder,
+        // Back and front widths describe the clothed figure separately:
+        // a gentle chest curve, fitted waist, and room around the hips.
+        profile: [[0, 2.05, 2.05], [0.32, coat ? 1.55 : 1.35, coat ? 1.65 : 1.4], [0.64, 1.65, coat ? 2.2 : 2.4], [0.8, 1.6, coat ? 2.05 : 2.15], [1, 1.55, 1.65]],
+        r: 2.4 * k, k, col: C.top,
+      })
+    } else {
+      seg(j.pelvis, j.chest, 2.05, st.colors.pantsTop ?? C.pants)
+      seg(lerp(j.pelvis, j.chest, 0.35), j.shoulder, 2.4, C.top)
+    }
     if (st.trim) seg(lerp(j.pelvis, j.shoulder, 0.15), lerp(j.pelvis, j.shoulder, 0.85), 0.6, C.trim)
     seg(j.shoulder, j.neck, 1.0, C.skin)
     // head + hair cap
-    if (graceful) out.push({ face: true, c: j.head, r: 2.65 * st.scale, col: C.skin })
+    if (graceful) out.push({ face: true, c: j.head, r: 2.85 * st.scale, col: C.skin })
     else seg(j.head, j.head, 2.75 * st.head, C.skin)
-    out.push({ hairCap: true, c: j.head, r: 2.7 * st.scale * st.head, col: C.hair })
+    out.push({ hairCap: true, c: j.head, r: (graceful ? 2.8 : 2.7) * st.scale * st.head, col: C.hair })
     // near side (A)
     seg(j.pelvis, j.kneeA, graceful ? 1.65 : 1.8, C.pants)
     seg(j.kneeA, j.ankleA, graceful ? 1.2 : 1.35, C.pants)
@@ -519,7 +545,7 @@ export class RunnerSprite {
     seg(j.shoulder, j.elbowA, graceful ? 1 : 1.2, sleeve ?? C.skin)
     seg(lerp(j.shoulder, j.elbowA, 0.55), lerp(j.shoulder, j.elbowA, 0.6), graceful ? 1 : 1.2, C.band)
     seg(j.elbowA, j.handA, graceful ? 0.8 : 1.0, sleeve ?? C.skin)
-    seg(j.handA, j.handA, graceful ? 1 : 1.2, C.glove)
+    hand(j.handA, j.elbowA, false)
     if (graceful) seg(j.hairRoot, j.hairRoot, 0.6, C.band)
     return out
   }
@@ -546,11 +572,15 @@ export class RunnerSprite {
             if (part.face) {
               // An oval crown and a gently tapered jaw, rather than a round
               // helmet. Clothing and athletic proportions carry the body.
-              const width = (upward < -0.7 * sc ? 1.65 : 2.15) * sc
-              if ((along / width) ** 2 + (upward / part.r) ** 2 > 1) continue
+              const u = upward / sc, a = along / sc
+              const width = u < -1.5 ? 1.4 : 2.05
+              // A quiet, nearly straight face edge; the hair and jaw carry
+              // the profile rather than a projecting middle pixel.
+              if (a > (u < -1.2 ? 1.25 : 1.45)) continue
+              if ((a / width) ** 2 + (upward / part.r) ** 2 > 1) continue
             } else {
               if (dx * dx + dy * dy > part.r * part.r) continue
-              if (along > (this.style.face ? 0 : 0.9) * sc && upward < 1.1 * sc) continue
+              if (along > (this.style.face ? -0.2 : 0.9) * sc && upward < 1.5 * sc) continue
             }
             const px = x + ORIGIN_X, py = ORIGIN_Y - y - 1
             if (px >= 0 && py >= 0 && px < W && py < H) ids[py * W + px] = pi + 1
@@ -562,9 +592,23 @@ export class RunnerSprite {
       const x0 = Math.floor(Math.min(ax, bx) - r), x1 = Math.ceil(Math.max(ax, bx) + r)
       const y0 = Math.floor(Math.min(ay, by) - r), y1 = Math.ceil(Math.max(ay, by) + r)
       const r2 = r * r
+      const dx = bx - ax, dy = by - ay, length2 = dx * dx + dy * dy
       for (let y = y0; y <= y1; y++) {
         for (let x = x0; x <= x1; x++) {
-          if (segDist2(x + 0.5, y + 0.5, ax, ay, bx, by) > r2) continue
+          if (part.torso) {
+            const u = ((x + 0.5 - ax) * dx + (y + 0.5 - ay) * dy) / length2
+            if (u < 0 || u > 1.07) continue
+            const t = Math.min(1, u)
+            const across = ((x + 0.5 - ax) * dy - (y + 0.5 - ay) * dx) / Math.sqrt(length2)
+            const side = across >= 0 ? 2 : 1
+            let width = part.profile.at(-1)[side]
+            for (let i = 1; i < part.profile.length; i++) {
+              const t1 = part.profile[i][0], r1 = part.profile[i][side]
+              const t0 = part.profile[i - 1][0], r0 = part.profile[i - 1][side]
+              if (t <= t1) { width = r0 + (r1 - r0) * (t - t0) / (t1 - t0); break }
+            }
+            if (Math.abs(across) > width * part.k) continue
+          } else if (segDist2(x + 0.5, y + 0.5, ax, ay, bx, by) > r2) continue
           const px = x + ORIGIN_X, py = ORIGIN_Y - y - 1
           if (px >= 0 && py >= 0 && px < W && py < H) ids[py * W + px] = pi + 1
         }
@@ -608,6 +652,23 @@ export class RunnerSprite {
     // eye: one dark pixel on the face side
     const [hx, hy] = this.joints.head
     const sc = st.scale
+    if (st.face) {
+      const detail = (along, up, color, hair = false) => {
+        const x = Math.round(hx + (Math.cos(face) * along - Math.sin(face) * up) * sc) + ORIGIN_X
+        const y = ORIGIN_Y - Math.round(hy + (Math.sin(face) * along + Math.cos(face) * up) * sc) - 1
+        if (x < 0 || y < 0 || x >= W || y >= H) return
+        const part = parts[ids[y * W + x] - 1]
+        if (part?.face || (hair && part?.hairCap)) buf.set(x, y, pack(color))
+      }
+      const skin = st.colors.skin
+      detail(1.1, 1.3, st.colors.hair) // brow
+      detail(1.3, 0.6, COLORS.outline) // eye
+      detail(1.1, -0.7, mix(skin, [255, 222, 191], 0.28)) // cheek
+      detail(1.5, -1.55, mix(skin, st.colors.skinFar, 0.7)) // mouth and jaw
+      detail(-0.2, -0.15, st.colors.skinFar, true) // ear against the hairline
+      detail(-0.4, 1.9, mix(st.colors.hair, this.rim, 0.15), true) // swept fringe
+      return buf
+    }
     const ex = Math.round(hx + (Math.cos(face) * 1.3 - Math.sin(face) * 0.5) * sc)
     const ey = Math.round(hy + (Math.sin(face) * 1.3 + Math.cos(face) * 0.5) * sc)
     const epx = ex + ORIGIN_X, epy = ORIGIN_Y - ey - 1
