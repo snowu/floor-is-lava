@@ -2,17 +2,17 @@
 import { toCanvas, pack, mix, css, dither, hash, PixelBuffer } from './pixels.js'
 import { paletteAt, districtName, ACCENT } from './palette.js'
 import { RunnerSprite, ORIGIN_X, ORIGIN_Y } from './runner.js'
-import { PPU, bakeObstacle, bakeDecor, bakeBird, bakeCloud, bakeCar, outlined, glow, recede } from './sprites.js'
+import { PPU, bakeDecor, bakeBird, bakeCloud, bakeCar, recede, outlined } from './sprites.js'
 import { CITY, bakeTower, bakeFog, bakeFacade } from './city.js'
 import { bakeBillboard, specFor, inks } from './billboard.js'
 import { drawBig, bigW } from './art.js'
+import { bakeObstacle, lipOf, bakeShadow, bakePipe, bakePipeFront, pipeFrame, bakeFence, drawFenceLive } from './obstacles.js'
 import { PHYS, HEIST } from '../sim/config.js'
 import { createRng } from '../sim/rng.js'
 
 // Internal resolution: 270px tall in landscape; portrait screens get a taller
 // canvas instead of a letterboxed strip. Module-level so the bakers share it.
 let H = 270
-const RASTER_FPS = 24
 const SHARD = [41, 243, 255]
 const LASER = [255, 47, 160]
 const TRIPPED = [255, 170, 40]
@@ -37,7 +37,7 @@ export class PixelView {
     this.ctx = this.canvas.getContext('2d', { alpha: false })
     this.W = 480
 
-    this.runner = new RunnerSprite()
+    this.setRunner('courier')
     this.runnerCanvas = document.createElement('canvas')
     this.rasterClock = 0
     this.after = []
@@ -62,8 +62,6 @@ export class PixelView {
     this.carRng = createRng(404)
     this.birdFrames = [0, 1, 2].map((i) => toCanvas(bakeBird(i)))
     this.onStep = null
-    this.runner.onStep = (k) => this.onStep?.(k)
-    this.ghostRunner = new RunnerSprite()
     this.ghostCanvas = document.createElement('canvas')
     this.ghostClock = 0
     this.passed = 0
@@ -170,7 +168,7 @@ export class PixelView {
     this.cam.x = x + 6
     this.cam.y = y + 2
     this.cam.floor = -Infinity
-    this.runner.hair = null
+    this.runner.chains = null
   }
 
   setFloor(y) { this.cam.floor = y }
@@ -247,6 +245,12 @@ export class PixelView {
       case 'bonk':
         this.shake(0.5)
         break
+      case 'shock':
+        this.burst(e.x, p.y + 0.5, 16, { spread: 2.2, up: 2, color: [125, 248, 255], life: 0.45 })
+        this.burst(e.x, p.y + 0.5, 6, { spread: 1.4, up: 1.5, color: [255, 255, 255], life: 0.3 })
+        this.glitch(0.35)
+        this.shake(0.35)
+        break
       case 'trip':
         this.shake(0.35)
         this.burst(p.x + 0.3, p.y, 8, { spread: 1.4, up: 1.4 })
@@ -290,6 +294,16 @@ export class PixelView {
   }
 
   districtName(d) { return districtName(d) }
+
+  // Which runner outfit to draw.
+  setRunner(id) {
+    if (id === this.runnerId) return
+    this.runnerId = id
+    this.runner = new RunnerSprite(id)
+    this.runner.onStep = (k) => this.onStep?.(k)
+    this.ghostRunner = new RunnerSprite(id)
+    this.rasterClock = 0
+  }
 
   // Floating move labels over the runner.
   popup(text, color, p) {
@@ -708,22 +722,31 @@ export class PixelView {
           ctx.fillRect(bx + 5, by - 1, 3, 3)
         }
       }
+      // overhead pipes: the whole pipe (up out of the roof, across, down or
+      // into its vent) goes down first; the run over the lane is redrawn in
+      // front of the runner later
+      for (const sd of c.solids) {
+        if (sd.kind !== 'beam') continue
+        const w = Math.max(2, Math.round((sd.x1 - sd.x0) * PPU)), h = Math.max(2, Math.round((sd.y1 - sd.y0) * PPU))
+        const drop = this.sy(c.roof) - this.sy(sd.y0) - 2
+        const f = pipeFrame('beam', w, h, drop, sd.id)
+        const cv = this.sprite(`c${c.id}:p${sd.id}`, ver, () => bakePipe('beam', w, h, drop, pal, sd.id))
+        const x = this.sx(sd.x0) - f.ox, y = this.sy(sd.y1) - f.oy
+        ctx.drawImage(this.sprite(`shadow${w}`, 0, () => bakeShadow(w)), this.sx(sd.x0) - 3, this.sy(c.roof) - 1)
+        ctx.drawImage(cv, x, y)
+        const front = this.sprite(`c${c.id}:pf${sd.id}`, ver, () => bakePipeFront('beam', w, h, drop, pal, sd.id))
+        this.beams.push({ cv: front, x, y })
+      }
       for (const sd of c.solids) {
         if (sd.kind === 'roof') continue
         const w = Math.max(2, Math.round((sd.x1 - sd.x0) * PPU))
         const h = Math.max(2, Math.round((sd.y1 - sd.y0) * PPU))
-        const cv = this.sprite(`c${c.id}:o${sd.id}`, ver, () => outlined(bakeObstacle(sd.sub, w, h, pal, sd.id)))
-        const gl = this.sprite(`c${c.id}:g${sd.id}`, ver, () => glow(bakeObstacle(sd.sub, w, h, pal, sd.id), ACCENT, 3, sd.sub === 'housing' ? 8 : Infinity))
-        const lip = sd.sub === 'housing' ? 4 : sd.sub === 'spring' ? 2 : sd.kind === 'beam' ? 0 : 3
+        if (sd.kind === 'beam') continue
+        const cv = this.sprite(`c${c.id}:o${sd.id}`, ver, () => bakeObstacle(sd.sub, w, h, pal, sd.id))
+        const lip = lipOf(sd.sub)
         const ox = this.sx(sd.x0), oy = this.sy(sd.y1) - lip
-        // pulsing runner-vision halo so obstacles read against busy rooftops
-        ctx.globalAlpha = 0.3 + 0.3 * (0.5 + 0.5 * Math.sin(t * 5 + sd.id))
-        ctx.drawImage(gl, ox - 3, oy - 3)
-        ctx.globalAlpha = 1
-        if (sd.kind === 'beam') {
-          this.beams.push({ cv, x: ox, y: oy, w, base: this.sy(c.roof) })
-          continue
-        }
+        // A contact shadow seats equipment on the roof.
+        ctx.drawImage(this.sprite(`shadow${w}`, 0, () => bakeShadow(w)), ox - 3, this.sy(c.roof) - 1)
         ctx.drawImage(cv, ox - 1, oy - 1)
       }
       for (const e of c.extras) {
@@ -733,12 +756,8 @@ export class PixelView {
       }
       for (const q of c.pads ?? []) this.drawPad(q, s.p, t)
     }
-    // beam posts sit behind the runner
-    ctx.fillStyle = css(mix(pal.shadow, [30, 30, 40], 0.3))
-    for (const b of this.beams) {
-      ctx.fillRect(b.x + 1, b.y, 1, b.base - b.y)
-      ctx.fillRect(b.x + b.w - 2, b.y, 1, b.base - b.y)
-    }
+    // live fences across the roof
+    for (const [c, v] of visible) for (const f of c.fences ?? []) this.drawFence(f, t, pal, v.roofH - 3)
     // zip cables
     for (const [c] of visible) {
       for (const z of c.ziplines) {
@@ -752,6 +771,14 @@ export class PixelView {
         }
       }
     }
+  }
+
+  drawFence(f, t, pal, depth) {
+    const x = this.sx(f.x0) + 2, base = this.sy(f.y0), h = base - this.sy(f.y1)
+    if (x < -20 || x > this.W + 4) return
+    const cv = this.sprite(`fence:${h}:${depth}`, pal.version, () => bakeFence(h, depth, pal))
+    this.ctx.drawImage(cv, x - 2, base - cv.height + 1)
+    drawFenceLive(this.ctx, x, base, h, depth, t, f.x0)
   }
 
   // Jump pad at a tall wall's edge: a red plate with chevrons rising off it,
@@ -942,7 +969,7 @@ export class PixelView {
     r.update(s.dt, gst, gst.x * PPU, gst.y * PPU, null)
     this.ghostClock -= s.raw
     if (this.ghostClock <= 0 && r.joints) {
-      this.ghostClock = 1 / RASTER_FPS
+      this.ghostClock = 1 / r.style.fps
       toCanvas(tint(r.raster(), [41, 243, 255]), this.ghostCanvas)
     }
     if (!r.joints) return
@@ -952,7 +979,7 @@ export class PixelView {
   }
 
   drawBeams() {
-    for (const b of this.beams || []) this.ctx.drawImage(b.cv, b.x - 1, b.y - 1)
+    for (const b of this.beams || []) this.ctx.drawImage(b.cv, b.x, b.y)
   }
 
   drawBirds(dt, px) {
@@ -982,7 +1009,7 @@ export class PixelView {
     if (s.mode !== 'paused') {
       this.rasterClock -= s.raw
       if (this.rasterClock <= 0 || !r.joints) {
-        this.rasterClock = 1 / RASTER_FPS
+        this.rasterClock = 1 / r.style.fps
         if (r.joints) {
           const buf = r.raster()
           toCanvas(buf, this.runnerCanvas)

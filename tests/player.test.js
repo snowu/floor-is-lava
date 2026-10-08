@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { createPlayer, stepPlayer, predictLanding } from '../src/sim/player.js'
-import { PHYS } from '../src/sim/config.js'
+import { PHYS, WORLD } from '../src/sim/config.js'
 
 const NONE = { jump: false, jumpPressed: false, down: false, downPressed: false }
 
@@ -12,6 +12,7 @@ function world(solids, extra = {}) {
     wallrunsIn: () => extra.wallruns ?? [],
     ziplinesIn: () => extra.ziplines ?? [],
     padsIn: () => extra.pads ?? [],
+    fencesIn: () => extra.fences ?? [],
     killY: () => -20,
     roofAt: () => 0,
     lowestRoofAhead: () => -5,
@@ -291,6 +292,51 @@ describe('player physics', () => {
       const events = run(p, level(), 2, tapAt(7.5))
       expect(events).not.toContain('padjump')
       expect(events.some((e) => e === 'grab' || e === 'climb')).toBe(true)
+    })
+  })
+
+  describe('electrified fences', () => {
+    const fence = { id: 'f', x0: 8, x1: 9.5, y0: 0, y1: 1 }
+    const level = () => world([{ x0: -10, x1: 1000, y1: 0 }], { fences: [fence] })
+
+    it('shocks you once if you run into it', () => {
+      const p = createPlayer(0, 0)
+      p.speed = 12
+      const events = run(p, level(), 2)
+      expect(events.filter((e) => e === 'shock')).toHaveLength(1)
+      expect(events).toContain('shock')
+      expect(p.x).toBeGreaterThan(9.5)
+    })
+
+    it('needs a full, well-timed jump at real height', () => {
+      const tall = { id: 't', x0: 19.7, x1: 20.3, y0: 0, y1: WORLD.FENCE_H }
+      const lvl = world([{ x0: -10, x1: 1000, y1: 0 }], { fences: [tall] })
+      const attempt = (at, hold) => {
+        const p = createPlayer(0, 0)
+        p.speed = 13.5
+        let jumped = false
+        return run(p, lvl, 2.5, (q) => {
+          if (!jumped && q.x >= at && q.state === 'run') { jumped = true; return { ...NONE, jump: true, jumpPressed: true } }
+          return jumped && hold && q.state === 'air' ? { ...NONE, jump: true } : NONE
+        })
+      }
+      const clean = [...Array(80).keys()].map((i) => 12 + i * 0.1).filter((at) => !attempt(at, true).includes('shock'))
+      expect(clean.length).toBeGreaterThan(0)
+      const window = (clean.at(-1) - clean[0]) / 13.5
+      expect(window).toBeGreaterThan(0.1)
+      expect(window).toBeLessThan(0.3)
+      expect(attempt(clean[Math.floor(clean.length / 2)], false)).toContain('shock')
+    })
+
+    it('lets you through if you jump it', () => {
+      const p = createPlayer(0, 0)
+      p.speed = 12
+      let jumped = false
+      const events = run(p, level(), 2, (q) => {
+        if (!jumped && q.x > 5.8) { jumped = true; return { ...NONE, jump: true, jumpPressed: true } }
+        return q.state === 'air' ? { ...NONE, jump: true } : NONE
+      })
+      expect(events).not.toContain('shock')
     })
   })
 })

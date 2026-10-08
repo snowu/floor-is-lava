@@ -126,6 +126,7 @@ export class CourseGenerator {
       wallruns: [],
       ziplines: [],
       pads: [],
+      fences: [],
       decor: [],
       hints: [],
       extras: [],
@@ -156,6 +157,7 @@ export class CourseGenerator {
     const obstacleStart = x0 + (id === 0 ? 46 : this.entryClear)
     if (!finish) this.placeObstacles(chunk, obstacleStart, obstacleEnd, d, tutorial)
     this.placeDecor(chunk)
+    if (!finish && !tutorial) placeFences(chunk, d)
     if (this.heist && id > 0 && !finish) placeHeist(chunk, gap, d)
     if (tutorial?.hints.gap) chunk.hints.push({ x: x1 - 14, key: tutorial.hints.gap })
 
@@ -335,6 +337,24 @@ export class CourseGenerator {
       })
     }
     if (rng.chance(0.55)) chunk.extras.push({ type: 'birds', x: round(rng.range(chunk.x0 + 10, chunk.x1 - 4)), count: rng.int(3, 7) })
+  }
+}
+
+// ── electrified fences ──────────────────────────────────────────────────
+// Some vents become a live fence across the roof: same place, same timing, but
+// it has to be jumped (no vaulting, no sliding). Their own rng keeps every
+// other part of a seed's course unchanged.
+
+const FENCE_RING = 0x7e4ce
+
+function placeFences(chunk, d) {
+  const rng = createRng(chunk.seed ^ FENCE_RING)
+  for (const s of chunk.solids.filter((o) => o.sub === 'vent')) {
+    if (!rng.chance(0.18 + 0.22 * d)) continue
+    chunk.solids.splice(chunk.solids.indexOf(s), 1)
+    // it runs across the roof, so along the lane it is only as deep as a post
+    const at = (s.x0 + s.x1) / 2
+    chunk.fences.push({ id: `${chunk.id}:F${chunk.fences.length}`, x0: round(at - 0.3), x1: round(at + 0.3), y0: chunk.roof, y1: round(chunk.roof + WORLD.FENCE_H) })
   }
 }
 

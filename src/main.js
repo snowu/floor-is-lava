@@ -13,6 +13,8 @@ import { Audio } from './audio.js'
 import { Hud, formatTime, medalFor } from './ui/hud.js'
 import { PixelView } from './pixel/view.js'
 import { PALETTE_NAMES, pinPalette } from './pixel/palette.js'
+import { RUNNERS, RUNNER_STYLES } from './pixel/runner.js'
+import { localLab } from './lab/local.js'
 
 const DEMO_SEED = 20261007
 const TOAST = {
@@ -35,6 +37,25 @@ const input = new Input()
 const audio = new Audio()
 const hud = new Hud(isTouch)
 hud.setMuted(audio.muted)
+let artLabOpen = false
+let artLabAudioRunning = false
+if (localLab) {
+  import('./lab/host.js').then(({ installArtLab }) => installArtLab({
+    onOpen() {
+      artLabOpen = true
+      input.clearEdges()
+      input.jump = input.down = input.anyPressed = false
+      artLabAudioRunning = audio.ctx?.state === 'running'
+      audio.ctx?.suspend()
+    },
+    onClose() {
+      artLabOpen = false
+      input.clearEdges()
+      input.jump = input.down = input.anyPressed = false
+      if (artLabAudioRunning) audio.ctx?.resume()
+    },
+  }))
+}
 
 const MODES = [{ kind: 'heist' }, { kind: 'endless' }, ...TRACKS.map((track) => ({ kind: 'trial', track })), { kind: 'trial', daily: true }]
 
@@ -91,6 +112,7 @@ const g = {
   flash: 0,
   fade: 1,
   district: '',
+  runner: 'courier',
   city: 0,                  // index into CITIES
   hintsShown: new Set(),
   cpNext: 0,
@@ -144,6 +166,39 @@ function setCity(i, animate = false) {
   cityName.textContent = CITIES[g.city] === null ? 'DRIFT' : PALETTE_NAMES[CITIES[g.city]].toUpperCase()
 }
 setCity(Number(store.get('fil.city', 0)) || 0)
+
+// Runners: Courier is free; the other outfits unlock with gold medals.
+const UNLOCKS = {
+  windbreaker: { label: 'gold on any trial', test: (gold) => gold.size > 0 },
+  techwear: { label: 'gold on Sprint, Relay and Gauntlet', test: (gold) => TRACKS.every((t) => gold.has(t.id)) },
+}
+function golds() {
+  const gold = new Set(store.json('fil.golds') ?? [])
+  for (const t of TRACKS) if (medalFor(trialPB(t)?.time, t.medals) === 0) gold.add(t.id)
+  return gold
+}
+const unlocked = (id) => !UNLOCKS[id] || UNLOCKS[id].test(golds())
+const runnerName = document.getElementById('runner-name')
+function setRunner(id, animate = false) {
+  if (!RUNNERS.includes(id) || !unlocked(id)) id = RUNNERS[0]
+  g.runner = id
+  store.set('fil.runner', id)
+  if (animate) view.crossfade()
+  view.setRunner(id)
+  runnerName.textContent = RUNNER_STYLES[id].name.toUpperCase()
+  const locked = Object.entries(UNLOCKS).filter(([style]) => !unlocked(style))
+  document.getElementById('unlock-note').textContent = locked.map(([style, u]) => `${RUNNER_STYLES[style].name}: ${u.label}`).join(' · ')
+}
+// step through the runners you have, skipping locked ones
+function stepRunner(d) {
+  let i = RUNNERS.indexOf(g.runner)
+  for (let n = 0; n < RUNNERS.length; n++) {
+    i = (i + d + RUNNERS.length) % RUNNERS.length
+    if (unlocked(RUNNERS[i])) break
+  }
+  setRunner(RUNNERS[i], true)
+}
+setRunner(store.get('fil.runner', RUNNERS[0]).split(':')[0])
 
 function renderMenu() {
   hud.menu(menuItems(), g.sel, (i) => start(i))
@@ -309,6 +364,9 @@ input.on('nav', (d) => {
   g.sel = (g.sel + d + MODES.length) % MODES.length
   renderMenu()
 })
+input.on('runner', (d) => {
+  if (g.mode === 'title') stepRunner(d)
+})
 input.on('side', (d) => {
   if (g.mode === 'title') setCity(g.city + d, true)
 })
@@ -347,6 +405,8 @@ click('btn-quit', () => toMenu())
 // blur after a click so Space starts the run instead of pressing the arrow again
 click('city-prev', (e) => { setCity(g.city - 1, true); e.currentTarget.blur() })
 click('city-next', (e) => { setCity(g.city + 1, true); e.currentTarget.blur() })
+click('runner-prev', (e) => { stepRunner(-1); e.currentTarget.blur() })
+click('runner-next', (e) => { stepRunner(1); e.currentTarget.blur() })
 // Fullscreen: toggled from the title screen or the HUD. Landscape is locked
 // where the browser allows it. iPhone Safari has no fullscreen API, so it gets
 // a hint to install to the home screen (the manifest launches fullscreen).
@@ -403,6 +463,7 @@ function onEvent(e) {
   if (!live) return
   if (e.type === 'hardland') hud.toast('HARD LANDING', 'ROLL IT NEXT TIME')
   if (e.type === 'trip') hud.toast('TRIPPED', 'JUMP TO VAULT')
+  if (e.type === 'shock') { hud.toast('SHOCKED', 'JUMP THE FENCE'); g.flash = 0.15 }
   if (TOAST[e.type]) {
     g.moves++
     if (g.kind === 'trial') hud.toast(TOAST[e.type])
@@ -578,6 +639,17 @@ function passCheckpoint(i) {
   hud.split(pbSplit != null ? g.clock - pbSplit : null)
 }
 
+// Gold medals unlock runners; say so the moment one does.
+function awardGold(id) {
+  const before = RUNNERS.filter(unlocked)
+  const gold = new Set(store.json('fil.golds') ?? [])
+  gold.add(id)
+  store.set('fil.golds', JSON.stringify([...gold]))
+  const fresh = RUNNERS.filter((r) => unlocked(r) && !before.includes(r))
+  for (const style of fresh) hud.toast(`UNLOCKED · ${RUNNER_STYLES[style].name.toUpperCase()}`, 'NEW RUNNER ON THE TITLE SCREEN')
+  setRunner(g.runner)
+}
+
 function finishTrial() {
   g.splits.push(g.clock)
   const time = g.clock
@@ -593,6 +665,7 @@ function finishTrial() {
   const pbSplit = prev?.time
   hud.split(pbSplit != null ? time - pbSplit : null)
   audio.event(newBest ? 'best' : 'finish')
+  if (medalFor(time, g.track.medals) === 0) awardGold(g.track.daily ? 'daily' : g.track.id)
   g.mode = 'finish'
   g.phaseT = 0
 }
@@ -734,6 +807,7 @@ function frame(now) {
   requestAnimationFrame(frame)
   const raw = Math.min(0.1, (now - last) / 1000)
   last = now
+  if (artLabOpen) return
   time += raw
   input.pollGamepad()
   if (g.mode === 'title' && input.takeAny()) start(g.sel)

@@ -84,6 +84,7 @@ export const WORLD = {
   BUILDING_FRONT_Z: 2,
   STREET_Y: -70,
   DIFFICULTY_DISTANCE: 3500,
+  FENCE_H: 2.6,         // electrified fences: only a full, well-timed jump clears one
   PAD_MIN_DH: 3.8,      // climb walls at least this tall get a jump pad before the gap
   PAD_LEN: 1.4,         // pad length at the roof edge
 }
