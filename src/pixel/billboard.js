@@ -1,9 +1,8 @@
 // City advertising. A billboard is a mount (rooftop board, round sign, holo
-// projection, cloth banner, neon tube sign, screen, LED ticker or a cluster of
-// street posters) carrying one or two ads: a product or mascot sprite, a
+// projection, cloth banner or LED ticker) carrying one or two ads: a product or mascot sprite, a
 // brand, a slogan and a background treatment. specFor() decides the shape from
 // a seed alone; bakeBillboard() paints it with the current palette; the view
-// animates screens, tickers, holos and ad rotation on top.
+// animates tickers, holos and ad rotation on top.
 import { PixelBuffer, pack, mix, hash, dither } from './pixels.js'
 import { drawText } from './sprites.js'
 import { artSize, artColors, drawArt, drawBig, bigW, drawKanji } from './art.js'
@@ -24,15 +23,14 @@ const ADS = [
   { brand: 'OKAMI', tag: 'SAKE', art: null },
   { brand: 'NEXA', tag: 'TRUST US', art: 'eye' },
 ]
-const BGS = ['bands', 'burst', 'halftone', 'split']
-const SCREENS = ['ekg', 'stock', 'bars']
+const BGS = ['plain', 'bands']
 const TICKERS = ['CURFEW 22.00', 'SLEEP IS OPTIONAL', 'NKO +3.2%', 'YOUR DATA OUR FUTURE', 'RAIN 80%', 'REPORT UNLICENSED RUNNERS']
 
 // Which mounts appear where, with weights.
 const KINDS = {
-  far: [['board', 3], ['holo', 2], ['round', 1], ['screen', 1], ['banner', 1]],
-  near: [['board', 3], ['holo', 2], ['round', 1], ['screen', 2], ['banner', 2], ['ticker', 1]],
-  facade: [['neon', 3], ['poster', 3], ['screen', 2], ['round', 2], ['ticker', 1]],
+  far: [['board', 3], ['holo', 2], ['round', 1], ['banner', 1]],
+  near: [['board', 3], ['holo', 2], ['round', 1], ['banner', 2], ['ticker', 1]],
+  facade: [['board', 1]],
   roof: [['board', 3], ['round', 1]],
 }
 
@@ -55,12 +53,12 @@ const adFor = (seed) => ({
 export function specFor(seed, place) {
   const r = (k) => hash(seed, k, 71)
   const kind = weighted(KINDS[place], r(1))
-  const big = place === 'roof' ? 2 : place === 'near' || place === 'facade' ? 1 : 0
+  const big = place === 'roof' || place === 'facade' ? 2 : place === 'near' ? 1 : 0
   const s = { kind, seed, place, ads: [adFor(seed * 3 + 1), adFor(seed * 3 + 2)] }
   if (kind === 'board') {
-    s.pw = [38, 56, 76][big] + Math.floor(r(2) * [8, 14, 18][big])
-    s.ph = [17, 25, 32][big] + Math.floor(r(3) * 4)
-    s.legs = [8, 10, 14][big]
+    s.pw = [38, 62, 112][big] + Math.floor(r(2) * [8, 12, 10][big])
+    s.ph = [17, 28, 42][big] + Math.floor(r(3) * 4)
+    s.legs = place === 'facade' ? 0 : [8, 10, 14][big]
     s.w = s.pw + 4; s.h = s.ph + 7 + s.legs
   } else if (kind === 'round') {
     s.r = [8, 11, 13][big]
@@ -72,19 +70,10 @@ export function specFor(seed, place) {
     s.glyphs = 3 + Math.floor(r(4) * (big ? 3 : 2))
     s.kanji = r(5) < 0.55
     s.w = 13; s.h = s.glyphs * 9 + 10
-  } else if (kind === 'neon') {
-    s.glyphs = 2 + Math.floor(r(4) * 3)
-    s.vertical = r(5) < 0.65
-    s.w = s.vertical ? 15 : s.glyphs * 10 + 5; s.h = s.vertical ? s.glyphs * 10 + 5 : 15
-  } else if (kind === 'screen') {
-    s.show = SCREENS[Math.floor(r(6) * SCREENS.length)]
-    s.w = [30, 44, 60][big]; s.h = [20, 28, 34][big]
   } else if (kind === 'ticker') {
     s.text = TICKERS[Math.floor(r(7) * TICKERS.length)]
     s.w = place === 'facade' ? 70 + Math.floor(r(8) * 40) : 48; s.h = 11
-  } else if (kind === 'poster') {
-    s.count = 2 + Math.floor(r(9) * 2)
-    s.w = 18 * s.count + 8; s.h = 42
+
   }
   return s
 }
@@ -92,16 +81,16 @@ export function specFor(seed, place) {
 // ── palettes ─────────────────────────────────────────────────────────────
 
 export function inks(a, pal) {
-  const hue = pal.neon[a.hue % pal.neon.length]
-  const other = pal.neon[(a.hue + 1) % pal.neon.length]
+  const hue = mix(pal.neon[a.hue % pal.neon.length], [148, 163, 177], 0.2)
+  const other = mix(pal.neon[(a.hue + 1) % pal.neon.length], hue, 0.65)
   return {
     hue, other,
     glow: pack(hue),
     ink: pack(mix(hue, [255, 255, 255], 0.82)),
     shade: pack(mix(hue, [0, 0, 0], 0.8)),
     dark: pack(mix(hue, [8, 6, 16], 0.82)),
-    top: mix(hue, [8, 6, 16], 0.5),
-    bottom: mix(hue, [8, 6, 16], 0.84),
+    top: mix(hue, [8, 6, 16], 0.76),
+    bottom: mix(hue, [8, 6, 16], 0.88),
     art: artColors(hue, pal, other),
   }
 }
@@ -109,6 +98,31 @@ export function inks(a, pal) {
 const METAL = (pal) => pack(mix(pal.shadow, [46, 44, 60], 0.5))
 const METAL_L = (pal) => pack(mix(pal.shadow, [96, 94, 116], 0.5))
 const smallW = (s) => s.length * 4 - 1
+
+// Crisp luminous cores with a colored falloff baked into the sign's panel.
+// Take the strongest contribution so neighbouring strokes keep their gaps.
+function neon(b, source, x, y, hue) {
+  const glow = new Float32Array(b.w * b.h)
+  for (let sy = 0; sy < source.h; sy++) for (let sx = 0; sx < source.w; sx++) {
+    if (!(source.get(sx, sy) >>> 24)) continue
+    for (let dy = -3; dy <= 3; dy++) for (let dx = -3; dx <= 3; dx++) {
+      const distance = Math.hypot(dx, dy)
+      if (distance > 3) continue
+      const px = x + sx + dx, py = y + sy + dy
+      if (px < 0 || py < 0 || px >= b.w || py >= b.h) continue
+      const i = py * b.w + px
+      glow[i] = Math.max(glow[i], distance < 1.1 ? 0.55 : distance < 2.1 ? 0.23 : 0.08)
+    }
+  }
+  for (let i = 0; i < glow.length; i++) if (glow[i]) {
+    const c = b.data[i]
+    b.data[i] = pack(mix([c & 255, (c >>> 8) & 255, (c >>> 16) & 255], hue, glow[i]))
+  }
+  const core = pack(mix(hue, [255, 255, 255], 0.86))
+  for (let sy = 0; sy < source.h; sy++) for (let sx = 0; sx < source.w; sx++) {
+    if (source.get(sx, sy) >>> 24) b.set(x + sx, y + sy, core)
+  }
+}
 
 // ── ad panel ─────────────────────────────────────────────────────────────
 
@@ -139,84 +153,75 @@ function background(b, a, c, x, y, w, h) {
     }
     return
   }
-  if (style === 'burst') {
-    const cx = x + (a.flip ? w * 0.75 : w * 0.25), cy = y + h * 0.55
-    for (let yy = 0; yy < h; yy++) for (let xx = 0; xx < w; xx++) {
-      const ang = Math.atan2(y + yy - cy, x + xx - cx)
-      b.set(x + xx, y + yy, Math.floor((ang + Math.PI) / (Math.PI / 8)) & 1 ? t : m)
-    }
-    return
-  }
-  if (style === 'halftone') {
-    b.rect(x, y, w, h, d)
-    for (let yy = 1; yy < h; yy += 3) for (let xx = 1 + (Math.floor(yy / 3) & 1); xx < w; xx += 3) {
-      const k = 1 - yy / h
-      if (k > 0.66) b.rect(x + xx - 1, y + yy - 1, 2, 2, t)
-      else if (k > 0.25) b.set(x + xx, y + yy, t)
-    }
-    return
-  }
-  if (style === 'split') {
-    const o = pack(mix(c.other, [8, 6, 16], 0.55))
-    for (let yy = 0; yy < h; yy++) {
-      const cut = Math.max(0, Math.min(w, Math.round(w * 0.58 - yy * 0.5)))
-      b.rect(x, y + yy, w, 1, t)
-      if (a.flip) b.rect(x, y + yy, cut, 1, o)
-      else b.rect(x + cut, y + yy, w - cut, 1, o)
-    }
-    return
-  }
+  if (style === 'plain') { b.rect(x, y, w, h, d); return }
   const bands = [t, m, d]
   for (let yy = 0; yy < h; yy++) b.rect(x, y + yy, w, 1, bands[Math.min(2, Math.floor((yy / h) * 3))])
 }
 
 function paintAd(b, a, pal, x, y, w, h) {
   const c = inks(a, pal)
-  background(b, a, c, x, y, w, h)
-  const text = (s, tx, ty, room) => {
-    if (h >= 15 && bigW(s) <= room) { drawBig(b, s, tx + ((room - bigW(s)) >> 1), ty, c.ink, null, c.shade); return 8 }
-    const cut = s.slice(0, Math.max(1, Math.floor((room + 1) / 4)))
-    drawText(b, cut, tx + ((room - smallW(cut)) >> 1), ty + 1, c.ink)
-    return 6
+  const big = w >= 90 && h >= 38
+  if (!big) {
+    background(b, a, c, x, y, w, h)
+    const word = a.brand.split(' ')[0]
+    if (bigW(word) <= w - 8) drawBig(b, word, x + 4, y + Math.floor((h - 7) / 2), c.ink)
+    else drawText(b, word.slice(0, Math.floor((w - 7) / 4)), x + 4, y + Math.floor((h - 5) / 2), c.ink)
+    return
   }
-  const tag = (s, tx, ty, room) => {
-    if (smallW(s) <= room && ty + 5 <= y + h) drawText(b, s, tx + ((room - smallW(s)) >> 1), ty, c.glow)
+  // Printed campaigns have their own brand colors. District lighting nudges
+  // the paper and frame, instead of turning every ad into the same dark UI.
+  const themes = {
+    can: [[226, 238, 84], [35, 28, 51]],
+    face: [[127, 214, 230], [20, 38, 56]],
+    bowl: [[255, 177, 88], [66, 27, 36]],
+    cat: [[245, 204, 118], [47, 41, 63]],
+    skull: [[236, 119, 131], [42, 28, 48]],
+    eye: [[169, 195, 235], [28, 32, 62]],
+    pill: [[180, 216, 169], [27, 49, 51]],
+    koi: [[246, 166, 130], [36, 49, 61]],
+    shoe: [[238, 152, 94], [38, 29, 52]],
+    planet: [[137, 196, 233], [28, 30, 64]],
   }
+  const [accent, ground] = themes[a.art] ?? [[236, 210, 165], [46, 32, 56]]
+  const base = mix(ground, pal.shadow, 0.12)
+  const paper = mix([241, 235, 220], pal.light, 0.06)
+  const copy = pack(paper), secondary = pack(mix(paper, accent, 0.4))
+  b.rect(x, y, w, h, pack(base))
+  const [aw, ah] = a.art ? artSize(a.art) : [0, 0]
+  const sc = a.art && ah * 2 <= h - 6 ? 2 : 1
+  const heroW = a.art ? Math.max(32, aw * sc + 10) : 0
+  if (a.art) {
+    b.rect(x, y, heroW, h, pack(mix(base, accent, 0.22)))
+    b.rect(x + heroW - 1, y, 1, h, pack(mix(base, accent, 0.42)))
+    const art = artColors(accent, pal, [70, 58, 83])
+    art.e = pack(paper)
+    drawArt(b, a.art, x + Math.floor((heroW - aw * sc) / 2), y + Math.floor((h - ah * sc) / 2), art, sc)
+    b.rect(x + 5, y + h - 3, heroW - 10, 1, pack(mix(base, accent, 0.38)))
+  }
+  const tx = x + heroW + 6, room = w - heroW - 12
+  const lines = a.art === 'can' ? a.brand.split(' ') : bigW(a.brand) <= room ? [a.brand] : a.brand.split(' ')
+  const fontScale = Math.max(...lines.map(bigW)) * 2 <= room ? 2 : 1
+  const lineH = 7 * fontScale
+  const titleH = lines.length * (lineH + 2) - 2
+  const tagFits = smallW(a.tag) <= room && titleH + 14 <= h - 4
+  const totalH = titleH + (tagFits ? 10 : 0)
+  const ty = y + Math.floor((h - totalH) / 2) - 1
+  lines.forEach((line, i) => {
+    if (bigW(line) <= room) {
+      const glyphs = new PixelBuffer(bigW(line), 7)
+      drawBig(glyphs, line, 0, 0, copy)
+      const title = new PixelBuffer(glyphs.w * fontScale, 7 * fontScale)
+      for (let yy = 0; yy < glyphs.h; yy++) for (let xx = 0; xx < glyphs.w; xx++) {
+        if (glyphs.get(xx, yy) >>> 24) title.rect(xx * fontScale, yy * fontScale, fontScale, fontScale, copy)
+      }
+      neon(b, title, tx, ty + i * (lineH + 2), accent)
+    } else drawText(b, line.slice(0, Math.floor((room + 1) / 4)), tx, ty + i * (lineH + 2), copy)
+  })
+  if (tagFits) drawText(b, a.tag, tx, ty + titleH + 5, secondary)
+  const tube = new PixelBuffer(Math.min(room, 22), 1)
+  tube.rect(0, 0, tube.w, 1, pack(accent))
+  neon(b, tube, tx, y + h - 4, accent)
 
-  if (!a.art) {
-    // pure type: brand, slogan and a kanji column
-    const kx = a.flip ? x + 2 : x + w - 9
-    if (h >= 18) for (let i = 0; i * 8 + 7 < h - 2; i++) drawKanji(b, a.hue * 13 + i, kx, y + 2 + i * 8, c.glow, 7)
-    const room = w - 13
-    const tx = a.flip ? x + 11 : x + 2
-    const ty = y + Math.max(2, (h >> 1) - 7)
-    const used = text(a.brand, tx, ty, room)
-    tag(a.tag, tx, ty + used + 2, room)
-    return
-  }
-  const [aw, ah] = artSize(a.art)
-  if (a.layout === 1 && h >= ah + 11) {
-    // hero: the sprite large, the brand on a strip along the bottom
-    const sc = h >= ah * 2 + 11 && w >= aw * 2 + 4 ? 2 : 1
-    drawArt(b, a.art, x + ((w - aw * sc) >> 1), y + 1, c.art, sc, a.flip)
-    const sy = y + h - 9
-    b.rect(x, sy, w, 9, c.glow)
-    const s = bigW(a.brand) <= w - 4 ? a.brand : a.brand.split(' ')[0]
-    if (bigW(s) <= w - 4) drawBig(b, s, x + ((w - bigW(s)) >> 1), sy + 1, c.dark)
-    else drawText(b, s.slice(0, Math.floor((w - 3) / 4)), x + 2, sy + 2, c.dark)
-    return
-  }
-  // side: sprite on one side, copy on the other
-  const sc = h >= ah * 2 + 4 && w >= aw * 2 + bigW(a.brand) + 8 ? 2 : 1
-  const artW = aw * sc
-  const ax = a.flip ? x + w - artW - 2 : x + 2
-  if (ah * sc <= h && artW <= w >> 1) drawArt(b, a.art, ax, y + ((h - ah * sc) >> 1), c.art, sc, a.flip)
-  const room = w - Math.min(artW, w >> 1) - 6
-  const tx = a.flip ? x + 2 : x + Math.min(artW, w >> 1) + 4
-  const ty = y + Math.max(1, (h >> 1) - 7)
-  const used = text(a.brand, tx, ty, room)
-  if (ty + used + 1 < y + h) b.rect(tx + 2, ty + used + 1, room - 4, 1, c.glow)
-  tag(a.tag, tx, ty + used + 3, room)
 }
 
 // ── mounts ───────────────────────────────────────────────────────────────
@@ -236,11 +241,19 @@ export function bakeBillboard(s, pal, frame) {
 
   if (s.kind === 'board') {
     const { pw, ph, legs } = s
+    const shadow = pack(mix(pal.shadow, [6, 8, 15], 0.55))
+    if (s.place === 'facade') {
+      // Four wall brackets and a shadow along the lower/right frame edge.
+      for (const lx of [4, s.w - 6]) b.rect(lx, 1, 2, ph + 6, metalL)
+      b.rect(2, 5, s.w - 2, ph + 2, shadow)
+    }
     for (const lx of [Math.floor(s.w * 0.2), Math.floor(s.w * 0.75)]) b.rect(lx, ph + 7, 2, legs, metal)
     b.rect(Math.floor(s.w * 0.2), ph + 7 + (legs >> 1), Math.floor(s.w * 0.55) + 2, 1, metal)
-    b.rect(0, ph + 8, s.w, 1, metalL)                             // catwalk
+    if (legs) b.rect(0, ph + 8, s.w, 1, metalL)                             // catwalk
     b.rect(0, 3, s.w, ph + 4, metal)
     b.rect(0, 3, s.w, 1, metalL)
+    b.rect(0, 4, 1, ph + 2, metalL)
+    b.rect(s.w - 1, 4, 1, ph + 3, shadow)
     paintAd(b, a, pal, 2, 5, pw, ph)
     const lamps = pw > 50 ? 3 : 2
     const c = inks(a, pal)
@@ -308,38 +321,6 @@ export function bakeBillboard(s, pal, frame) {
     return b
   }
 
-  if (s.kind === 'neon') {
-    // tube sign with faux kanji: frame 0 lit, frame 1 a dead flicker
-    const lit = frame === 0
-    const c = inks(a, pal)
-    const tube = lit ? c.glow : pack(mix(c.hue, [20, 16, 30], 0.7))
-    const core = lit ? c.ink : pack(mix(c.hue, [20, 16, 30], 0.6))
-    if (lit) {
-      const halo = pack(mix(c.hue, pal.shadow, 0.55))
-      for (let y = 0; y < s.h; y++) for (let x = 0; x < s.w; x++) if (dither(x, y, 0.45)) b.set(x, y, halo)
-    }
-    b.rect(2, 2, s.w - 4, s.h - 4, pack(mix(pal.shadow, [16, 12, 26], 0.5)))
-    for (let i = 0; i < s.glyphs; i++) {
-      const gx = s.vertical ? 4 : 4 + i * 10, gy = s.vertical ? 4 + i * 10 : 4
-      drawKanji(b, s.seed * 7 + i, gx, gy, tube, 7, core)
-    }
-    b.rect(2, 2, s.w - 4, 1, tube); b.rect(2, s.h - 3, s.w - 4, 1, tube)
-    return b
-  }
-
-  if (s.kind === 'screen') {
-    // bezel and a dark panel; the view draws the live chart inside
-    const c = inks(a, pal)
-    b.rect(0, 0, s.w, s.h, metal)
-    b.rect(0, 0, s.w, 1, metalL)
-    b.rect(2, 2, s.w - 4, s.h - 4, pack(mix(c.hue, [4, 4, 10], 0.9)))
-    const grid = pack(mix(c.hue, [4, 4, 10], 0.78))
-    for (let x = 6; x < s.w - 2; x += 6) b.rect(x, 3, 1, s.h - 6, grid)
-    for (let y = 6; y < s.h - 2; y += 5) b.rect(3, y, s.w - 6, 1, grid)
-    drawText(b, s.show === 'stock' ? 'NKO' : s.show === 'ekg' ? 'BPM' : 'VOL', 4, 4, c.ink)
-    return b
-  }
-
   if (s.kind === 'ticker') {
     const c = inks(a, pal)
     b.rect(0, 0, s.w, s.h, metal)
@@ -348,44 +329,6 @@ export function bakeBillboard(s, pal, frame) {
     return b
   }
 
-  if (s.kind === 'poster') {
-    // street posters pasted over each other, corners torn, tagged over
-    const papers = [[236, 228, 210], [40, 36, 52], [255, 214, 90], [200, 222, 236]]
-    for (let i = 0; i < s.count; i++) {
-      const ad = s.ads[i & 1]
-      const c = inks({ ...ad, hue: ad.hue + i }, pal)
-      const px = 3 + i * 18 + Math.floor(hash(s.seed, i, 1) * 4) - 2, py = 2 + Math.floor(hash(s.seed, i, 2) * 4)
-      const pw = 20, ph = 28
-      const paper = papers[Math.floor(hash(s.seed, i, 3) * papers.length)]
-      const dark = paper[0] < 100
-      b.rect(px, py, pw, ph, pack(paper))
-      b.rect(px + 2, py + 2, pw - 4, 13, c.glow)
-      const fits = ad.art && artSize(ad.art)[0] <= pw - 4 && artSize(ad.art)[1] <= 13
-      if (fits) { const [aw, ah] = artSize(ad.art); drawArt(b, ad.art, px + ((pw - aw) >> 1), py + 2 + ((13 - ah) >> 1), c.art) }
-      else drawKanji(b, ad.hue * 3 + i + s.seed, px + 6, py + 5, c.dark, 7)
-      const word = ad.brand.split(' ')[0].slice(0, 4)
-      drawText(b, word, px + ((pw - smallW(word)) >> 1), py + 18, pack(dark ? [236, 228, 210] : [30, 26, 40]))
-      b.rect(px + 3, py + 25, pw - 6, 1, c.glow)
-      const corner = Math.floor(hash(s.seed, i, 4) * 4)                          // torn corner
-      for (let k = 0; k < 4; k++) for (let j = 0; j < 4 - k; j++) {
-        b.set(corner & 1 ? px + pw - 1 - j : px + j, corner & 2 ? py + ph - 1 - k : py + k, 0)
-      }
-      b.rect(px + 7, py - 1, 6, 2, pack([220, 214, 190]))                         // tape
-    }
-    // a graffiti tag sprayed on the wall under the posters
-    if (hash(s.seed, 8) < 0.7) {
-      const tagC = pack(pal.neon[Math.floor(hash(s.seed, 9) * pal.neon.length)])
-      const base = s.h - 6
-      let gy = base
-      for (let gx = 6; gx < s.w - 8; gx++) {
-        const ny = base + Math.round(3 * Math.sin(gx * 0.9 + s.seed) * Math.sin(gx * 0.31))
-        b.line(gx, gy, gx + 1, ny, tagC)
-        gy = ny
-      }
-      b.rect(s.w - 9, base - 4, 1, 6, tagC)
-      b.set(s.w - 9, base + 3, tagC)
-    }
-    return b
-  }
+
   return b
 }
