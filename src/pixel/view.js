@@ -3,11 +3,15 @@ import { toCanvas, pack, mix, css, dither, hash, PixelBuffer } from './pixels.js
 import { paletteAt, districtName, ACCENT } from './palette.js'
 import { RunnerSprite, ORIGIN_X, ORIGIN_Y } from './runner.js'
 import { PPU, bakeBuilding, bakeObstacle, bakeDecor, bakeBird, bakeSkyline, bakeCloud, bakeSign, bakeCar, bakeHolo, outlined, glow, recede } from './sprites.js'
-import { PHYS } from '../sim/config.js'
+import { PHYS, HEIST } from '../sim/config.js'
 import { createRng } from '../sim/rng.js'
 
 const H = 270
 const RASTER_FPS = 24
+const SHARD = [41, 243, 255]
+const LASER = [255, 47, 160]
+const TRIPPED = [255, 170, 40]
+const HULL = [26, 24, 38]
 
 const damp = (a, b, rate, dt) => a + (b - a) * (1 - Math.exp(-rate * dt))
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v))
@@ -55,6 +59,8 @@ export class PixelView {
     this.ghostCanvas = document.createElement('canvas')
     this.ghostClock = 0
     this.passed = 0
+    this.glitchAmt = 0
+    this.wrecks = []
 
     window.addEventListener('resize', () => this.resize())
     this.resize()
@@ -73,6 +79,7 @@ export class PixelView {
     this.cache.delete('haze')
     this.cache.delete('mist')
     this.cache.delete('vignette')
+    this.cache.delete('alarm')
   }
 
   // ── cached sprites, re-baked when the palette steps ─────────────────────
@@ -93,6 +100,8 @@ export class PixelView {
     this.views.clear()
     this.birds = []
     this.particles = []
+    this.wrecks = []
+    this.glitchAmt = 0
     level.on('add', (c) => this.addChunk(c))
     level.on('remove', (c) => this.removeChunk(c))
     for (const c of level.chunks) this.addChunk(c)
@@ -144,6 +153,7 @@ export class PixelView {
   }
 
   setFloor(y) { this.cam.floor = y }
+  glitch(a) { this.glitchAmt = Math.min(1, this.glitchAmt + a) }
   shake(a) { this.cam.trauma = Math.min(1, this.cam.trauma + a) }
 
   sx(x) { return Math.round(x * PPU) - this.camPX + (this.W >> 1) }
@@ -206,12 +216,39 @@ export class PixelView {
       case 'bonk':
         this.shake(0.5)
         break
+      case 'trip':
+        this.shake(0.35)
+        this.burst(p.x + 0.3, p.y, 8, { spread: 1.4, up: 1.4 })
+        break
       case 'spring':
         this.shake(0.25)
         this.burst(p.x, p.y, 10, { up: 3, color: ACCENT })
         break
       case 'grab':
         this.burst(p.x + 0.3, p.y + PHYS.H, 4, { up: 0.6, spread: 0.6 })
+        break
+      case 'airjump':
+        this.burst(p.x, p.y, 8, { spread: 1.6, up: -0.5, color: SHARD, life: 0.35 })
+        break
+      case 'shard':
+        this.burst(e.x, e.y, 6, { spread: 1.5, up: 1.5, color: SHARD, life: 0.4 })
+        break
+      case 'zap':
+        this.burst(p.x, e.y, 10, { spread: 1.5, up: 1.5, color: LASER, life: 0.4 })
+        this.glitch(0.4)
+        this.shake(0.2)
+        break
+      case 'spotted':
+        this.glitch(0.2)
+        break
+      case 'takedown':
+        this.wrecks.push({ x: e.x, y: e.y, vx: p.speed * 0.6, vy: 3, life: 3 })
+        this.burst(e.x, e.y + 0.2, 14, { spread: 2.5, up: 2.5, color: [255, 200, 90], life: 0.5 })
+        this.shake(0.35)
+        break
+      case 'traced':
+        this.glitch(1)
+        this.shake(0.6)
         break
     }
   }
@@ -221,7 +258,7 @@ export class PixelView {
   // ── frame ───────────────────────────────────────────────────────────────
 
   frame(s) {
-    const pal = paletteAt(s.distance)
+    const pal = paletteAt(s.paletteD ?? s.distance)
     this.pal = pal
     this.budget = 2
     const { ctx } = this
@@ -238,19 +275,28 @@ export class PixelView {
     this.drawLayers(pal)
     ctx.drawImage(this.sprite('haze', pal.version, () => bakeHaze(W, pal)), 0, Math.round(H * 0.62))
     this.drawCourse(pal, s)
+    this.drawHeist(s, pal)
     this.drawBirds(s.dt, s.rx)
     this.drawGates(s, pal)
     this.drawGhost(s)
     this.drawRunner(s, pal)
     this.drawBeams()
+    this.drawLasers(s)
     this.drawParticles(s.dt, pal)
     this.drawMist(pal, s.time)
     this.drawWeather(s, pal)
     this.drawSpeedLines(s, pal)
     ctx.drawImage(this.sprite('vignette', pal.version, () => bakeVignette(W, pal)), 0, 0)
+    if (s.trace > 0.7) {
+      ctx.globalAlpha = Math.min(1, (s.trace - 0.7) / 0.3) * (0.55 + 0.45 * Math.sin(s.time * 9))
+      ctx.drawImage(this.sprite('alarm', 0, () => bakeAlarm(W)), 0, 0)
+      ctx.globalAlpha = 1
+    }
     ctx.fillStyle = 'rgba(0,0,0,0.07)'
     for (let y = 1; y < H; y += 2) ctx.fillRect(0, y, W, 1)
     if (s.focusVis > 0.02) this.postFocus(s.focusVis)
+    if (this.glitchAmt > 0.01) this.postGlitch(this.glitchAmt)
+    this.glitchAmt = Math.max(0, this.glitchAmt - s.raw * 2.2)
     const flash = Math.max(s.flash, this.lightning)
     if (flash > 0) { ctx.fillStyle = `rgba(255,255,255,${Math.min(0.9, flash)})`; ctx.fillRect(0, 0, W, H) }
     if (s.fade > 0) { ctx.fillStyle = `rgba(8,6,16,${s.fade})`; ctx.fillRect(0, 0, W, H) }
@@ -485,6 +531,128 @@ export class PixelView {
     }
   }
 
+  // Heist layer behind the runner: data shards, security drones, wrecks.
+  drawHeist(s, pal) {
+    const { ctx } = this
+    const left = this.cam.x - this.W / 2 / PPU - 4, right = this.cam.x + this.W / 2 / PPU + 4
+    const t = this.cam.time
+    for (const c of s.level.chunksIn(left, right)) {
+      if (!c.shards) continue
+      for (const d of c.drones) {
+        if (d.down) continue
+        const x = this.sx(d.x)
+        const top = this.sy(d.y + HEIST.DRONE_H) + Math.round(Math.sin(t * 2.3 + d.x) * 1.5)
+        const floor = this.sy(c.roof)
+        // scan cone sweeping the roof
+        const sweep = Math.sin(t * 1.4 + d.x) * 7
+        const cone = d.spotted ? [255, 59, 48] : SHARD
+        ctx.fillStyle = css(cone)
+        for (let y = top + 7; y < floor; y++) {
+          const u = (y - top - 7) / Math.max(1, floor - top - 7)
+          const cx = x + sweep * u
+          const half = 1 + u * 9
+          for (let xx = Math.round(cx - half); xx <= Math.round(cx + half); xx++) {
+            if (dither(xx, y + Math.floor(t * 12), 0.16 + (y === floor - 1 ? 0.4 : 0))) ctx.fillRect(xx, y, 1, 1)
+          }
+        }
+        // hull, rotors, eye
+        ctx.fillStyle = css([8, 6, 14])
+        ctx.fillRect(x - 7, top + 1, 15, 6)
+        ctx.fillStyle = css(HULL)
+        ctx.fillRect(x - 6, top + 2, 13, 4)
+        ctx.fillStyle = css(mix(HULL, [120, 120, 150], 0.4))
+        ctx.fillRect(x - 6, top + 2, 13, 1)
+        const blade = Math.floor(t * 30) & 1
+        ctx.fillStyle = 'rgba(200,210,230,0.7)'
+        ctx.fillRect(x - 9 + blade, top, 5, 1)
+        ctx.fillRect(x + 5 - blade, top, 5, 1)
+        ctx.fillStyle = css([8, 6, 14])
+        ctx.fillRect(x - 6, top + 1, 1, 1)
+        ctx.fillRect(x + 6, top + 1, 1, 1)
+        ctx.fillStyle = Math.sin(t * 10 + d.x) > -0.3 ? css([255, 59, 48]) : css([120, 20, 20])
+        ctx.fillRect(x - 4, top + 4, 2, 2)
+        ctx.fillStyle = css(cone)
+        ctx.fillRect(x - 1, top + 6, 3, 1)
+      }
+      for (const sh of c.shards) {
+        if (sh.taken) continue
+        const x = this.sx(sh.x)
+        const y = this.sy(sh.y) + Math.round(Math.sin(t * 3 + sh.x * 1.7) * 1.5)
+        if (x < -6 || x > this.W + 6) continue
+        const k = 0.35 + 0.65 * Math.abs(Math.cos(t * 3.2 + sh.x))
+        ctx.fillStyle = css(SHARD, 0.28)
+        for (let dy = -5; dy <= 5; dy++) {
+          const hw = Math.round((5 - Math.abs(dy)) * k)
+          ctx.fillRect(x - hw, y + dy, hw * 2 + 1, 1)
+        }
+        ctx.fillStyle = css(SHARD)
+        for (let dy = -3; dy <= 3; dy++) {
+          const hw = Math.round((3 - Math.abs(dy)) * k)
+          ctx.fillRect(x - hw, y + dy, hw * 2 + 1, 1)
+        }
+        ctx.fillStyle = '#ffffff'
+        ctx.fillRect(x, y - 1, 1, 2)
+      }
+    }
+    // shot-down drones tumble into the street
+    this.wrecks = this.wrecks.filter((w) => {
+      w.life -= s.dt
+      w.vy -= 30 * s.dt
+      w.x += w.vx * s.dt
+      w.y += w.vy * s.dt
+      const x = this.sx(w.x), y = this.sy(w.y)
+      if (w.life <= 0 || y > H + 10) return false
+      const tilt = Math.floor(w.life * 8) & 1
+      ctx.fillStyle = css(HULL)
+      ctx.fillRect(x - 6, y - 2 - tilt, 13, 4 + tilt * 2)
+      ctx.fillStyle = css([255, 140, 40])
+      ctx.fillRect(x - 1, y - 1, 2, 2)
+      if (Math.random() < 0.5) this.particles.push({ x: w.x, y: w.y, vx: -1 + Math.random() * 2, vy: 1 + Math.random(), life: 0.5, max: 0.5, color: Math.random() < 0.5 ? [255, 200, 90] : [60, 56, 70], size: Math.random() < 0.4 ? 2 : 1 })
+      return true
+    })
+  }
+
+  // Laser grids sit in front of the runner so the beam reads across the body.
+  drawLasers(s) {
+    const { ctx } = this
+    const left = this.cam.x - this.W / 2 / PPU - 4, right = this.cam.x + this.W / 2 / PPU + 4
+    const t = this.cam.time
+    for (const c of s.level.chunksIn(left, right)) {
+      if (!c.lasers) continue
+      for (const l of c.lasers) {
+        const x0 = this.sx(l.x0), x1 = this.sx(l.x1)
+        if (x1 < -4 || x0 > this.W + 4) continue
+        const y = this.sy((l.y0 + l.y1) / 2)
+        const floor = this.sy(c.roof)
+        const col = l.tripped ? TRIPPED : LASER
+        // emitter posts
+        for (const px of [x0 - 3, x1]) {
+          ctx.fillStyle = css([8, 6, 14])
+          ctx.fillRect(px, y - 3, 3, floor - y + 3)
+          ctx.fillStyle = css(HULL)
+          ctx.fillRect(px + 1, y - 2, 1, floor - y + 2)
+          ctx.fillStyle = css(col)
+          ctx.fillRect(px, y - 1, 3, 3)
+        }
+        // the beam
+        const on = l.tripped ? Math.floor(t * 6) & 1 : hash(Math.floor(t * 20), l.x0 * 10) > 0.08
+        if (!on) continue
+        const pulse = 0.5 + 0.5 * Math.sin(t * 14 + l.x0)
+        ctx.fillStyle = css(col, 0.18 + 0.12 * pulse)
+        ctx.fillRect(x0, y - 3, x1 - x0, 7)
+        ctx.fillStyle = css(col, 0.5)
+        ctx.fillRect(x0, y - 1, x1 - x0, 3)
+        ctx.fillStyle = css(col)
+        ctx.fillRect(x0, y, x1 - x0, 2)
+        ctx.fillStyle = 'rgba(255,240,250,0.9)'
+        ctx.fillRect(x0, y, x1 - x0, 1)
+        const spark = x0 + Math.floor(hash(Math.floor(t * 30), l.x1) * (x1 - x0))
+        ctx.fillStyle = '#ffffff'
+        ctx.fillRect(spark, y - 1, 2, 3)
+      }
+    }
+  }
+
   drawGhost(s) {
     const gst = s.ghost
     if (!gst) return
@@ -642,6 +810,22 @@ export class PixelView {
     })
   }
 
+  // Signal interference: torn scanlines and a chromatic smear.
+  postGlitch(a) {
+    const { ctx } = this
+    const n = 2 + Math.floor(a * 10)
+    for (let i = 0; i < n; i++) {
+      const y = Math.floor(Math.random() * H)
+      const h = 1 + Math.floor(Math.random() * 10 * a)
+      const dx = Math.round((Math.random() - 0.5) * a * 28)
+      ctx.drawImage(this.canvas, 0, y, this.W, h, dx, y, this.W, h)
+    }
+    ctx.fillStyle = `rgba(255,47,160,${0.12 * a})`
+    ctx.fillRect(0, Math.floor(Math.random() * H), this.W, 2 + Math.floor(Math.random() * 14 * a))
+    ctx.fillStyle = `rgba(41,243,255,${0.12 * a})`
+    ctx.fillRect(0, Math.floor(Math.random() * H), this.W, 2 + Math.floor(Math.random() * 14 * a))
+  }
+
   // Focus drains color from everything that isn't runner-vision red.
   postFocus(amount) {
     const img = this.ctx.getImageData(0, 0, this.W, H)
@@ -730,6 +914,19 @@ function bakeVignette(W, pal) {
       const dx = (x / W - 0.5) * 2, dy = (y / H - 0.5) * 2
       const r = Math.sqrt(dx * dx * 0.7 + dy * dy)
       if (dither(x, y, (r - 1.05) * 1.6)) b.data[y * W + x] = c
+    }
+  }
+  return b
+}
+
+// Red alarm edges for a trace about to fill.
+function bakeAlarm(W) {
+  const b = new PixelBuffer(W, H)
+  const c = pack([255, 40, 30])
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      const e = Math.min(x, W - 1 - x, y, H - 1 - y)
+      if (dither(x, y, 0.7 - e / 26)) b.data[y * W + x] = c
     }
   }
   return b

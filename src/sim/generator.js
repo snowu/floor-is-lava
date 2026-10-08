@@ -75,7 +75,9 @@ export class CourseGenerator {
   // options.length: place a finish line once the course reaches this distance
   // options.checkpointEvery: spacing of respawn checkpoints
   // options.difficulty: { start, ramp } — difficulty grows from start to 1 over ramp meters
-  constructor(seed, { tutorial = true, length = Infinity, checkpointEvery = 250, difficulty = null } = {}) {
+  // options.heist: add data shards, laser grids and drones (from their own rng,
+  //   so the buildings are identical to the same seed without them)
+  constructor(seed, { tutorial = true, length = Infinity, checkpointEvery = 250, difficulty = null, heist = false } = {}) {
     this.seed = seed >>> 0
     this.rng = createRng(this.seed)
     this.index = 0
@@ -91,6 +93,7 @@ export class CourseGenerator {
     this.checkpointCount = 0
     this.finished = false
     this.difficulty = difficulty
+    this.heist = heist
   }
 
   difficultyAt(x) {
@@ -125,6 +128,9 @@ export class CourseGenerator {
       decor: [],
       hints: [],
       extras: [],
+      shards: [],
+      lasers: [],
+      drones: [],
       gap: null,
       xEnd: 0,
       span: [x0, x1],
@@ -149,6 +155,7 @@ export class CourseGenerator {
     const obstacleStart = x0 + (id === 0 ? 46 : this.entryClear)
     if (!finish) this.placeObstacles(chunk, obstacleStart, obstacleEnd, d, tutorial)
     this.placeDecor(chunk)
+    if (this.heist && id > 0 && !finish) placeHeist(chunk, gap, d)
     if (tutorial?.hints.gap) chunk.hints.push({ x: x1 - 14, key: tutorial.hints.gap })
 
     chunk.xEnd = gap.nextX0
@@ -323,5 +330,107 @@ export class CourseGenerator {
       })
     }
     if (rng.chance(0.55)) chunk.extras.push({ type: 'birds', x: round(rng.range(chunk.x0 + 10, chunk.x1 - 4)), count: rng.int(3, 7) })
+  }
+}
+
+// ── heist layer ─────────────────────────────────────────────────────────
+// Shards trace the lines a runner actually takes (over gaps, along cables
+// and wall-runs); lasers and drones sit on clear stretches of roof.
+
+const SHARD_RING = 0x5a17
+
+function placeHeist(chunk, gap, d) {
+  const rng = createRng(chunk.seed ^ SHARD_RING)
+  const { x0, x1, roof } = chunk
+  let n = 0
+  const shard = (x, y) => chunk.shards.push({ id: `${chunk.id}:${n++}`, x: round(x), y: round(y), taken: false })
+  const addLaser = (x, len, low) => {
+    const y0 = low ? roof + 0.05 : roof + 1.05
+    chunk.lasers.push({ id: `${chunk.id}:L${chunk.lasers.length}`, x0: round(x), x1: round(x + len), y0: round(y0), y1: round(y0 + 0.22), low, tripped: false })
+  }
+
+  // clear roof intervals between obstacles, away from the gap runway
+  const blocks = chunk.solids.filter((s) => s.kind !== 'roof').sort((a, b) => a.x0 - b.x0)
+  const free = []
+  let cursor = x0 + 9
+  for (const s of blocks) {
+    if (s.x0 - 5 > cursor) free.push([cursor, s.x0 - 5])
+    cursor = Math.max(cursor, s.x1 + 5)
+  }
+  const end = gap.runwayStart - 6
+  if (end > cursor) free.push([cursor, end])
+  const take = (len) => {
+    const fits = free.filter(([a, b]) => b - a >= len)
+    if (!fits.length) return null
+    const iv = rng.pick(fits)
+    const at = rng.range(iv[0], iv[1] - len)
+    // split what remains so later placements don't overlap
+    free.splice(free.indexOf(iv), 1)
+    if (at - iv[0] > 4) free.push([iv[0], at - 2])
+    if (iv[1] - (at + len) > 4) free.push([at + len + 2, iv[1]])
+    return at
+  }
+
+  // gap lines
+  switch (gap.type) {
+    case 'jump': {
+      for (const u of [0.2, 0.5, 0.8]) {
+        const base = roof + (gap.dh < 0 ? gap.dh * u * u : gap.dh * u)
+        shard(x1 - 1 + (gap.width + 2) * u, base + 2.3 + 0.7 * Math.sin(Math.PI * u))
+      }
+      break
+    }
+    case 'zip': {
+      const z = chunk.ziplines[0]
+      for (let i = 1; i <= 5; i++) {
+        const x = z.ax + 3 + (z.bx - z.ax - 6) * (i - 1) / 4
+        shard(x, z.ay + (x - z.ax) * (z.by - z.ay) / (z.bx - z.ax) - 1)
+      }
+      break
+    }
+    case 'wallrun':
+      for (const u of [0.2, 0.5, 0.8]) shard(x1 + gap.width * u, roof + 2.3)
+      break
+    case 'climb':
+      shard(x1 + gap.width - 0.5, roof + gap.dh * 0.6)
+      break
+    case 'spring':
+      shard(x1 + gap.width + 2, roof + gap.dh + 1)
+      shard(x1 + gap.width + 3.6, roof + gap.dh + 1)
+      break
+  }
+
+  // laser grids: low ones are jumped, high ones are slid under. Some take
+  // the place of a vent (also a jump: vaults need one) or a pipe (a slide), so
+  // the spacing the obstacle pass designed for reaction time still holds.
+  const swap = 0.2 + 0.35 * d
+  for (const s of blocks) {
+    if ((s.sub !== 'vent' && s.sub !== 'beam') || !rng.chance(swap)) continue
+    const low = s.sub === 'vent'
+    const len = Math.max(low ? 1.8 : 1.4, s.x1 - s.x0 + 0.6)
+    chunk.solids.splice(chunk.solids.indexOf(s), 1)
+    addLaser(s.x0 - 0.3, len, low)
+  }
+  if (rng.chance(0.15 + 0.3 * d)) {
+    const low = rng.chance(0.5)
+    const len = low ? rng.range(1.8, 3.2) : rng.range(1.4, 2.8)
+    const at = take(len + 8)
+    if (at !== null) addLaser(at + 5, len, low)
+  }
+
+  // drones hover just above head height: kick them out of the air, or get spotted
+  if (rng.chance(0.25 + 0.35 * d)) {
+    const at = take(6)
+    if (at !== null) chunk.drones.push({ id: `${chunk.id}:D`, x: round(at + 3), y: round(roof + 2.75), down: false, spotted: false, passed: false })
+  }
+
+  // a line of shards along the roof: low ones are free, high ones need a jump
+  if (rng.chance(0.65)) {
+    const count = rng.int(3, 5)
+    const at = take(count * 1.6 + 1)
+    if (at !== null) {
+      const high = rng.chance(0.4)
+      for (let i = 0; i < count; i++) shard(at + 0.5 + i * 1.6, roof + (high ? 2.9 : 0.9))
+    }
   }
 }

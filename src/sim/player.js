@@ -23,6 +23,7 @@ export function createPlayer(x, y) {
     jumpHoldT: 0,
     rollTimer: 0,
     coyote: 0,
+    airJumps: PHYS.AIR_JUMPS,
     climbUsed: false,
     climbT: 0,
     wall: null,
@@ -204,6 +205,7 @@ function land(p, s, events) {
   p.y = s.y1
   p.vy = 0
   p.climbUsed = false
+  p.airJumps = PHYS.AIR_JUMPS
   p.jumpHoldActive = false
   p.support = s
   if (s.kind === 'spring') {
@@ -225,6 +227,54 @@ function land(p, s, events) {
     emit(events, 'land', p, { impact })
   }
   p.rollTimer = 0
+}
+
+// The nearest vaultable obstacle face a few steps ahead, if any.
+function vaultTarget(p, solids) {
+  const front = p.x + PHYS.W / 2
+  let best = null
+  for (const s of solids) {
+    if (s.kind !== 'block' || s.x0 < front - 0.01 || s.x0 > front + PHYS.VAULT_REACH) continue
+    const dh = s.y1 - p.y
+    if (dh <= PHYS.STEP || dh > PHYS.CLAMBER_MAX || s.y0 > p.y + 0.05) continue
+    if (!best || s.x0 < best.x0) best = s
+  }
+  return best
+}
+
+// Over (narrow) or onto (wide) a low obstacle. A trip is the same motion,
+// slower and scrappy, and it costs your speed.
+function startVault(p, s, events, trip = false) {
+  const hw = PHYS.W / 2
+  const clamber = s.y1 - p.y > PHYS.VAULT_MAX
+  const width = s.x1 - s.x0
+  const speed = Math.max(p.speed, PHYS.SPEED_MIN)
+  const slow = trip ? 1.9 : clamber ? 1.35 : 1
+  p.jumpBuffer = 0
+  if (width <= 2.5) {
+    const ex = s.x1 + hw + 0.15
+    startKinematic(p, 'vault', {
+      ex, ey: p.y, peak: s.y1 + 0.12,
+      T: Math.max(0.2, (ex - p.x) / speed) * slow,
+      mode: 'arc', end: 'air', top: s.y1,
+    })
+  } else {
+    startKinematic(p, 'vault', {
+      ex: s.x0 + hw + 0.4 + speed * 0.1, ey: s.y1,
+      T: PHYS.VAULT_STEP_TIME * (clamber ? 1.6 : 1) * (trip ? 1.6 : 1),
+      mode: 'step', end: 'run', top: s.y1,
+    })
+  }
+  if (trip) {
+    p.speed = Math.min(p.speed, PHYS.STUMBLE_SPEED)
+    emit(events, 'trip', p)
+  } else if (clamber) {
+    p.speed = Math.max(PHYS.SPEED_MIN * 0.8, p.speed * 0.75)
+    emit(events, 'clamber', p)
+  } else {
+    gainSpeed(p, PHYS.BONUS_VAULT)
+    emit(events, 'vault', p)
+  }
 }
 
 // Ran into a solid face while on the ground.
@@ -254,29 +304,16 @@ function groundFace(p, s, input, events) {
   }
   p.x = s.x0 - hw
   if (dh <= PHYS.CLAMBER_MAX) {
-    const clamber = dh > PHYS.VAULT_MAX
-    const width = s.x1 - s.x0
-    const speed = Math.max(p.speed, PHYS.SPEED_MIN)
-    if (width <= 2.5) {
-      const ex = s.x1 + hw + 0.15
-      startKinematic(p, 'vault', {
-        ex, ey: p.y, peak: s.y1 + 0.12,
-        T: Math.max(0.2, (ex - p.x) / speed) * (clamber ? 1.35 : 1),
-        mode: 'arc', end: 'air', top: s.y1,
-      })
+    // vaulting takes a jump press; running in blind trips (low) or stops you (tall)
+    if (p.jumpBuffer > 0 || input.jumpPressed) {
+      startVault(p, s, events)
+    } else if (dh <= PHYS.VAULT_MAX) {
+      startVault(p, s, events, true)
     } else {
-      startKinematic(p, 'vault', {
-        ex: s.x0 + hw + 0.4 + speed * 0.1, ey: s.y1,
-        T: PHYS.VAULT_STEP_TIME * (clamber ? 1.6 : 1),
-        mode: 'step', end: 'run', top: s.y1,
-      })
-    }
-    if (clamber) {
-      p.speed = Math.max(PHYS.SPEED_MIN * 0.8, p.speed * 0.75)
-      emit(events, 'clamber', p)
-    } else {
-      gainSpeed(p, PHYS.BONUS_VAULT)
-      emit(events, 'vault', p)
+      p.speed = 0
+      p.wall = s
+      setState(p, 'blocked')
+      emit(events, 'bonk', p)
     }
     return
   }
@@ -340,6 +377,7 @@ function tryAttach(p, level, events) {
     if (p.x < panel.x0 || p.x > panel.x1 || p.y < panel.y0 || p.y > panel.y1) continue
     p.panel = panel
     p.lastPanel = panel.id
+    p.airJumps = PHYS.AIR_JUMPS
     p.vy = Math.max(-1, Math.min(p.vy, PHYS.WALLRUN_ENTER_VY))
     p.jumpHoldActive = false
     gainSpeed(p, PHYS.BONUS_WALLRUN)
@@ -354,6 +392,7 @@ function tryAttach(p, level, events) {
     if (Math.abs(p.y + PHYS.ZIP_HANG - ly) > PHYS.ZIP_CATCH) continue
     p.zip = zip
     p.lastZip = zip.id
+    p.airJumps = PHYS.AIR_JUMPS
     p.zipV = Math.max(p.speed, PHYS.ZIP_MIN)
     p.y = ly - PHYS.ZIP_HANG
     p.vy = 0
@@ -467,6 +506,14 @@ function stepGround(p, input, dt, solids, events) {
   else if (st === 'stumble') p.speed = Math.min(PHYS.STUMBLE_SPEED, p.speed + PHYS.RECOVER_ACCEL * dt)
 
   const canJump = st === 'run' || st === 'slide' || (st === 'roll' && p.t > 0.2) || (st === 'stumble' && p.t > 0.25)
+  // jump pressed with an obstacle just ahead: that's a vault, not a hop
+  if (p.jumpBuffer > 0 && (st === 'run' || st === 'roll')) {
+    const target = vaultTarget(p, solids)
+    if (target) {
+      startVault(p, target, events)
+      return
+    }
+  }
   if (p.jumpBuffer > 0 && canJump && hasHeadroom(p, solids)) {
     startJump(p, PHYS.JUMP_V, events, st === 'slide' ? 'slidejump' : 'jump')
     stepAir(p, input, dt, solids, null, events)
@@ -502,6 +549,9 @@ function stepGround(p, input, dt, solids, events) {
 function stepAir(p, input, dt, solids, level, events) {
   if (p.coyote > 0 && p.jumpBuffer > 0) {
     startJump(p, PHYS.JUMP_V, events)
+  } else if (p.jumpBuffer > 0 && p.airJumps > 0 && p.state === 'air') {
+    p.airJumps--
+    startJump(p, Math.max(p.vy, PHYS.AIR_JUMP_V), events, 'airjump')
   }
   const g = airGravity(p, input)
   if (p.jumpHoldActive && p.vy > 0) p.jumpHoldT += dt

@@ -55,13 +55,34 @@ describe('player physics', () => {
     expect(p.alive).toBe(false)
   })
 
-  it('vaults low obstacles without losing speed', () => {
+  it('vaults low obstacles when jump is pressed on approach', () => {
+    const p = createPlayer(0, 0)
+    p.speed = 12
+    const level = world([{ x0: -10, x1: 1000, y1: 0 }, { kind: 'block', x0: 6, x1: 7, y0: 0, y1: 1 }])
+    // pressed ~1m out: inside the vault window, so it's a vault rather than a hop
+    const events = run(p, level, 1.5, (q, i) => (q.x > 4.4 && q.x < 4.6 ? { ...NONE, jump: true, jumpPressed: true } : NONE))
+    expect(events).toContain('vault')
+    expect(events).not.toContain('jump')
+    expect(p.x).toBeGreaterThan(15)
+    expect(p.speed).toBeGreaterThanOrEqual(12)
+  })
+
+  it('trips over low obstacles run into without a jump', () => {
     const p = createPlayer(0, 0)
     p.speed = 12
     const events = run(p, world([{ x0: -10, x1: 1000, y1: 0 }, { kind: 'block', x0: 6, x1: 7, y0: 0, y1: 1 }]), 1.5)
-    expect(events).toContain('vault')
-    expect(p.x).toBeGreaterThan(15)
-    expect(p.speed).toBeGreaterThanOrEqual(12)
+    expect(events).toContain('trip')
+    expect(events).not.toContain('vault')
+    expect(p.x).toBeGreaterThan(8)
+    expect(p.speed).toBeLessThan(12)
+  })
+
+  it('is stopped by chest-high crates unless it jumps', () => {
+    const p = createPlayer(0, 0)
+    p.speed = 12
+    const crate = { kind: 'block', x0: 6, x1: 7, y0: 0, y1: 1.8 }
+    expect(run(p, world([{ x0: -10, x1: 1000, y1: 0 }, crate]), 1)).toContain('bonk')
+    expect(p.state).toBe('blocked')
   })
 
   it('stumbles into an overhead beam unless sliding', () => {

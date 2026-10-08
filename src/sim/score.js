@@ -6,12 +6,14 @@ import { PHYS } from './config.js'
 export const MOVE_POINTS = {
   vault: 100, clamber: 40, roll: 150, wallrun: 200, walljump: 150, zip: 120, zipjump: 80,
   spring: 80, grab: 60, climb: 60, slide: 40, slidejump: 120, jump: 10,
+  airjump: 70, shard: 25, takedown: 250,
 }
 export const MOVE_NAMES = {
   vault: 'VAULT', clamber: 'CLAMBER', roll: 'ROLL', wallrun: 'WALLRUN', walljump: 'WALL KICK', zip: 'ZIPLINE',
   zipjump: 'ZIP DROP', spring: 'LAUNCH', grab: 'LEDGE', climb: 'CLIMB', slide: 'SLIDE', slidejump: 'SLIDE JUMP',
+  airjump: 'AIR JUMP', takedown: 'TAKEDOWN',
 }
-const BREAKERS = new Set(['hardland', 'bonk'])
+const BREAKERS = new Set(['hardland', 'bonk', 'trip'])
 const SUSTAINED = { wallrun: 60, zip: 40 }   // points per second while doing it
 
 export const COMBO_WINDOW = 2.6
@@ -22,7 +24,8 @@ export function speedFactor(speed) {
 }
 
 export class ScoreKeeper {
-  constructor() {
+  constructor({ window = COMBO_WINDOW } = {}) {
+    this.window = window  // time allowed between moves to keep the chain
     this.total = 0
     this.combo = 0        // pending points in the current chain
     this.mult = 0         // chain length, capped
@@ -41,9 +44,14 @@ export class ScoreKeeper {
     const base = MOVE_POINTS[type]
     if (!base) return null
     if (type === 'jump') { this.combo += base; return null }
+    // pickups feed and extend a running chain but don't grow the multiplier
+    if (type === 'shard') {
+      if (this.mult > 0) { this.combo += base; this.timer = this.window }
+      return null
+    }
     this.combo += base * speedFactor(speed)
     this.mult = Math.min(MAX_MULT, this.mult + 1)
-    this.timer = COMBO_WINDOW
+    this.timer = this.window
     if (MOVE_NAMES[type]) this.moves.push(MOVE_NAMES[type])
     if (this.moves.length > 4) this.moves.shift()
     return null
@@ -81,7 +89,7 @@ export class ScoreKeeper {
     const sustain = SUSTAINED[p.state]
     if (sustain) {
       this.combo += sustain * speedFactor(p.speed) * dt
-      this.timer = COMBO_WINDOW
+      this.timer = this.window
     } else if (this.mult > 0) {
       this.timer -= dt
       if (this.timer <= 0) return this.bank()

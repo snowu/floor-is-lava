@@ -294,3 +294,66 @@ body.pixel .banner { color: #eef6ff; text-shadow: -2px 0 var(--pink), 2px 0 var(
 .action kbd { font-size: 10px; margin-left: 6px; }
 .action.primary kbd { background: #05040d; color: var(--cyan); box-shadow: none; }
 #over .stats { margin-top: 16px; }
+
+/* ── heist: trace, chrome, street doc ────────────────────────────────── */
+
+.hud.heist .hud-tc { display: flex; }
+.hud.heist .timer, .hud.heist .delta { display: none; }
+.trace-wrap { display: none; flex-direction: column; align-items: center; gap: 4px; margin-top: 4px; }
+.hud.heist .trace-wrap { display: flex; }
+.trace-label { display: flex; gap: 8px; font: 400 11px/1 'Silkscreen', monospace; letter-spacing: 0.08em; color: #8fa0c8; text-shadow: 2px 2px 0 rgba(0, 0, 0, 0.6); }
+.trace-label b { color: #eef6ff; font-weight: 400; min-width: 4ch; }
+.trace { position: relative; width: min(220px, 36vw); height: 8px; background: rgba(10, 8, 26, 0.8); box-shadow: 0 0 0 2px rgba(255, 47, 160, 0.35); }
+.trace i { position: absolute; inset: 0 auto 0 0; width: 0%; background: repeating-linear-gradient(90deg, var(--pink) 0 6px, #b81f74 6px 8px); }
+.trace-wrap.hot .trace { box-shadow: 0 0 0 2px var(--red), 0 0 14px rgba(255, 59, 48, 0.7); animation: pulse-px 0.5s steps(2) infinite; }
+.trace-wrap.hot .trace i { background: repeating-linear-gradient(90deg, var(--red) 0 6px, #8a1410 6px 8px); }
+.trace-wrap.hot .trace-label, .trace-wrap.hot .trace-label b { color: var(--red); }
+
+.chrome-row { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 8px; max-width: 280px; }
+.chrome-row i {
+  font: 400 9px/1 'Silkscreen', monospace; font-style: normal; letter-spacing: 0.04em; color: #05040d;
+  background: var(--cyan); padding: 3px 4px 2px; box-shadow: 2px 2px 0 rgba(0, 0, 0, 0.5);
+}
+.chrome-row i.rare { background: #ffe14d; }
+.chrome-row.big { max-width: none; }
+.chrome-row.big i { font-size: 11px; padding: 4px 6px 3px; }
+
+.shop { justify-content: center; background: rgba(5, 4, 13, 0.55) !important; }
+.card.wide { width: min(720px, 100%); }
+.shop h1 { font-size: clamp(40px, 7vw, 64px) !important; }
+.shop-status { display: flex; align-items: center; justify-content: space-between; margin-top: 14px; font: 700 26px/1 'Pixelify Sans', monospace; color: #ffe14d; text-shadow: 3px 3px 0 rgba(0, 0, 0, 0.6); }
+.shop-status .lives { margin-top: 0; }
+.shop-tip { margin-top: 6px; font: 400 14px/1.3 'Pixelify Sans', monospace; color: #8fa0c8; }
+.offer { list-style: none; display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin: 16px 0 4px; }
+.offer li {
+  display: flex; flex-direction: column; gap: 8px; padding: 12px 12px 14px; cursor: pointer;
+  background: rgba(41, 243, 255, 0.06); box-shadow: inset 0 0 0 2px rgba(41, 243, 255, 0.25);
+  transition: transform 0.1s steps(2);
+}
+.offer li:hover { background: rgba(41, 243, 255, 0.12); }
+.offer li.sel { background: rgba(41, 243, 255, 0.16); box-shadow: inset 0 0 0 2px var(--cyan), 0 0 18px rgba(41, 243, 255, 0.35); transform: translateY(-4px); }
+.offer li.rare { box-shadow: inset 0 0 0 2px rgba(255, 225, 77, 0.5); }
+.offer li.rare.sel { box-shadow: inset 0 0 0 2px #ffe14d, 0 0 18px rgba(255, 225, 77, 0.4); }
+.o-top { display: flex; justify-content: space-between; gap: 6px; font: 400 9px/1 'Silkscreen', monospace; letter-spacing: 0.06em; color: #8fa0c8; }
+.offer li.rare .o-tag { color: #ffe14d; }
+.o-name { font: 700 20px/1.05 'Pixelify Sans', monospace; color: #eef6ff; }
+.o-name .stack { margin-left: 6px; font: 400 10px/1 'Silkscreen', monospace; color: var(--pink); vertical-align: middle; }
+.o-desc { font: 400 14px/1.25 'Pixelify Sans', monospace; color: #c8d4ee; }
+.shop-actions { margin-top: 12px; }
+.action.sel { box-shadow: 0 4px 0 #05040d, inset 0 0 0 2px var(--cyan), 0 0 14px rgba(41, 243, 255, 0.45); }
+.action.off { opacity: 0.45; }
+.shop-owned { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 14px; }
+.shop-owned > span { font: 400 10px/1 'Silkscreen', monospace; color: #8fa0c8; margin-right: 4px; }
+.shop-owned .chrome-row, .shop-owned { max-width: none; }
+.shop-owned i { font: 400 9px/1 'Silkscreen', monospace; font-style: normal; color: #05040d; background: var(--cyan); padding: 3px 4px 2px; }
+.shop-owned i.rare { background: #ffe14d; }
+.shop .menu-help { margin: 14px 0 0; }
+@media (max-width: 640px), (max-height: 520px) {
+  .offer { grid-template-columns: 1fr; gap: 6px; }
+  .offer li { gap: 4px; padding: 8px 10px; }
+  .offer li.sel { transform: none; }
+  .o-name { font-size: 17px; }
+  .o-desc { font-size: 13px; }
+  .shop h1 { display: none; }
+  .shop-tip { display: none; }
+}

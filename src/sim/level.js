@@ -94,6 +94,14 @@ export class Level {
     return best
   }
 
+  // Back on the roof you fell from: the last building that starts behind x.
+  roofStartBehind(x) {
+    let best = null
+    for (const c of this.chunks) if (c.x0 <= x && (!best || c.x0 > best.x0)) best = c
+    if (!best) return this.respawnPoint(x)
+    return { x: best.x0 + (best.id === 0 ? 30 : 1.5), y: best.roof }
+  }
+
   hintsIn(x0, x1) {
     const out = []
     for (const c of this.chunksIn(x0, x1)) for (const h of c.hints) if (h.x >= x0 && h.x <= x1) out.push(h)

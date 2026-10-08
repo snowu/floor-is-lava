@@ -1,11 +1,13 @@
 import './ui/style.css'
-import { PHYS, FOCUS, RUN } from './sim/config.js'
+import { PHYS, FOCUS, RUN, HEIST } from './sim/config.js'
 import { Level } from './sim/level.js'
 import { createPlayer, stepPlayer } from './sim/player.js'
 import { Bot } from './sim/bot.js'
 import { ScoreKeeper, COMBO_WINDOW } from './sim/score.js'
 import { GhostRecorder, GhostPlayer } from './sim/ghost.js'
 import { TRACKS, dailyTrack, levelOptions } from './sim/tracks.js'
+import { HeistState, heistOptions } from './sim/heist.js'
+import { chromeById } from './sim/chrome.js'
 import { Input } from './input.js'
 import { Audio } from './audio.js'
 import { Hud, formatTime, medalFor } from './ui/hud.js'
@@ -14,7 +16,7 @@ import { PixelView } from './pixel/view.js'
 const DEMO_SEED = 20261007
 const TOAST = {
   vault: 'SPEED VAULT', clamber: 'CLAMBER', roll: 'ROLL', wallrun: 'WALLRUN', walljump: 'WALL KICK',
-  zip: 'ZIPLINE', spring: 'LAUNCH', grab: 'LEDGE', climb: 'WALL CLIMB', slidejump: 'SLIDE JUMP',
+  zip: 'ZIPLINE', spring: 'LAUNCH', grab: 'LEDGE', climb: 'WALL CLIMB', slidejump: 'SLIDE JUMP', airjump: 'AIR JUMP',
 }
 
 const store = {
@@ -33,10 +35,10 @@ const audio = new Audio()
 const hud = new Hud(isTouch)
 hud.setMuted(audio.muted)
 
-const MODES = [{ kind: 'endless' }, ...TRACKS.map((track) => ({ kind: 'trial', track })), { kind: 'trial', track: dailyTrack() }]
+const MODES = [{ kind: 'heist' }, { kind: 'endless' }, ...TRACKS.map((track) => ({ kind: 'trial', track })), { kind: 'trial', track: dailyTrack() }]
 
 const g = {
-  mode: 'title',            // title | countdown | run | respawn | finish | over | paused
+  mode: 'title',            // title | countdown | run | respawn | finish | over | paused | shop | flatline
   pausedFrom: null,
   sel: Math.min(MODES.length - 1, Number(store.get('fil.sel', 0)) || 0),
   kind: 'endless',
@@ -66,18 +68,28 @@ const g = {
   score: null,
   lives: 0,
   overAt: 0,
+  heist: null,
+  sectors: [],              // heist sector boundaries, start to finish
+  shopSel: 0,
   tutorialDone: store.get('fil.tutorial', '0') === '1',
   focusHinted: store.get('fil.focusHint', '0') === '1',
   comboHinted: store.get('fil.comboHint', '0') === '1',
+  seenHints: new Set(store.json('fil.seen') ?? []),
 }
 
 // ── records ──────────────────────────────────────────────────────────────
 
 const endlessBest = () => Number(store.get('fil.best.endless', 0)) || 0
+const heistBest = () => store.json('fil.best.heist')
 const trialPB = (track) => store.json(`fil.pb.${track.id}`)
 
 function menuItems() {
   return MODES.map((m) => {
+    if (m.kind === 'heist') {
+      const best = heistBest()
+      const sub = `roguelike · ${HEIST.SECTORS} sectors · chrome`
+      return { name: 'HEIST', sub, best: best ? `${best.extracted ? 'OUT' : `S${best.sector + 1}`} · ${best.score.toLocaleString()}` : '—', medal: -1 }
+    }
     if (m.kind === 'endless') {
       return { name: 'ENDLESS', sub: 'combo score attack', best: `${endlessBest().toLocaleString()} PTS`, medal: -1 }
     }
@@ -108,7 +120,14 @@ function buildWorld(level, demo) {
   view.snap(g.player.x, g.player.y)
 }
 
+function endHeistState() {
+  g.heist?.dispose()
+  g.heist = null
+}
+
 function toTitle() {
+  endHeistState()
+  hud.showShop(false)
   buildWorld(new Level(DEMO_SEED), true)
   g.mode = 'title'
   hud.showHud(false)
@@ -126,12 +145,15 @@ function start(i) {
 
 function newRun() {
   audio.start()
+  endHeistState()
+  hud.showShop(false)
   const m = MODES[g.sel]
   g.kind = m.kind
   g.track = m.track ?? null
+  const seed = fixedSeed ?? (Math.random() * 2 ** 32) >>> 0
   const level = g.kind === 'trial'
     ? new Level(g.track.seed, levelOptions(g.track))
-    : new Level(fixedSeed ?? (Math.random() * 2 ** 32) >>> 0)
+    : g.kind === 'heist' ? new Level(seed, heistOptions()) : new Level(seed)
   buildWorld(level, false)
   g.clock = 0
   g.phaseT = 0
@@ -141,6 +163,7 @@ function newRun() {
   g.cpNext = 0
   g.splits = []
   g.hintsShown.clear()
+  g.heist = g.kind === 'heist' ? new HeistState(seed) : null
   g.score = new ScoreKeeper()
   g.score.teleport(g.player.x)
   g.lives = RUN.LIVES
@@ -158,6 +181,28 @@ function newRun() {
       checkpoints: level.checkpoints,
       length: level.finish.x,
     })
+    g.mode = 'countdown'
+    g.countShown = -1
+  } else if (g.kind === 'heist') {
+    level.ensure(HEIST.SECTORS * HEIST.SECTOR_LEN + 120)
+    g.sectors = [0, ...level.checkpoints.map((c) => c.x), level.finish.x]
+    g.pb = null
+    g.ghost = null
+    g.recorder = null
+    const best = heistBest()
+    hud.setupRun('heist', {
+      title: '',
+      best: best ? `BEST ${best.score.toLocaleString()}` : 'FIRST RUN',
+      lives: g.heist.maxIntegrity,
+      checkpoints: level.checkpoints,
+      length: level.finish.x,
+    })
+    hud.chrome([])
+    if (!g.seenHints.has('heist')) {
+      g.seenHints.add('heist')
+      store.set('fil.seen', JSON.stringify([...g.seenHints]))
+      setTimeout(() => hud.hint('heist'), 1900)
+    }
     g.mode = 'countdown'
     g.countShown = -1
   } else {
@@ -206,19 +251,26 @@ function toggleMute() {
   hud.setMuted(audio.muted)
 }
 
-const playing = () => ['countdown', 'run', 'respawn', 'finish', 'paused', 'over'].includes(g.mode)
+const playing = () => ['countdown', 'run', 'respawn', 'finish', 'paused', 'over', 'shop', 'flatline'].includes(g.mode)
 
 input.on('nav', (d) => {
+  if (g.mode === 'shop') {
+    g.shopSel = (g.shopSel + d + 5) % 5
+    renderShop()
+    return
+  }
   if (g.mode !== 'title') return
   g.sel = (g.sel + d + MODES.length) % MODES.length
   renderMenu()
 })
 input.on('confirm', () => {
-  if (g.mode === 'title') start(g.sel)
+  if (g.mode === 'shop') shopAction(g.shopSel)
+  else if (g.mode === 'title') start(g.sel)
   else if (g.mode === 'over' && performance.now() - g.overAt > 400) newRun()
 })
 input.on('enter', () => {
-  if (g.mode === 'title') start(g.sel)
+  if (g.mode === 'shop') shopAction(g.shopSel)
+  else if (g.mode === 'title') start(g.sel)
   else if (g.mode === 'paused') { hud.showPaused(false); toMenu() }
   else if (g.mode === 'over') newRun()
 })
@@ -264,6 +316,7 @@ function onEvent(e) {
   if (live || g.mode === 'title') audio.event(e.type, e)
   view.event(e, p)
   if (e.type === 'bonk') g.flash = 0.12
+  if (g.heist && live) heistEvent(e)
   if (e.type === 'dead') {
     if (g.mode === 'title') toTitle()
     else if (live) startRespawn()
@@ -271,16 +324,133 @@ function onEvent(e) {
   }
   if (!live) return
   if (e.type === 'hardland') hud.toast('HARD LANDING', 'ROLL IT NEXT TIME')
+  if (e.type === 'trip') hud.toast('TRIPPED', 'JUMP TO VAULT')
   if (TOAST[e.type]) {
     g.moves++
     if (g.kind === 'trial') hud.toast(TOAST[e.type])
   }
-  if (g.kind === 'endless') {
+  if (g.kind !== 'trial') {
     const result = g.score.event(e.type, p.speed)
     if (result === 'bail') { hud.comboResult('bail', g.score.log.at(-1).points); audio.event('bail') }
   }
   const gain = FOCUS.GAIN[e.type]
-  if (gain) g.focus = Math.min(1, g.focus + gain)
+  if (gain) g.focus = Math.min(1, g.focus + gain * (g.heist?.mods.focusGain ?? 1))
+}
+
+// ── heist ───────────────────────────────────────────────────────────────
+
+function heistEvent(e) {
+  const n = g.heist
+  n.move(e.type)
+  switch (e.type) {
+    case 'zap':
+      hud.toast('LASER GRID', e.keepsCombo ? 'INSULATED' : 'ALARM TRIPPED')
+      if (!e.keepsCombo && g.score.bail() === 'bail') hud.comboResult('bail', g.score.log.at(-1).points)
+      break
+    case 'spotted':
+      hud.toast('SPOTTED', 'TRACE +')
+      break
+    case 'takedown':
+      hud.toast('TAKEDOWN')
+      break
+    case 'traced':
+      hud.toast('ICE BURN', 'INTEGRITY −1')
+      g.flash = 0.25
+      if (g.score.bail() === 'bail') hud.comboResult('bail', g.score.log.at(-1).points)
+      if (n.integrity <= 0) {
+        g.mode = 'flatline'
+        g.phaseT = 0
+        g.focusActive = false
+      }
+      break
+  }
+}
+
+function openShop() {
+  const n = g.heist
+  n.advance()
+  n.openShop()
+  if (g.score.bank() === 'bank') hud.comboResult('bank', g.score.log.at(-1).points)
+  g.mode = 'shop'
+  g.focusActive = false
+  g.shopSel = 0
+  input.clearEdges()
+  renderShop()
+  hud.hint(null)
+  hud.showShop(true)
+  audio.event('uplink')
+}
+
+function renderShop() {
+  const n = g.heist
+  hud.shop({
+    sector: n.sector,
+    sectors: HEIST.SECTORS,
+    creds: n.creds,
+    integrity: n.integrity,
+    maxIntegrity: n.maxIntegrity,
+    offer: n.offer.map((c) => ({ ...c, have: n.owned.filter((o) => o === c.id).length })),
+    repair: { cost: n.repairCost, ok: n.canRepair, full: n.integrity >= n.maxIntegrity },
+    reroll: { cost: n.rerollCost, ok: n.canReroll },
+    owned: n.owned.map(chromeById),
+  }, g.shopSel, shopAction)
+}
+
+function shopAction(i) {
+  if (g.mode !== 'shop') return
+  const n = g.heist
+  g.shopSel = i
+  if (i < 3) {
+    const c = n.offer[i]
+    if (!c && n.offer.length) return
+    if (c) {
+      n.install(c.id)
+      g.score.window = COMBO_WINDOW + n.mods.comboBonus
+      audio.event('install')
+      hud.toast(c.name.toUpperCase(), 'INSTALLED')
+    }
+    hud.showShop(false)
+    hud.chrome(n.owned.map(chromeById))
+    hud.setLives(n.maxIntegrity)
+    g.mode = 'countdown'
+    g.countShown = -1
+    g.phaseT = 0
+    input.clearEdges()
+    return
+  }
+  const ok = i === 3 ? n.repair() : n.reroll()
+  audio.event(ok ? 'buy' : 'deny')
+  renderShop()
+}
+
+function endHeist(extracted) {
+  const n = g.heist
+  if (g.score.bank() === 'bank') hud.comboResult('bank', g.score.log.at(-1).points)
+  const bonus = extracted ? 2500 + 1000 * n.integrity : 0
+  const score = Math.floor(g.score.total) + bonus
+  const prev = heistBest()
+  const newBest = !prev || score > prev.score
+  const sector = extracted ? HEIST.SECTORS - 1 : n.sector
+  if (newBest) store.set('fil.best.heist', JSON.stringify({ score, sector, extracted }))
+  g.result = {
+    kind: 'heist', extracted, score, bonus, best: Math.max(prev?.score ?? 0, score), newBest,
+    sector, sectors: HEIST.SECTORS, creds: n.creds, stats: { ...n.stats }, chrome: n.owned.map(chromeById),
+    topSpeed: g.topSpeed, bestCombo: g.score.bestCombo,
+  }
+  audio.event(extracted || newBest ? 'best' : 'finish')
+  endHeistState()
+  showResults()
+}
+
+// Heist sectors each get their own district; the palette blends into the
+// next one as the uplink comes up.
+function paletteDistance(x) {
+  if (g.kind !== 'heist' || g.sectors.length < 2) return Math.max(0, x)
+  const b = g.sectors
+  let i = 0
+  while (i < b.length - 2 && x >= b[i + 1]) i++
+  const u = Math.max(0, Math.min(0.999, (x - b[i]) / (b[i + 1] - b[i])))
+  return i * 1500 + u * 1500
 }
 
 function startRespawn() {
@@ -290,14 +460,18 @@ function startRespawn() {
   g.focusActive = false
   view.setFloor(g.player.y + 2)
   audio.event('dead')
-  if (g.kind === 'endless') {
+  if (g.kind !== 'trial') {
     if (g.score.bail() === 'bail') hud.comboResult('bail', g.score.log.at(-1).points)
-    g.lives--
+  }
+  if (g.kind === 'endless') g.lives--
+  if (g.heist) {
+    g.heist.stats.falls++
+    g.lives = g.heist.hurt()
   }
 }
 
 function respawn() {
-  const r = g.level.respawnPoint(g.prevX)
+  const r = g.heist ? g.level.roofStartBehind(g.prevX) : g.level.respawnPoint(g.prevX)
   g.player = createPlayer(r.x, r.y)
   g.player.speed = PHYS.SPEED_MIN
   g.prevX = r.x
@@ -312,6 +486,10 @@ function respawn() {
 
 function passCheckpoint(i) {
   view.passed = i + 1
+  if (g.heist) {
+    openShop()
+    return
+  }
   audio.event('checkpoint')
   if (g.kind !== 'trial') {
     hud.toast('CHECKPOINT')
@@ -380,8 +558,14 @@ function stepPhysics(dt) {
     const control = g.bot ? g.bot.input(p) : g.mode === 'run' ? input.consume() : IDLE
     events.length = 0
     stepPlayer(p, control, PHYS.FIXED_DT, g.level, events)
+    if (g.heist && g.mode === 'run') g.heist.step(PHYS.FIXED_DT, p, g.level, events)
     for (const e of events) onEvent(e)
     if (g.mode !== 'run' && g.mode !== 'title' && g.mode !== 'finish') break
+    // an uplink opens the street doc: stop simulating right there
+    if (g.heist) {
+      const cps = g.level.checkpoints
+      if (g.cpNext < cps.length && p.x >= cps[g.cpNext].x) break
+    }
   }
   if (g.acc > PHYS.FIXED_DT * 4) g.acc = 0
 }
@@ -389,6 +573,7 @@ function stepPhysics(dt) {
 function updateFocus(dt) {
   const p = g.player
   if (p.speed >= 15) g.focus = Math.min(1, g.focus + FOCUS.GAIN_AT_SPEED * dt)
+  const mods = g.heist?.mods
   if (input.takeFocus()) {
     if (g.focusActive) g.focusActive = false
     else if (g.focus >= FOCUS.MIN_TO_START) {
@@ -397,7 +582,7 @@ function updateFocus(dt) {
     }
   }
   if (g.focusActive) {
-    g.focus = Math.max(0, g.focus - FOCUS.DRAIN * dt)
+    g.focus = Math.max(0, g.focus - FOCUS.DRAIN * (mods?.focusDrain ?? 1) * dt)
     if (g.focus <= 0) g.focusActive = false
   }
   if (!g.focusHinted && g.focus >= FOCUS.MIN_TO_START && p.x > 400) {
@@ -407,7 +592,23 @@ function updateFocus(dt) {
   }
 }
 
+// First sight of each heist hazard gets a one-time hint.
+function heistHints() {
+  const p = g.player
+  for (const c of g.level.chunksIn(p.x + 6, p.x + 10 + p.speed * 1.2)) {
+    const seen = [...c.lasers.map((l) => (l.low ? 'laserLow' : 'laserHigh')), ...(c.drones.length ? ['drone'] : [])]
+    for (const key of seen) {
+      if (g.seenHints.has(key)) continue
+      g.seenHints.add(key)
+      store.set('fil.seen', JSON.stringify([...g.seenHints]))
+      hud.hint(key)
+      return
+    }
+  }
+}
+
 function updateHints() {
+  if (g.heist) heistHints()
   if (g.tutorialDone || g.kind !== 'endless') return
   const p = g.player
   for (const h of g.level.hintsIn(p.x + 2, p.x + 8 + p.speed * 1.1)) {
@@ -440,7 +641,7 @@ function frame(now) {
   let scale = 1
   if (g.mode === 'run') {
     updateFocus(raw)
-    scale = g.focusActive ? FOCUS.TIME_SCALE : 1
+    scale = g.focusActive ? (g.heist?.mods.focusScale ?? FOCUS.TIME_SCALE) : 1
   } else if (g.mode === 'respawn') {
     scale = 0.6
   }
@@ -473,8 +674,13 @@ function frame(now) {
     p.y += p.vy * dt
     if (g.phaseT >= RUN.RESPAWN_TIME) {
       if (g.kind === 'endless' && g.lives <= 0) endEndless()
+      else if (g.heist && g.heist.integrity <= 0) endHeist(false)
       else respawn()
     }
+  } else if (g.mode === 'flatline') {
+    g.phaseT += raw
+    view.glitch(raw * 2)
+    if (g.phaseT >= 1.4) endHeist(false)
   }
 
   if (g.mode === 'finish') {
@@ -487,7 +693,8 @@ function frame(now) {
     const cps = g.level.checkpoints
     while (g.cpNext < cps.length && cur.x >= cps[g.cpNext].x) passCheckpoint(g.cpNext++)
     if (g.kind === 'trial' && g.level.finish && cur.x >= g.level.finish.x) finishTrial()
-    if (g.kind === 'endless') {
+    if (g.heist && g.mode === 'run' && cur.x >= g.level.finish.x) endHeist(true)
+    if (g.kind !== 'trial' && g.mode === 'run') {
       const r = g.score.update(dt, cur)
       if (r === 'bank') { hud.comboResult('bank', g.score.log.at(-1).points); audio.event('bank', { mult: g.score.log.at(-1).mult }) }
     }
@@ -497,23 +704,25 @@ function frame(now) {
 
   const alpha = g.mode === 'run' || g.mode === 'title' || g.mode === 'finish' ? g.acc / PHYS.FIXED_DT : 1
   const distance = Math.max(0, cur.x)
+  const paletteD = paletteDistance(cur.x)
   g.focusVis += ((g.focusActive ? 1 : 0) - g.focusVis) * Math.min(1, raw * 6)
   g.flash = Math.max(0, g.flash - raw * 2)
   g.fade = Math.max(0, g.fade - raw * 2.5)
   const ghost = g.ghost && (g.mode === 'run' || g.mode === 'respawn' || g.mode === 'finish') ? g.ghost.at(g.clock) : null
 
   view.frame({
-    raw, dt, time, mode: g.mode === 'countdown' ? 'run' : g.mode, p: cur, level: g.level, distance,
+    raw, dt, time, mode: g.mode === 'countdown' || g.mode === 'shop' ? 'run' : g.mode === 'flatline' ? 'paused' : g.mode, p: cur, level: g.level, distance, paletteD,
+    trace: g.heist && g.mode === 'run' ? g.heist.trace : 0,
     rx: g.prevX + (cur.x - g.prevX) * alpha,
     ry: g.prevY + (cur.y - g.prevY) * alpha,
-    idle: g.mode === 'countdown',
+    idle: g.mode === 'countdown' || g.mode === 'shop',
     ghost: ghost && !ghost.done ? ghost : null,
     speedK: smoothstep(cur.speed, 11, PHYS.SPEED_MAX),
     focusVis: g.focusVis, flash: g.flash, fade: g.fade,
   })
 
-  if (['run', 'respawn', 'countdown', 'finish'].includes(g.mode)) {
-    const name = view.districtName(distance)
+  if (['run', 'respawn', 'countdown', 'finish', 'flatline'].includes(g.mode)) {
+    const name = view.districtName(g.heist ? g.heist.sector * 1500 : paletteD)
     const base = {
       speed: cur.speed,
       focus: g.focus,
@@ -525,17 +734,22 @@ function frame(now) {
       hud.update({ ...base, score: Math.max(0, finishX - cur.x), time: g.clock, progress: Math.min(1, cur.x / finishX) })
     } else {
       const s = g.score
+      const n = g.heist
       hud.update({
         ...base,
         score: s.total,
-        lives: g.lives,
-        sub: `${Math.floor(distance).toLocaleString()} M · ${name.toUpperCase()}`,
-        combo: { mult: s.mult, points: s.pending, moves: s.moves.join(' · '), timer: s.timer / COMBO_WINDOW },
+        lives: n ? n.integrity : g.lives,
+        sub: n
+          ? `¢ ${n.creds.toLocaleString()} · SECTOR ${n.sector + 1}/${HEIST.SECTORS}`
+          : `${Math.floor(distance).toLocaleString()} M · ${name.toUpperCase()}`,
+        combo: { mult: s.mult, points: s.pending, moves: s.moves.join(' · '), timer: s.timer / s.window },
+        trace: n?.trace,
+        progress: n ? Math.min(1, Math.max(0, cur.x) / g.level.finish.x) : undefined,
       })
     }
     if (name !== g.district) {
       g.district = name
-      hud.district(name)
+      hud.district(g.heist ? `SECTOR ${g.heist.sector + 1} · ${name}` : name)
     }
   }
 
