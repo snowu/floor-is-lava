@@ -4,7 +4,7 @@ const SEGMENTS = 14
 const MEDALS = ['GOLD', 'SILVER', 'BRONZE']
 
 const HINTS = {
-  vault: { key: 'Run into low obstacles to <b>VAULT</b> them', touch: 'Run into low obstacles to <b>VAULT</b> them' },
+  vault: { key: '<kbd>SPACE</kbd> as you reach low obstacles to <b>VAULT</b>', touch: 'Tap <b>JUMP</b> as you reach low obstacles to <b>VAULT</b>' },
   jump: { key: '<kbd>SPACE</kbd> to <b>JUMP</b> · hold for height', touch: 'Tap the <b>RIGHT</b> side to <b>JUMP</b> · hold for height' },
   slide: { key: '<kbd>S</kbd> to <b>SLIDE</b> under pipes', touch: 'Tap the <b>LEFT</b> side to <b>SLIDE</b> under pipes' },
   roll: { key: 'Big drop — <kbd>S</kbd> just before landing to <b>ROLL</b>', touch: 'Big drop — tap <b>LEFT</b> just before landing to <b>ROLL</b>' },
@@ -17,7 +17,7 @@ const HINTS = {
   heist: { key: 'Keep moving to jam the <b>TRACE</b> · grab <b>SHARDS</b> for creds', touch: 'Keep moving to jam the <b>TRACE</b> · grab <b>SHARDS</b> for creds' },
   laserLow: { key: 'Low <b>LASER</b> — <kbd>SPACE</kbd> to jump it', touch: 'Low <b>LASER</b> — tap <b>RIGHT</b> to jump it' },
   laserHigh: { key: 'High <b>LASER</b> — <kbd>S</kbd> to slide under', touch: 'High <b>LASER</b> — tap <b>LEFT</b> to slide under' },
-  drone: { key: 'Security <b>DRONE</b> — jump into it for a <b>TAKEDOWN</b>', touch: 'Security <b>DRONE</b> — jump into it for a <b>TAKEDOWN</b>' },
+  drone: { key: 'Security <b>DRONE</b> — jump into it for a <b>TAKEDOWN</b>, never run under it', touch: 'Security <b>DRONE</b> — jump into it for a <b>TAKEDOWN</b>, never run under it' },
   combo: { key: 'Chain moves to build a <b>COMBO</b> · mistakes lose it', touch: 'Chain moves to build a <b>COMBO</b> · mistakes lose it' },
 }
 

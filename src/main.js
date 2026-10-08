@@ -324,6 +324,7 @@ function onEvent(e) {
   }
   if (!live) return
   if (e.type === 'hardland') hud.toast('HARD LANDING', 'ROLL IT NEXT TIME')
+  if (e.type === 'trip') hud.toast('TRIPPED', 'JUMP TO VAULT')
   if (TOAST[e.type]) {
     g.moves++
     if (g.kind === 'trial') hud.toast(TOAST[e.type])

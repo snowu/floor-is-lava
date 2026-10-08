@@ -156,6 +156,22 @@ describe('heist state', () => {
     const ev2 = []
     net.step(0.01, runner, flat({ drones: other }), ev2)
     expect(ev2.map((e) => e.type)).toEqual(['spotted'])
+    net.step(0.01, runner, flat({ drones: other }), ev2)
+    expect(ev2).toHaveLength(1)   // judged once per drone
+  })
+
+  it('does not spot a runner who clears the drone overhead', () => {
+    const net = new HeistState(1)
+    const drones = [{ id: 'd', x: 1, y: 2.75, down: false, spotted: false }]
+    const high = createPlayer(2, 3.4)
+    high.state = 'air'
+    const events = []
+    net.step(0.01, high, flat({ drones }), events)
+    expect(events).toHaveLength(0)
+    expect(drones[0].passed).toBe(true)
+    // and once judged, landing back down past it changes nothing
+    net.step(0.01, createPlayer(2.5, 0), flat({ drones }), events)
+    expect(events).toHaveLength(0)
   })
 
   it('burns integrity when the trace fills', () => {

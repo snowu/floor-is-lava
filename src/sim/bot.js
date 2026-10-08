@@ -54,7 +54,7 @@ function simulate(start, plan, level, ticks, dt) {
     // Mistakes far down the horizon can still be fixed by later decisions.
     if (i * dt < PENALTY_HORIZON) {
       for (const e of events) {
-        if (e.type === 'hardland' || e.type === 'bonk') penalty += 3
+        if (e.type === 'hardland' || e.type === 'bonk' || e.type === 'trip') penalty += 3
         if (e.type === 'clamber') penalty += 0.5
       }
     }

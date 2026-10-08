@@ -401,8 +401,8 @@ function placeHeist(chunk, gap, d) {
   }
 
   // laser grids: low ones are jumped, high ones are slid under. Some take
-  // the place of a vent or pipe that asked for the same move, so the spacing
-  // the obstacle pass designed for reaction time still holds.
+  // the place of a vent (also a jump: vaults need one) or a pipe (a slide), so
+  // the spacing the obstacle pass designed for reaction time still holds.
   const swap = 0.2 + 0.35 * d
   for (const s of blocks) {
     if ((s.sub !== 'vent' && s.sub !== 'beam') || !rng.chance(swap)) continue
@@ -421,7 +421,7 @@ function placeHeist(chunk, gap, d) {
   // drones hover just above head height: kick them out of the air, or get spotted
   if (rng.chance(0.25 + 0.35 * d)) {
     const at = take(6)
-    if (at !== null) chunk.drones.push({ id: `${chunk.id}:D`, x: round(at + 3), y: round(roof + 2.75), down: false, spotted: false })
+    if (at !== null) chunk.drones.push({ id: `${chunk.id}:D`, x: round(at + 3), y: round(roof + 2.75), down: false, spotted: false, passed: false })
   }
 
   // a line of shards along the roof: low ones are free, high ones need a jump

@@ -168,7 +168,7 @@ export class Audio {
         this.noise(t, 0.09, { freq: 1200, type: 'lowpass', gain: g * 0.6 })
         break
       }
-      case 'hardland': case 'bonk':
+      case 'hardland': case 'bonk': case 'trip':
         this.tone(t, 0.25, 110, 38, { gain: 0.45 })
         this.noise(t, 0.2, { freq: 900, type: 'lowpass', gain: 0.35 })
         break

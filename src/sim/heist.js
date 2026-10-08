@@ -144,11 +144,16 @@ export class HeistState {
             p.jumpHoldActive = false
           }
           events.push({ type: 'takedown', x: d.x, y: d.y })
-        } else if (!d.spotted && p.x > d.x + 0.6) {
-          d.spotted = true
-          this.stats.spotted++
-          this.trace += HEIST.TRACE_SPOT * m.spotTrace
-          events.push({ type: 'spotted', x: d.x, y: d.y })
+        } else if (!d.passed && p.x > d.x + 0.6) {
+          // judged once, as you go by: under the scanner you're seen,
+          // clear over the top you're not
+          d.passed = true
+          if (by0 < d.y + HEIST.DRONE_H) {
+            d.spotted = true
+            this.stats.spotted++
+            this.trace += HEIST.TRACE_SPOT * m.spotTrace
+            events.push({ type: 'spotted', x: d.x, y: d.y })
+          }
         }
       }
     }

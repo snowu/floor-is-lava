@@ -3,9 +3,9 @@
 // (so it is provably reachable); gold asks for real flow.
 
 export const TRACKS = [
-  { id: 'sprint', name: 'Sprint', seed: 1101, length: 600, checkpointEvery: 150, difficulty: { start: 0.15, ramp: 2400 }, medals: [54, 64, 76] },
-  { id: 'relay', name: 'Relay', seed: 2207, length: 1200, checkpointEvery: 200, difficulty: { start: 0.35, ramp: 2400 }, medals: [103, 122, 146] },
-  { id: 'gauntlet', name: 'Gauntlet', seed: 3313, length: 2000, checkpointEvery: 250, difficulty: { start: 0.65, ramp: 1600 }, medals: [179, 211, 252] },
+  { id: 'sprint', name: 'Sprint', seed: 1101, length: 600, checkpointEvery: 150, difficulty: { start: 0.15, ramp: 2400 }, medals: [54, 63, 76] },
+  { id: 'relay', name: 'Relay', seed: 2207, length: 1200, checkpointEvery: 200, difficulty: { start: 0.35, ramp: 2400 }, medals: [99, 116, 139] },
+  { id: 'gauntlet', name: 'Gauntlet', seed: 3313, length: 2000, checkpointEvery: 250, difficulty: { start: 0.65, ramp: 1600 }, medals: [175, 206, 246] },
 ]
 
 export function dailyTrack(date = new Date()) {

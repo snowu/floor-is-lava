@@ -216,6 +216,10 @@ export class PixelView {
       case 'bonk':
         this.shake(0.5)
         break
+      case 'trip':
+        this.shake(0.35)
+        this.burst(p.x + 0.3, p.y, 8, { spread: 1.4, up: 1.4 })
+        break
       case 'spring':
         this.shake(0.25)
         this.burst(p.x, p.y, 10, { up: 3, color: ACCENT })

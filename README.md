@@ -4,7 +4,7 @@ A cyberpunk side-scrolling rooftop runner with Mirror's Edge–style movement. Y
 
 ## Modes
 
-- **Heist** is the roguelike run. You're a data courier crossing five sectors of city, one district each, on a fresh random seed every time. Corp security **traces** you while you run: clean moves jam it, while tripped laser grids and drones that spot you push it up. When it fills, ICE burns a point of integrity. Grab cyan **data shards** for creds, slide under or jump over **laser grids**, and jump into hovering **drones** for a takedown. At the uplink between sectors a **street doc** offers three pieces of chrome; one is free, and creds buy repairs and rerolls. Falls and ICE burns cost integrity, and losing it all flatlines the run. Extracting with integrity left pays a bonus.
+- **Heist** is the roguelike run. You're a data courier crossing five sectors of city, one district each, on a fresh random seed every time. Corp security **traces** you while you run: clean moves jam it, while tripped laser grids and drones that spot you push it up. When it fills, ICE burns a point of integrity. Grab cyan **data shards** for creds, slide under or jump over **laser grids**, and jump into hovering **drones** for a takedown, or clear them overhead; running underneath gets you spotted. At the uplink between sectors a **street doc** offers three pieces of chrome; one is free, and creds buy repairs and rerolls. Falls and ICE burns cost integrity, and losing it all flatlines the run. Extracting with integrity left pays a bonus.
 - **Time Trials** (Sprint 600 m, Relay 1200 m, Gauntlet 2000 m, plus a Daily course seeded by the date). Each trial is a fixed-seed course, identical on every attempt, so times are comparable. The clock counts up, checkpoint splits show green/red deltas against your personal best, and your best run plays back as a cyan ghost. Medals are gold, silver and bronze; silver is the autopilot's time, so it's provably reachable, and gold needs real flow.
 - **Endless** is a combo score attack on a fresh random city every run. Every move feeds a combo whose multiplier grows with each chained move and scales with your speed. Keep moving to bank it; a hard landing, a bonk or a fall throws the combo away. Distance also scores, more when you're fast. You have three lives.
 
@@ -52,7 +52,7 @@ npm run dev
 
 ## Movement
 
-- **Vault**: run into anything waist-high and you go over it without losing speed.
+- **Vault**: press jump as you reach anything waist-high and you speed-vault it. Run into it without pressing and you trip, losing speed and your combo. Taller crates stop you dead until you climb them.
 - **Slide**: duck under red-striped pipes. Running into one standing up makes you stumble.
 - **Roll**: big drops cause a hard landing that kills your speed unless you press slide just before you land.
 - **Ledge grab / climb**: jump at walls to grab the edge, and hold jump to run up taller walls.

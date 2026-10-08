@@ -40,6 +40,7 @@ export const PHYS = {
 
   // obstacles
   VAULT_MAX: 1.25,
+  VAULT_REACH: 1.6,     // jump this close to a low obstacle and you vault it
   CLAMBER_MAX: 2.1,
   VAULT_STEP_TIME: 0.22,
   MANTLE_TIME: 0.32,
