@@ -469,3 +469,16 @@ body.pixel .rotate { white-space: normal; text-align: center; width: max-content
   .chrome-row i { font-size: 8px; }
 }
 .toast { white-space: nowrap; }
+
+/* Installed-app updates stay on menu/pause screens, outside the running lane. */
+.app-release[hidden], .app-update[hidden] { display: none; }
+.app-release { position: fixed; z-index: 40; bottom: calc(12px + env(safe-area-inset-bottom)); left: calc(16px + env(safe-area-inset-left)); display: flex; align-items: center; gap: 12px; flex-wrap: wrap; max-width: calc(100vw - 96px); font: 10px var(--sans); color: #9994b1; }
+.app-release button { border: 0; background: transparent; color: #b1dbe4; font: inherit; cursor: pointer; padding: 8px 0; }
+.app-release #update-status { flex-basis: 100%; font-size: 10px; }
+.app-update { position: fixed; z-index: 41; right: calc(16px + env(safe-area-inset-right)); bottom: calc(72px + env(safe-area-inset-bottom)); display: flex; align-items: center; gap: 20px; max-width: min(520px, calc(100vw - 32px)); padding: 16px; background: #100e20; border: 1px solid #29dce8; box-shadow: 4px 4px 0 #05040d; }
+.app-update strong { font: 12px var(--sans); color: #7debf3; letter-spacing: .08em; }
+.app-update p { font: 12px var(--sans); color: #d2cee1; margin-top: 6px; }
+.app-update button { flex-shrink: 0; padding: 12px; border: 1px solid #29dce8; background: #15313d; color: #c5faff; font: 12px var(--sans); cursor: pointer; }
+.app-release button:focus-visible, .app-update button:focus-visible { outline: 2px solid #fff; outline-offset: 3px; }
+.app-update button:disabled, .app-release button:disabled { opacity: .55; cursor: wait; }
+@media (max-width: 600px) { .app-update { gap: 12px; padding: 12px; } .app-update strong, .app-update p, .app-update button { font-size: 10px; } }

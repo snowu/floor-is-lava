@@ -85,6 +85,10 @@ Anything you can use is painted runner-vision red. Puddles and broken neon refle
 
 ## Development
 
+Installed apps check for new releases on launch, every minute while visible, and when returning to the app or reconnecting. A **NEW VERSION AVAILABLE / UPDATE NOW** prompt appears on the menu, pause screen or results; it never reloads an active run automatically. The version label also has a manual **CHECK UPDATES** button. Updating preserves saved records and settings. Existing installations need one normal refresh to receive this checker.
+
+Production builds emit `version.json` and embed the same release ID in the game. GitHub Pages uses the deployment commit as the ID, so every deployment is discoverable even without changing the package version. Local builds use the Git commit, with `PACKET_LOSS_BUILD_ID` available for testing distinct releases. Update checks are disabled in the development server; use `npm run build` and `npm run preview` to test them.
+
 - `npm test` runs physics unit tests, sprite and palette checks, generator invariants, scoring and ghost tests, and autopilot runs that drive the real physics through 2.5 km of several seeds and finish every trial within its silver time.
 - `npm run build` creates the production build that GitHub Pages deploys.
 - `?seed=123` fixes the course seed. In development, F2 opens a tuning panel for physics and chase values.
