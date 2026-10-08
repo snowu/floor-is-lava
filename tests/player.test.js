@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { createPlayer, stepPlayer } from '../src/sim/player.js'
+import { createPlayer, stepPlayer, predictLanding } from '../src/sim/player.js'
 import { PHYS } from '../src/sim/config.js'
 
 const NONE = { jump: false, jumpPressed: false, down: false, downPressed: false }
@@ -11,6 +11,7 @@ function world(solids, extra = {}) {
     solidsIn: () => solids,
     wallrunsIn: () => extra.wallruns ?? [],
     ziplinesIn: () => extra.ziplines ?? [],
+    padsIn: () => extra.pads ?? [],
     killY: () => -20,
     roofAt: () => 0,
     lowestRoofAhead: () => -5,
@@ -165,4 +166,132 @@ describe('player physics', () => {
     expect(events).toContain('spring')
     expect(top).toBeGreaterThan(4)
   })
+
+  describe('landing slide', () => {
+    const flat = () => world([{ x0: -10, x1: 1000, y1: 0 }])
+    const hop = (downAt) => (p, i) => {
+      if (i === 10) return { ...NONE, jump: true, jumpPressed: true }
+      if (i === downAt) return { ...NONE, down: true, downPressed: true }
+      return NONE
+    }
+    // the step on which a plain hop touches down
+    const touchdown = (() => {
+      const p = createPlayer(0, 0)
+      const level = flat()
+      for (let i = 0; i < 400; i++) {
+        const events = []
+        stepPlayer(p, hop(-1)(p, i), PHYS.FIXED_DT, level, events)
+        if (events.some((e) => e.type === 'land')) return i
+      }
+      return -1
+    })()
+    const step = (s) => Math.round(s / PHYS.FIXED_DT)
+
+    const landing = (at, speed) => {
+      const p = createPlayer(0, 0)
+      p.speed = speed
+      const events = []
+      const level = flat()
+      let before = 0, after = 0
+      for (let i = 0; i < step(1.5); i++) {
+        if (i === Math.min(at, touchdown) - 1) before = p.speed
+        const n = events.length
+        stepPlayer(p, hop(at)(p, i), PHYS.FIXED_DT, level, events)
+        if (events.slice(n).some((e) => e.type === 'slide' || e.type === 'landslide')) after = p.speed
+      }
+      return { types: events.map((e) => e.type), before, after }
+    }
+
+    it('boosts a perfectly timed landing slide at high speed', () => {
+      expect(touchdown).toBeGreaterThan(10)
+      for (const at of [touchdown - 1, touchdown, touchdown + 1]) {
+        const r = landing(at, PHYS.SPEED_MAX - 1)
+        expect(r.types).toContain('landslide')
+        expect(r.after).toBeGreaterThan(r.before)
+      }
+    })
+
+    it('is a plain slide that holds your speed when sloppy or slow', () => {
+      const sloppy = landing(touchdown - step(PHYS.LANDSLIDE_PRE) + 1, PHYS.SPEED_MAX - 1)
+      expect(sloppy.types).not.toContain('landslide')
+      expect(sloppy.types).toContain('slide')
+      const slow = landing(touchdown - 2, PHYS.SPEED_MIN)
+      expect(slow.types).not.toContain('landslide')
+      for (const r of [sloppy, slow]) expect(Math.abs(r.after - r.before)).toBeLessThan(0.05)
+    })
+
+    it('holds speed through a whole slide', () => {
+      const p = createPlayer(0, 0)
+      p.speed = 12
+      run(p, flat(), 0.5, (q, i) => (i === 1 ? { ...NONE, down: true, downPressed: true } : NONE))
+      expect(p.state).toBe('slide')
+      expect(p.speed).toBeCloseTo(12, 1)
+    })
+
+    it('does nothing when the press is far too early, and is a plain slide when late', () => {
+      const early = run(createPlayer(0, 0), flat(), 1.5, hop(touchdown - step(PHYS.LANDSLIDE_PRE) - 3))
+      expect(early).not.toContain('landslide')
+      expect(early).not.toContain('slide')
+      const late = run(createPlayer(0, 0), flat(), 1.5, hop(touchdown + step(PHYS.LANDSLIDE_POST) + 3))
+      expect(late).not.toContain('landslide')
+      expect(late).toContain('slide')
+    })
+
+    it('predicts the touchdown the cue shows', () => {
+      const p = createPlayer(0, 0)
+      const level = flat()
+      for (let i = 0; i <= 20; i++) stepPlayer(p, hop(-1)(p, i), PHYS.FIXED_DT, level, [])
+      while (p.vy > 0) stepPlayer(p, NONE, PHYS.FIXED_DT, level, [])
+      const hit = predictLanding(p, level)
+      let steps = 0
+      const events = []
+      while (!events.some((e) => e.type === 'land')) { stepPlayer(p, NONE, PHYS.FIXED_DT, level, events); steps++ }
+      expect(hit.hard).toBe(false)
+      expect(Math.round(hit.t / PHYS.FIXED_DT) + 1).toBe(steps)
+      expect(hit.x).toBeCloseTo(p.x, 3)
+    })
+
+    it('keeps the roll for hard landings', () => {
+      const drop = world([{ x0: -10, x1: 3, y1: 12 }, { x0: 3, x1: 1000, y1: 0 }])
+      const p = createPlayer(0, 12)
+      const events = run(p, drop, 3, (q) => (q.state === 'air' && q.vy < -12 ? { ...NONE, down: true, downPressed: true } : NONE))
+      expect(events).toContain('roll')
+      expect(events).not.toContain('landslide')
+    })
+  })
+
+  describe('jump pads', () => {
+    // a roof ending at x=10 with a pad at its edge, then a tall wall at x=12.5
+    const pad = { x0: 8.5, x1: 9.9, y: 0, wallX: 12.5, top: 4.4 }
+    const level = () => world([{ x0: -10, x1: 10, y1: 0 }, { x0: 12.5, x1: 1000, y1: 4.4 }], { pads: [pad] })
+    const tapAt = (x) => {
+      let done = false
+      return (p) => {
+        if (!done && p.x >= x && p.state === 'run') { done = true; return { ...NONE, jump: true, jumpPressed: true } }
+        return p.state === 'air' || p.state === 'climb' ? { ...NONE, jump: true } : NONE
+      }
+    }
+
+    it('clears a tall wall when you jump on the pad', () => {
+      for (const speed of [PHYS.SPEED_MIN, PHYS.SPEED_MAX]) {
+        const p = createPlayer(4, 0)
+        p.speed = speed
+        const events = run(p, level(), 2, tapAt(8.6))
+        expect(events).toContain('padjump')
+        expect(events).not.toContain('grab')
+        expect(events).not.toContain('climb')
+        expect(p.y).toBeCloseTo(4.4, 2)
+        expect(p.speed).toBeGreaterThanOrEqual(speed)
+      }
+    })
+
+    it('leaves you to grab the ledge when you jump before the pad', () => {
+      const p = createPlayer(4, 0)
+      p.speed = PHYS.SPEED_MAX
+      const events = run(p, level(), 2, tapAt(7.5))
+      expect(events).not.toContain('padjump')
+      expect(events.some((e) => e === 'grab' || e === 'climb')).toBe(true)
+    })
+  })
 })
+

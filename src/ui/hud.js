@@ -13,6 +13,7 @@ const HINTS = {
   wallrun: { key: 'Jump at the red wall to <b>WALLRUN</b> · jump again to kick off', touch: 'Jump at the red wall to <b>WALLRUN</b> · jump again to kick off' },
   zip: { key: '<b>JUMP</b> to catch the <b>ZIPLINE</b>', touch: '<b>JUMP</b> to catch the <b>ZIPLINE</b>' },
   spring: { key: 'Hit the red ramp to <b>LAUNCH</b>', touch: 'Hit the red ramp to <b>LAUNCH</b>' },
+  pad: { key: 'Tall wall — <kbd>SPACE</kbd> on the red <b>PAD</b> to clear it', touch: 'Tall wall — <b>JUMP</b> on the red <b>PAD</b> to clear it' },
   focus: { key: 'Focus charged — <kbd>E</kbd> to <b>SLOW TIME</b>', touch: 'Focus charged — tap <b>◎</b> to <b>SLOW TIME</b>' },
   heist: { key: 'Keep moving to jam the <b>TRACE</b> · grab <b>SHARDS</b> for creds', touch: 'Keep moving to jam the <b>TRACE</b> · grab <b>SHARDS</b> for creds' },
   laserLow: { key: 'Low <b>LASER</b> — <kbd>SPACE</kbd> to jump it', touch: 'Low <b>LASER</b> — tap <b>RIGHT</b> to jump it' },

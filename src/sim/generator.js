@@ -125,6 +125,7 @@ export class CourseGenerator {
       solids: [],
       wallruns: [],
       ziplines: [],
+      pads: [],
       decor: [],
       hints: [],
       extras: [],
@@ -217,6 +218,10 @@ export class CourseGenerator {
         width = rng.range(1.5, 3.2)
         entryClear = 8
         chunk.extras.push({ type: 'ledge', x: x1 + width, y: round(roof + dh) })
+        // tall walls get a jump pad at the edge: hit it with a jump and you clear the wall
+        if (dh >= WORLD.PAD_MIN_DH) {
+          chunk.pads.push({ x0: round(x1 - WORLD.PAD_LEN - 0.1), x1: round(x1 - 0.1), y: roof, wallX: round(x1 + width), top: round(roof + dh) })
+        }
         break
       }
       case 'wallrun': {

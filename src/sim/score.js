@@ -5,12 +5,12 @@ import { PHYS } from './config.js'
 
 export const MOVE_POINTS = {
   vault: 100, clamber: 40, roll: 150, wallrun: 200, walljump: 150, zip: 120, zipjump: 80,
-  spring: 80, grab: 60, climb: 60, slide: 40, slidejump: 120, jump: 10,
+  spring: 80, padjump: 120, grab: 60, climb: 60, slide: 40, landslide: 150, slidejump: 120, jump: 10,
   airjump: 70, shard: 25, takedown: 250,
 }
 export const MOVE_NAMES = {
   vault: 'VAULT', clamber: 'CLAMBER', roll: 'ROLL', wallrun: 'WALLRUN', walljump: 'WALL KICK', zip: 'ZIPLINE',
-  zipjump: 'ZIP DROP', spring: 'LAUNCH', grab: 'LEDGE', climb: 'CLIMB', slide: 'SLIDE', slidejump: 'SLIDE JUMP',
+  zipjump: 'ZIP DROP', spring: 'LAUNCH', padjump: 'PAD JUMP', grab: 'LEDGE', climb: 'CLIMB', slide: 'SLIDE', landslide: 'LANDING SLIDE', slidejump: 'SLIDE JUMP',
   airjump: 'AIR JUMP', takedown: 'TAKEDOWN',
 }
 const BREAKERS = new Set(['hardland', 'bonk', 'trip'])

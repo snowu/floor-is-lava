@@ -37,6 +37,31 @@ export function createPlayer(x, y) {
   }
 }
 
+// Slowest speed at which a perfectly timed landing slide still boosts.
+export function landSlideSpeed() {
+  const pace = (PHYS.LANDSLIDE_MIN - 0.25) / 0.75
+  return PHYS.SPEED_MIN + pace * (PHYS.SPEED_MAX - PHYS.SPEED_MIN)
+}
+
+// Where and when an airborne runner touches down if nothing is pressed, and
+// whether that landing is hard. Null if they won't land within `maxT`.
+export function predictLanding(start, level, maxT = 0.9) {
+  if (start.state !== 'air') return null
+  const p = clonePlayer(start)
+  p.rollTimer = 0
+  const events = []
+  const none = { jump: false, jumpPressed: false, down: false, downPressed: false }
+  for (let t = 0; t < maxT; t += PHYS.FIXED_DT) {
+    stepPlayer(p, none, PHYS.FIXED_DT, level, events)
+    if (!p.alive) return null
+    const land = events.find((e) => e.type === 'land' || e.type === 'hardland')
+    if (land) return { x: land.x, y: land.y, t, hard: land.type === 'hardland' }
+    if (p.state !== 'air') return null
+    events.length = 0
+  }
+  return null
+}
+
 export function clonePlayer(p) {
   return { ...p, kin: p.kin ? { ...p.kin } : null }
 }
@@ -53,6 +78,24 @@ export function isGrounded(p) {
 function setState(p, state) {
   p.state = state
   p.t = 0
+  p.softLanded = false
+}
+
+// Slide timed around a soft touchdown. `off` is how far from touchdown it was
+// pressed and `edge` the end of the window on that side. Clean and fast, it
+// boosts you; otherwise it's a plain slide, which holds your speed.
+function landSlide(p, events, off, edge, early) {
+  const timing = Math.max(0, 1 - off / edge)
+  const pace = Math.min(1, Math.max(0, (p.speed - PHYS.SPEED_MIN) / (PHYS.SPEED_MAX - PHYS.SPEED_MIN)))
+  const quality = timing * (0.25 + 0.75 * pace)
+  const info = { quality, timing, slow: p.speed < landSlideSpeed(), side: early ? 'early' : 'late' }
+  setState(p, 'slide')
+  if (quality < PHYS.LANDSLIDE_MIN) {
+    emit(events, 'slide', p, info)
+    return
+  }
+  gainSpeed(p, PHYS.LANDSLIDE_GAIN * (quality - PHYS.LANDSLIDE_MIN) / (1 - PHYS.LANDSLIDE_MIN))
+  emit(events, 'landslide', p, info)
 }
 
 function emit(events, type, p, extra) {
@@ -156,6 +199,29 @@ function startJump(p, vy, events, type = 'jump') {
   emit(events, type, p)
 }
 
+// The jump pad the runner is standing on, if any.
+export function padUnder(p, level) {
+  if (!level?.padsIn) return null
+  for (const q of level.padsIn(p.x, p.x)) if (p.x >= q.x0 && p.x <= q.x1 && Math.abs(p.y - q.y) < 0.05) return q
+  return null
+}
+
+// A jump off a pad: aimed so the arc is above the wall's top by the time it
+// gets there, at whatever speed you arrive.
+function padJump(p, q, events) {
+  const t = Math.max(0.12, (q.wallX - p.x) / Math.max(1, p.speed))
+  const rise = q.top - p.y + PHYS.PAD_CLEAR
+  const vy = Math.min(PHYS.PAD_MAX_V, Math.max((rise + 0.5 * PHYS.G * t * t) / t, Math.sqrt(2 * PHYS.G * rise)))
+  p.vy = vy
+  p.jumpBuffer = 0
+  p.jumpHoldActive = false
+  p.coyote = 0
+  p.support = null
+  gainSpeed(p, PHYS.BONUS_PAD)
+  setState(p, 'air')
+  emit(events, 'padjump', p)
+}
+
 function launchSpring(p, s, events) {
   p.y = s.y1
   p.vy = PHYS.SPRING_V
@@ -222,8 +288,12 @@ function land(p, s, events) {
       p.speed = Math.min(p.speed, PHYS.STUMBLE_SPEED)
       emit(events, 'hardland', p, { impact })
     }
+  } else if (p.rollTimer > 0 && PHYS.ROLL_WINDOW - p.rollTimer <= PHYS.LANDSLIDE_PRE) {
+    emit(events, 'land', p, { impact })
+    landSlide(p, events, PHYS.ROLL_WINDOW - p.rollTimer, PHYS.LANDSLIDE_PRE, true)
   } else {
     setState(p, 'run')
+    p.softLanded = true
     emit(events, 'land', p, { impact })
   }
   p.rollTimer = 0
@@ -457,7 +527,7 @@ export function stepPlayer(p, input, dt, level, events) {
     case 'slide':
     case 'roll':
     case 'stumble':
-      stepGround(p, input, dt, solids, events)
+      stepGround(p, input, dt, solids, events, level)
       break
     case 'blocked':
       p.speed = 0
@@ -499,10 +569,9 @@ function finish(p, level, events) {
   }
 }
 
-function stepGround(p, input, dt, solids, events) {
+function stepGround(p, input, dt, solids, events, level) {
   const st = p.state
   if (st === 'run') accelerate(p, dt)
-  else if (st === 'slide') p.speed = Math.max(Math.min(p.speed, PHYS.SPEED_MIN * 0.85), p.speed - PHYS.SLIDE_DECEL * dt, PHYS.STUMBLE_SPEED)
   else if (st === 'stumble') p.speed = Math.min(PHYS.STUMBLE_SPEED, p.speed + PHYS.RECOVER_ACCEL * dt)
 
   const canJump = st === 'run' || st === 'slide' || (st === 'roll' && p.t > 0.2) || (st === 'stumble' && p.t > 0.25)
@@ -514,14 +583,24 @@ function stepGround(p, input, dt, solids, events) {
       return
     }
   }
+  if (p.jumpBuffer > 0 && st !== 'stumble') {
+    const pad = padUnder(p, level)
+    if (pad) {
+      padJump(p, pad, events)
+      return
+    }
+  }
   if (p.jumpBuffer > 0 && canJump && hasHeadroom(p, solids)) {
     startJump(p, PHYS.JUMP_V, events, st === 'slide' ? 'slidejump' : 'jump')
     stepAir(p, input, dt, solids, null, events)
     return
   }
   if (st === 'run' && input.downPressed) {
-    setState(p, 'slide')
-    emit(events, 'slide', p)
+    if (p.softLanded && p.t <= PHYS.LANDSLIDE_POST) landSlide(p, events, p.t, PHYS.LANDSLIDE_POST, false)
+    else {
+      setState(p, 'slide')
+      emit(events, 'slide', p)
+    }
   }
 
   const hit = sweepX(p, dt, solids)

@@ -1,6 +1,19 @@
-# Floor Is Lava
+# Packet Loss
 
-A cyberpunk side-scrolling rooftop runner with Mirror's Edge–style movement. You auto-run across a procedurally generated city and keep your momentum by vaulting, sliding, rolling out of drops, grabbing ledges, climbing walls, wall-running, riding ziplines and launching off springboards. The city is cyberpunk, and it drifts through districts as you go: Neon Dusk, Kowloon Night, Acid Rain, Smog Noon and a red-moon Blackout.
+**[Play it in your browser →](https://snowu.github.io/packet-loss/)**
+
+![Title screen over Kowloon Night](docs/screenshots/title.png)
+
+A cyberpunk side-scrolling rooftop runner with Mirror's Edge–style movement. You auto-run across a procedurally generated city and keep your momentum by vaulting, sliding, rolling out of drops, grabbing ledges, climbing walls, wall-running, riding ziplines and launching off springboards. The city is cyberpunk, with five district palettes: Neon Dusk, Kowloon Night, Acid Rain, Smog Noon and a red-moon Blackout. Pick one on the title screen, or choose Drift to pass through them all as you run. Weather comes and goes on its own: rain rolls in, fog thickens between the skyline layers and the city fades into haze.
+
+| | |
+|---|---|
+| ![A Heist run in Neon Dusk: shards, a low laser and the trace meter](docs/screenshots/heist.png) | ![Kowloon Night skyline with a rooftop billboard](docs/screenshots/kowloon.png) |
+| *Heist: data shards, laser grids and the trace meter* | *Kowloon Night: posters, an LED ticker and a rooftop billboard* |
+| ![Rain rolling in over Acid Rain, next to a wall-run mural](docs/screenshots/rain.png) | ![Smog Noon rooftops with water tanks and billboards](docs/screenshots/smog.png) |
+| *Acid Rain, mid-storm* | *Smog Noon: screens, neon and a rooftop board* |
+| ![Blackout under a red moon](docs/screenshots/blackout.png) | |
+| *Blackout* | |
 
 ## Modes
 
@@ -30,7 +43,7 @@ Falling never ends a trial. You respawn at the last checkpoint and the clock kee
 
 ## Look
 
-Everything is pixel art drawn in code on a low-resolution canvas, with a chiptune score. Facades, neon signage, holo ads, sky traffic, props, skyline and sky are generated procedurally from curated palettes. Obstacles get their own high-contrast treatment: dark outlined steel, red edges and a pulsing glow, so they read against busy rooftops. The runner is a skeleton with springy joints and a simulated ponytail, rasterized into an outlined sprite at a stepped 24 fps.
+Everything is pixel art drawn in code on a low-resolution canvas, with a chiptune score. Facades, neon signage, billboards, sky traffic, props, skyline and sky are generated procedurally from curated palettes. The ads are a little world of their own: hand-drawn products and mascots (energy drinks, ramen, a lucky cat, an all-seeing eye), parody slogans and faux-kanji neon. Skyline towers carry rooftop billboards, spinning holo projections, round signs, cloth banners, live screens and LED tickers; the buildings you run on have street posters with graffiti, neon tube signs, screens and big rooftop boards. Each building gets its own window rhythm, lights come on in rooms and whole floors rather than scattered windows, and the lower floors sink into shadow so the rooftop you run on reads first. Obstacles get their own high-contrast treatment: dark outlined steel, red edges and a pulsing glow, so they read against busy rooftops. The runner is a skeleton with springy joints and a simulated ponytail, rasterized into an outlined sprite at a stepped 24 fps.
 
 ## Setup
 
@@ -48,14 +61,16 @@ npm run dev
 | Focus (slow time once the meter is charged) | E / F / Q | ◎ button | Shoulders / triggers |
 | Pause · mute | Esc or P · M | Buttons | Start |
 | Instant restart | R | Pause menu | Select |
-| Menu | ↑ ↓ then Space · Esc to leave results | Tap | D-pad |
+| Menu | ↑ ↓ then Space · ← → city palette · Esc to leave results | Tap | D-pad |
 
 ## Movement
 
 - **Vault**: press jump as you reach anything waist-high and you speed-vault it. Run into it without pressing and you trip, losing speed and your combo. Taller crates stop you dead until you climb them.
 - **Slide**: duck under red-striped pipes. Running into one standing up makes you stumble.
 - **Roll**: big drops cause a hard landing that kills your speed unless you press slide just before you land.
+- **Landing slide**: on a normal landing, press slide right as your feet touch down (within a few hundredths of a second either side) to land straight into a slide with a speed boost and a combo move. Jump out of it as a slide jump and land into another to keep a chain going. It only boosts when you're fast (about 46 km/h and up with perfect timing) and the cleaner the timing the bigger the boost; otherwise it's a plain slide, which keeps your speed. While you fall, brackets close in on your landing spot and a diamond lights up inside the timing window (cyan for a landing slide, red when the landing will be hard and you should roll); a label tells you how it went: PERFECT, GREAT, GOOD, or EARLY, LATE, TOO SLOW.
 - **Ledge grab / climb**: jump at walls to grab the edge, and hold jump to run up taller walls.
+- **Jump pad**: the tallest walls have a red pad at the roof edge before them. Jump while you're on it and you launch clean over the wall, keeping your speed; jump before or after it and you'll have to grab the ledge and climb.
 - **Wall-run**: jump at a red chevron wall to run along it, then jump again to kick off.
 - **Zipline**: jump to catch red cables across wide gaps.
 - **Springboard**: red ramps launch you up to taller roofs.

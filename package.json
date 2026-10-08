@@ -1,5 +1,5 @@
 {
-  "name": "floor-is-lava",
+  "name": "packet-loss",
   "version": "1.0.0",
   "private": true,
   "description": "An endless side-scrolling rooftop runner with Mirror's Edge style movement, built with Three.js",

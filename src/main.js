@@ -1,7 +1,7 @@
 import './ui/style.css'
 import { PHYS, FOCUS, RUN, HEIST } from './sim/config.js'
 import { Level } from './sim/level.js'
-import { createPlayer, stepPlayer } from './sim/player.js'
+import { createPlayer, stepPlayer, predictLanding, landSlideSpeed } from './sim/player.js'
 import { Bot } from './sim/bot.js'
 import { ScoreKeeper, COMBO_WINDOW } from './sim/score.js'
 import { GhostRecorder, GhostPlayer } from './sim/ghost.js'
@@ -12,11 +12,12 @@ import { Input } from './input.js'
 import { Audio } from './audio.js'
 import { Hud, formatTime, medalFor } from './ui/hud.js'
 import { PixelView } from './pixel/view.js'
+import { PALETTE_NAMES, pinPalette } from './pixel/palette.js'
 
 const DEMO_SEED = 20261007
 const TOAST = {
   vault: 'SPEED VAULT', clamber: 'CLAMBER', roll: 'ROLL', wallrun: 'WALLRUN', walljump: 'WALL KICK',
-  zip: 'ZIPLINE', spring: 'LAUNCH', grab: 'LEDGE', climb: 'WALL CLIMB', slidejump: 'SLIDE JUMP', airjump: 'AIR JUMP',
+  zip: 'ZIPLINE', spring: 'LAUNCH', padjump: 'PAD JUMP', grab: 'LEDGE', climb: 'WALL CLIMB', slidejump: 'SLIDE JUMP', landslide: 'LANDING SLIDE', airjump: 'AIR JUMP',
 }
 
 const store = {
@@ -59,6 +60,7 @@ const g = {
   flash: 0,
   fade: 1,
   district: '',
+  city: 0,                  // index into CITIES
   hintsShown: new Set(),
   cpNext: 0,
   splits: [],
@@ -98,6 +100,18 @@ function menuItems() {
     return { name: m.track.name.toUpperCase(), sub, best: pb ? formatTime(pb.time) : '—', medal: pb ? medalFor(pb.time, m.track.medals) : -1 }
   })
 }
+
+// City palette: drift through every district, or pin a favorite.
+const CITIES = [null, ...PALETTE_NAMES.map((_, i) => i)]
+const cityName = document.getElementById('city-name')
+function setCity(i, animate = false) {
+  g.city = (i + CITIES.length) % CITIES.length
+  if (animate) view.crossfade()
+  store.set('fil.city', String(g.city))
+  pinPalette(CITIES[g.city])
+  cityName.textContent = CITIES[g.city] === null ? 'DRIFT' : PALETTE_NAMES[CITIES[g.city]].toUpperCase()
+}
+setCity(Number(store.get('fil.city', 0)) || 0)
 
 function renderMenu() {
   hud.menu(menuItems(), g.sel, (i) => start(i))
@@ -263,6 +277,9 @@ input.on('nav', (d) => {
   g.sel = (g.sel + d + MODES.length) % MODES.length
   renderMenu()
 })
+input.on('side', (d) => {
+  if (g.mode === 'title') setCity(g.city + d, true)
+})
 input.on('confirm', () => {
   if (g.mode === 'shop') shopAction(g.shopSel)
   else if (g.mode === 'title') start(g.sel)
@@ -295,6 +312,9 @@ click('btn-menu', () => toMenu())
 click('btn-resume', () => setPaused(false))
 click('btn-restart', () => { audio.ctx?.resume(); newRun() })
 click('btn-quit', () => toMenu())
+// blur after a click so Space starts the run instead of pressing the arrow again
+click('city-prev', (e) => { setCity(g.city - 1, true); e.currentTarget.blur() })
+click('city-next', (e) => { setCity(g.city + 1, true); e.currentTarget.blur() })
 // Fullscreen: toggled from the title screen or the HUD. Landscape is locked
 // where the browser allows it. iPhone Safari has no fullscreen API, so it gets
 // a hint to install to the home screen (the manifest launches fullscreen).
@@ -618,6 +638,16 @@ function updateFocus(dt) {
   }
 }
 
+// First jump pad in sight gets a one-time hint.
+function padHint() {
+  if (g.seenHints.has('pad')) return
+  const p = g.player
+  if (!g.level.padsIn(p.x + 6, p.x + 10 + p.speed * 1.2).length) return
+  g.seenHints.add('pad')
+  store.set('fil.seen', JSON.stringify([...g.seenHints]))
+  hud.hint('pad')
+}
+
 // First sight of each heist hazard gets a one-time hint.
 function heistHints() {
   const p = g.player
@@ -635,6 +665,7 @@ function heistHints() {
 
 function updateHints() {
   if (g.heist) heistHints()
+  padHint()
   if (g.tutorialDone || g.kind !== 'endless') return
   const p = g.player
   for (const h of g.level.hintsIn(p.x + 2, p.x + 8 + p.speed * 1.1)) {
@@ -647,6 +678,19 @@ function updateHints() {
     g.tutorialDone = true
     store.set('fil.tutorial', '1')
   }
+}
+
+// Where the runner will touch down, so the view can mark the landing-slide
+// (or roll) timing as it closes in.
+function landCue(p) {
+  if (p.state !== 'air' || p.vy > 0) return null
+  const hit = predictLanding(p, g.level)
+  if (!hit) return null
+  // a press already made counts if it will still be live (and, for a landing
+  // slide, still inside the window) at touchdown
+  const since = PHYS.ROLL_WINDOW - p.rollTimer
+  const armed = p.rollTimer > hit.t && (hit.hard || since + hit.t <= PHYS.LANDSLIDE_PRE)
+  return { ...hit, armed, fast: p.speed >= landSlideSpeed() }
 }
 
 const COUNT = ['3', '2', '1', 'GO']
@@ -730,7 +774,8 @@ function frame(now) {
 
   const alpha = g.mode === 'run' || g.mode === 'title' || g.mode === 'finish' ? g.acc / PHYS.FIXED_DT : 1
   const distance = Math.max(0, cur.x)
-  const paletteD = paletteDistance(cur.x)
+  // on the title screen Drift previews itself by cycling through every district
+  const paletteD = g.mode === 'title' && CITIES[g.city] === null ? (time * 150) % (PALETTE_NAMES.length * 1500) : paletteDistance(cur.x)
   g.focusVis += ((g.focusActive ? 1 : 0) - g.focusVis) * Math.min(1, raw * 6)
   g.flash = Math.max(0, g.flash - raw * 2)
   g.fade = Math.max(0, g.fade - raw * 2.5)
@@ -745,6 +790,7 @@ function frame(now) {
     ghost: ghost && !ghost.done ? ghost : null,
     speedK: smoothstep(cur.speed, 11, PHYS.SPEED_MAX),
     focusVis: g.focusVis, flash: g.flash, fade: g.fade,
+    landCue: g.mode === 'run' ? landCue(cur) : null,
   })
 
   if (['run', 'respawn', 'countdown', 'finish', 'flatline'].includes(g.mode)) {
@@ -798,4 +844,4 @@ view.onStep = (kind) => {
 
 toTitle()
 requestAnimationFrame(frame)
-if (import.meta.env.DEV) window.__game = { g, view, start, newRun }
+if (import.meta.env.DEV) window.__game = { g, view, start, newRun, landCue }
