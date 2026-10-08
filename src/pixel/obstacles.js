@@ -243,21 +243,33 @@ function endOnPipes(f, w, h, pal, metal) {
   const zbuffer = new Float64Array(f.W * f.H).fill(Infinity)
   const roofDepth = new Float64Array(f.W * f.H).fill(Infinity)
   const base = f.H - 2, center = f.W / 2
-  // A shallow elevation keeps the rear run nearly level on screen.
-  const tilt = 0.18, cos = Math.sqrt(1 - tilt * tilt)
+  // Almost level: a compact elbow and parallel sides let the lighting carry
+  // the depth instead of an exaggerated projected bend.
+  const tilt = 0.08, cos = Math.sqrt(1 - tilt * tilt)
   const height = (base - f.oy - h / 2) / cos
-  const length = 42, R = 6
+  const length = 42, R = 3
   const project = (v) => {
     const depth = v.z * cos - v.y * tilt
     return { x: v.x, y: base - (v.y * cos + v.z * tilt), z: depth, roofZ: v.z }
   }
-  const color = (normal, paint, straightRun) => {
-    const light = Math.max(-1, Math.min(1, normal[0] * -0.6 + normal[1] * 0.75 + normal[2] * -0.45))
-    const levels = [-0.5, -0.28, -0.12, 0.06, 0.2, 0.38]
+  const color = (normal, paint, straightRun, collar, contact) => {
+    const magnitude = Math.hypot(...normal)
+    const [nx, ny, nz] = normal.map((n) => n / magnitude)
+    // A broad lit face, a narrow glint and a cool shadow side describe the
+    // round section at five pixels wide. The same light wraps over the elbow;
+    // all the volume comes from color, without changing its silhouette.
+    const light = nx * -0.82 + ny * 0.54 - nz * 0.18
+    const levels = [-0.86, -0.74, -0.54, -0.24, 0.16, 0.42]
     const k = levels[Math.max(0, Math.min(5, Math.floor((light + 1) * 3)))]
-    const material = paint ? ACCENT : straightRun ? mix(metal, pal.shadow, 0.24) : metal
-    const shaded = mix(material, k < 0 ? pal.shadow : [255, 255, 255], Math.abs(k))
-    return pack(mix(shaded, pal.mid, 0.08))
+    const shadow = mix(pal.shadow, [19, 30, 49], 0.55)
+    const material = collar ? [110, 123, 131] : paint ? ACCENT : straightRun ? mix(metal, shadow, 0.38) : metal
+    let shaded = mix(material, k < 0 ? shadow : [255, 241, 215], Math.abs(k))
+    // Keep painted markers saturated; bare metal catches a sharper warm glint.
+    const reflection = nx * -0.45 + ny * 0.2 - nz * 0.87
+    if (reflection > 0.94) shaded = mix(shaded, [246, 247, 240], paint ? 0.18 : collar ? 0.48 : 0.76)
+    // Contact shadow below the elbow socket and beside the roof mounting.
+    if (contact) shaded = mix(shaded, shadow, 0.38)
+    return pack(mix(shaded, pal.mid, 0.03))
   }
   const triangle = (a, b, c, ink) => {
     const area = (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x)
@@ -288,26 +300,30 @@ function endOnPipes(f, w, h, pal, metal) {
     for (let i = 0; i < rings.length - 1; i++) for (let j = 0; j < sides; j++) {
       const k = (j + 1) % sides, a = rings[i][j], b = rings[i][k], c = rings[i + 1][k], d = rings[i + 1][j]
       const normal = a.normal.map((n, axis) => (n + b.normal[axis] + c.normal[axis] + d.normal[axis]) / 4)
-      const paint = !collar && path[i].z >= R && path[i].z <= R + 3 && path[i].dy === 0
-      const ink = collar ? pack(mix([110, 123, 131], pal.shadow, normal[0] > 0 ? 0.48 : 0.12)) : color(normal, paint, path[i].dy === 0)
+      const upright = path[i].dy === 1 && path[i + 1].dy === 1
+      const midY = (path[i].y + path[i + 1].y) / 2
+      const paint = !collar && upright && midY >= height - R - 2 && midY < height - R - 1
+      const contact = !collar && upright && (midY < 4 || midY >= height - R - 1)
+      const ink = color(normal, paint, path[i].dy === 0, collar, contact)
       triangle(a.vertex, b.vertex, c.vertex, ink)
       triangle(a.vertex, c.vertex, d.vertex, ink)
     }
   }
-  const path = [{ y: 0, z: 0, dy: 1, dz: 0 }, { y: height - R, z: 0, dy: 1, dz: 0 }]
+  // Keep the action stripe on the upright, where it remains a clear pixel
+  // band even when the rear run is viewed almost perfectly end-on.
+  const path = [0, 4, height - R - 2, height - R - 1, height - R].map((y) => ({ y, z: 0, dy: 1, dz: 0 }))
   for (let i = 1; i <= 10; i++) {
     const a = i * Math.PI / 20
     path.push({ y: height - R + R * Math.sin(a), z: R * (1 - Math.cos(a)), dy: Math.cos(a), dz: Math.sin(a) })
   }
-  // Explicit straight samples keep the red near-end band separate from the elbow.
-  path.push({ y: height, z: R, dy: 0, dz: 1 }, { y: height, z: R + 3, dy: 0, dz: 1 }, { y: height, z: R + 5, dy: 0, dz: 1 })
+  path.push({ y: height, z: R, dy: 0, dz: 1 })
   path.push({ y: height, z: length, dy: 0, dz: 1 })
   for (let i = 0; i < f.count; i++) {
     // Give every pipe the same pixel phase so their bends rasterize alike.
     const x = Math.round(center + (i - (f.count - 1) / 2) * (f.bankW / f.count)) + 0.5
     tube(x, path, f.r)
     // A narrow socket seam separates the upright from the rounded elbow.
-    tube(x, [{ y: height - R - 0.5, z: 0, dy: 1, dz: 0 }, { y: height - R + 0.5, z: 0, dy: 1, dz: 0 }], f.r + 0.35, true)
+    tube(x, [{ y: height - R - 0.5, z: 0, dy: 1, dz: 0 }, { y: height - R + 0.5, z: 0, dy: 1, dz: 0 }], f.r, true)
     tube(x, [{ y: 1, z: 0, dy: 1, dz: 0 }, { y: 3, z: 0, dy: 1, dz: 0 }], f.r + 0.8, true)
     tube(x, [{ y: height, z: length - 2, dy: 0, dz: 1 }, { y: height, z: length, dy: 0, dz: 1 }], f.r + 0.6, true)
   }
