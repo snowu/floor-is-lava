@@ -78,6 +78,28 @@ export function specFor(seed, place) {
   return s
 }
 
+const BOARD_THEMES = {
+  can: [[226, 238, 84], [35, 28, 51]],
+  face: [[127, 214, 230], [20, 38, 56]],
+  bowl: [[255, 177, 88], [66, 27, 36]],
+  cat: [[245, 204, 118], [47, 41, 63]],
+  skull: [[236, 119, 131], [42, 28, 48]],
+  eye: [[169, 195, 235], [28, 32, 62]],
+  pill: [[180, 216, 169], [27, 49, 51]],
+  koi: [[246, 166, 130], [36, 49, 61]],
+  shoe: [[238, 152, 94], [38, 29, 52]],
+  planet: [[137, 196, 233], [28, 30, 64]],
+}
+
+// Match the visible campaign, including the roof board rotation.
+export function billboardLight(s, pal, time = 0) {
+  const period = 12 + hash(s.seed, 78) * 6
+  const frame = s.place === 'facade' ? 0 : Math.floor(time / period + hash(s.seed, 79)) & 1
+  const ad = s.ads[frame]
+  return s.kind === 'board' && s.pw >= 90 && s.ph >= 38
+    ? (BOARD_THEMES[ad.art]?.[0] ?? [236, 210, 165]) : inks(ad, pal).hue
+}
+
 // ── palettes ─────────────────────────────────────────────────────────────
 
 export function inks(a, pal) {
@@ -170,19 +192,7 @@ function paintAd(b, a, pal, x, y, w, h) {
   }
   // Printed campaigns have their own brand colors. District lighting nudges
   // the paper and frame, instead of turning every ad into the same dark UI.
-  const themes = {
-    can: [[226, 238, 84], [35, 28, 51]],
-    face: [[127, 214, 230], [20, 38, 56]],
-    bowl: [[255, 177, 88], [66, 27, 36]],
-    cat: [[245, 204, 118], [47, 41, 63]],
-    skull: [[236, 119, 131], [42, 28, 48]],
-    eye: [[169, 195, 235], [28, 32, 62]],
-    pill: [[180, 216, 169], [27, 49, 51]],
-    koi: [[246, 166, 130], [36, 49, 61]],
-    shoe: [[238, 152, 94], [38, 29, 52]],
-    planet: [[137, 196, 233], [28, 30, 64]],
-  }
-  const [accent, ground] = themes[a.art] ?? [[236, 210, 165], [46, 32, 56]]
+  const [accent, ground] = BOARD_THEMES[a.art] ?? [[236, 210, 165], [46, 32, 56]]
   const base = mix(ground, pal.shadow, 0.12)
   const paper = mix([241, 235, 220], pal.light, 0.06)
   const copy = pack(paper), secondary = pack(mix(paper, accent, 0.4))

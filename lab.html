@@ -8,7 +8,7 @@
 <body>
   <header>
     <a class="brand" href="#live"><span class="signal">▥</span> PACKET LOSS <span class="tag">ART LAB</span></a>
-    <nav aria-label="Lab sections"><a href="#live">Live</a><a href="#pipe-section">Pipes</a><a href="#runner-section">Runners</a><a href="#pose-section">Poses</a><a href="#obstacle-section">Obstacles</a><a href="#scenery-section">Scenery</a></nav>
+    <nav aria-label="Lab sections"><a href="#live">Live</a><a href="#pipe-section">Pipes</a><a href="#runner-section">Runners</a><a href="#pose-section">Poses</a><a href="#obstacle-section">Obstacles</a><a href="#scenery-section">Scenery</a><a href="#lighting-section">Lighting</a></nav>
     <button id="close-lab" class="quiet">Back to game <kbd>F3</kbd></button>
   </header>
   <main>
@@ -27,6 +27,7 @@
     <section id="pose-section"><div class="section-title"><h2>04 / Pose sheet</h2><button id="export-poses" class="quiet">Export PNG</button></div><p>Every traversal pose, at the same scale. Scroll horizontally to compare the whole movement set.</p><div class="pose-layout"><div id="pose-rows"></div><div class="scroll"><div id="pose-labels"></div><canvas id="poses"></canvas></div></div></section>
     <section id="obstacle-section"><div class="section-title"><h2>05 / Obstacles by district</h2><span>IDENTICAL SEED IN EVERY PALETTE</span></div><p>Vault blocks, cabinets, pipe bundles, a ledge housing, springboard and live fence. The runner gives scale.</p><div id="obstacles" class="obstacle-strips"></div></section>
     <section id="scenery-section"><div class="section-title"><h2>06 / Rooftops & city details</h2><span>BACKGROUND READABILITY</span></div><p>Roof props, facades and advertisements in the selected district. Background equipment carries no action red.</p><div id="facades" class="pipe-grid"></div><div id="scenery" class="scenery-grid"></div></section>
+    <section id="lighting-section"><div class="section-title"><h2>07 / Roof lighting & water</h2><span>DRY / WET · SAME SCENE</span></div><p>Contact shadows, shallow puddles and light from the nearby billboard. Compare districts and runner outfits above; wet surfaces leave the front roof edge clear.</p><div id="lighting" class="pipe-grid"></div></section>
     <footer>F3 / return to game <span>Space / pause · Period / step · PNG exports use native pixels</span></footer>
   </main>
   <script type="module" src="/src/lab/boot.js"></script>

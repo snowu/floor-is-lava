@@ -6,15 +6,16 @@ import { Bot } from '../sim/bot.js'
 import { createPlayer, stepPlayer, bodyHeight } from '../sim/player.js'
 import { PHYS } from '../sim/config.js'
 import { RunnerSprite, RUNNER_STYLES, RUNNERS, ORIGIN_X, ORIGIN_Y } from '../pixel/runner.js'
-import { bakeObstacle, lipOf, bakeShadow, bakePipe, bakePipeFront, pipeFrame, bakeFence, drawFenceLive } from '../pixel/obstacles.js'
+import { bakeObstacle, lipOf, bakePipe, bakePipeFront, pipeFrame, bakeFence, drawFenceLive } from '../pixel/obstacles.js'
 import { bakeDecor, recede } from '../pixel/sprites.js'
-import { specFor, bakeBillboard } from '../pixel/billboard.js'
+import { specFor, bakeBillboard, billboardLight } from '../pixel/billboard.js'
 import { bakeFacade } from '../pixel/city.js'
 import { paletteAt, pinPalette, PALETTE_NAMES } from '../pixel/palette.js'
 import { PPU } from '../pixel/sprites.js'
 import { toCanvas, css, mix, pack, PixelBuffer } from '../pixel/pixels.js'
 import { ACCENT } from '../pixel/palette.js'
 import { RoofWater } from '../pixel/water.js'
+import { drawRoofSurface, drawContactShadow, drawRunnerContact, equipmentLight } from '../pixel/roof.js'
 
 const $ = (id) => document.getElementById(id)
 const runnerName = (id) => RUNNER_STYLES[id].name
@@ -129,6 +130,7 @@ function drawWorld(ctx, W, H, cam, pal, t) {
     const roofH = 10
     const cv = baked(`f${c.id}:${pal.version}`, () => bakeFacade({ w, roofH, style: c.style, seed: c.seed, pal, wall: c.tint % 5 }))
     ctx.drawImage(cv, sx(c.x0), sy(c.roof) - roofH)
+    drawRoofSurface(ctx, { x: sx(c.x0), y: sy(c.roof), w, depth: roofH, seed: c.seed, pal, wet: state.wet ? 0.85 : 0, rain: state.wet ? 0.85 : 0, time: t })
     for (const z of c.ziplines) {
       ctx.fillStyle = css(ACCENT)
       const x0 = sx(z.ax), y0 = sy(z.ay), x1 = sx(z.bx), y1 = sy(z.by)
@@ -154,7 +156,7 @@ function drawObstacle(ctx, s, x, top, roofY, pal) {
   const h = Math.max(2, Math.round((s.y1 - s.y0) * PPU))
   const lip = lipOf(s.sub)
   const cv = s.kind === 'beam' ? null : baked(`o:${s.sub}:${w}:${h}:${s.id}:${pal.version}`, () => bakeObstacle(s.sub, w, h, pal, s.id))
-  ctx.drawImage(baked(`sh${w}`, () => bakeShadow(w)), x - 3, roofY - 1)
+  drawContactShadow(ctx, x, roofY, w, pal)
   if (s.kind === 'beam') {
     const drop = roofY - (top + h) - 2
     const f = pipeFrame('beam', w, h, drop, s.id)
@@ -241,6 +243,8 @@ function frame(now) {
     r.update(dt, player, rx * PPU, ry * PPU, null)
   }
   const sel = sprite(`live:${state.runner}`, state.runner)
+  const floor = level.roofAt(rx), chunk = level.chunks.find((c) => rx >= c.x0 && rx <= c.x1)
+  if (floor !== null) drawRunnerContact(mctx, { x: sx(rx), y: sy(ry), floor: sy(floor), pal, joints: sel.joints, span: chunk && [sx(chunk.x0), sx(chunk.x1)] })
   mctx.drawImage(runnerCanvas(`m:${state.runner}`, sel, dt), sx(rx) - ORIGIN_X, sy(ry) - ORIGIN_Y)
   water.update(dt)
   water.draw(mctx, sx, sy, pal)
@@ -254,7 +258,9 @@ function frame(now) {
     c.ctx.fillStyle = css(mix(pal.sky[2], pal.shadow, 0.4))
     c.ctx.fillRect(0, 0, c.cv.width, c.cv.height)
     c.ctx.fillStyle = css(pal.roof)
-    c.ctx.fillRect(0, 58, c.cv.width, 14)
+    c.ctx.fillRect(0, 48, c.cv.width, 24)
+    drawRoofSurface(c.ctx, { x: 0, y: 58, w: c.cv.width, depth: 10, seed: state.seed, pal, wet: state.wet ? 0.85 : 0, rain: state.wet ? 0.85 : 0, time })
+    drawRunnerContact(c.ctx, { x: 48, y: 58, floor: 58, pal, joints: r.joints })
     c.ctx.drawImage(runnerCanvas(`c:${c.id}`, r, dt), 48 - ORIGIN_X, 58 - ORIGIN_Y)
     const fx = closeupWater[RUNNERS.indexOf(c.id)]
     fx.update(dt)
@@ -420,6 +426,7 @@ function roofSample(ctx, W, H, pal, base) {
   ctx.fillStyle = g
   ctx.fillRect(0, 0, W, H)
   ctx.drawImage(toCanvas(bakeFacade({ w: W, roofH: 15, style: 0, seed: state.seed, pal, wall: 1 })), 0, base - 15)
+  drawRoofSurface(ctx, { x: 0, y: base, w: W, depth: 15, seed: state.seed, pal, wet: state.wet ? 0.85 : 0 })
 }
 
 function drawPipeSheet() {
@@ -497,6 +504,39 @@ function redrawSheets() {
   drawObstacleSheet()
   drawPipeSheet()
   drawScenerySheet()
+  drawLightingSheet()
+}
+
+// The same lighting functions as the game, with identical dry/wet geometry.
+function drawLightingSheet() {
+  const host = $('lighting'), pal = paletteAt(0)
+  host.replaceChildren()
+  let spec = specFor(state.seed, 'roof')
+  for (let i = 1; spec.kind !== 'board'; i++) spec = specFor(state.seed + i, 'roof')
+  for (const wet of [0, 0.9]) {
+    const cv = document.createElement('canvas'); cv.width = 340; cv.height = 132
+    const ctx = cv.getContext('2d'), base = 96
+    drawSky(ctx, cv.width, cv.height, pal)
+    ctx.drawImage(toCanvas(bakeFacade({ w: cv.width, roofH: 15, style: 2, seed: state.seed, pal, wall: 1 })), 0, base - 15)
+    const light = { x: 210 + spec.w / 2, w: spec.w, color: billboardLight(spec, pal), strength: 1 }
+    drawRoofSurface(ctx, { x: 0, y: base, w: cv.width, depth: 15, seed: state.seed, pal, wet, rain: wet, time: 0.15, lights: [light] })
+    ctx.drawImage(toCanvas(bakeBillboard(spec, pal, 0)), 210, base - 12 - spec.h)
+    const w = 28, h = 6, drop = 14, f = pipeFrame('beam', w, h, drop, state.seed, { count: 2 })
+    const x = 78 - w / 2 - f.ox, y = base - drop - h - 2 - f.oy
+    drawContactShadow(ctx, 64, base, w, pal)
+    ctx.drawImage(toCanvas(bakePipe('beam', w, h, drop, pal, state.seed, { count: 2 })), x, y)
+    drawContactShadow(ctx, 246, base, 24, pal)
+    ctx.drawImage(toCanvas(bakeObstacle('vent', 24, 12, equipmentLight(pal, 258, [light]), state.seed)), 245, base - 14)
+    const r = makeRunner(state.runner); r.rim = pal.rim; r.rimDir = pal.sunX < 0.5 ? [-1, 1] : [1, 1]
+    for (let i = 0; i < 40; i++) r.update(0.02, { ...createPlayer(0, 0), speed: 12 }, i * 3, 0)
+    drawRunnerContact(ctx, { x: 155, y: base, floor: base, pal, joints: r.joints })
+    ctx.drawImage(toCanvas(r.raster()), 155 - ORIGIN_X, base - ORIGIN_Y)
+    ctx.drawImage(toCanvas(bakePipeFront('beam', w, h, drop, pal, state.seed, { count: 2 })), x, y)
+    gridOn(ctx, cv.width, cv.height)
+    const fig = document.createElement('figure'), cap = document.createElement('figcaption')
+    cap.textContent = `${PALETTE_NAMES[state.palette]} / ${wet ? 'wet roof · neon reflections' : 'dry roof · contact shadows'}`
+    fig.append(cv, cap); host.append(fig)
+  }
 }
 
 function exportPNG(cv, name) {
@@ -534,7 +574,7 @@ $('seed').addEventListener('keydown', (e) => { if (e.code === 'Enter') applySeed
 $('shuffle-seed').addEventListener('click', () => { $('seed').value = crypto.getRandomValues(new Uint32Array(1))[0]; applySeed() })
 for (const key of ['hitboxes', 'grid']) $(key).addEventListener('change', () => { state[key] = $(key).checked; redrawSheets() })
 $('pipe-count').addEventListener('change', () => { state.pipeCount = Number($('pipe-count').value); drawPipeSheet() })
-$('wet-roof').addEventListener('change', (e) => { state.wet = e.target.checked })
+$('wet-roof').addEventListener('change', (e) => { state.wet = e.target.checked; redrawSheets() })
 $('preview-slide').addEventListener('click', () => {
   state.pipeSlide = !state.pipeSlide
   $('preview-slide').setAttribute('aria-pressed', String(state.pipeSlide))

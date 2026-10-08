@@ -367,6 +367,7 @@ export class RunnerSprite {
       this.spin = Math.atan2(Math.sin(this.spin), Math.cos(this.spin)) * Math.exp(-dt * 14)
     }
 
+    this.joints = this.solve()
     if (fast) {
       const step = Math.floor(this.phase / Math.PI)
       if (step !== this.lastStep) {
@@ -374,7 +375,6 @@ export class RunnerSprite {
         this.onStep?.(state)
       }
     }
-    this.joints = this.solve()
     this.simulateHair(dt, wx, wy)
   }
 
@@ -622,7 +622,10 @@ export class RunnerSprite {
     const outline = pack(st.colors.outline ?? COLORS.outline)
     const [rdx, rdy] = this.rimDir
     const packed = parts.map((p) => pack(p.col))
-    const rimmed = parts.map((p) => (p.far ? pack(p.col) : pack(mix(p.col, this.rim, st.face ? 0.18 : 0.45))))
+    const rimmed = parts.map((p) => {
+      const dark = Math.max(...p.col) < 100
+      return p.far ? pack(p.col) : pack(mix(p.col, this.rim, st.face ? (dark ? 0.32 : 0.18) : 0.45))
+    })
     const shaded = parts.map((p) => pack(mix(p.col, [10, 6, 20], st.shade)))
     // a pixel is shaded when, two steps away from the light, it leaves its part
     const away = (x, y, d) => {
