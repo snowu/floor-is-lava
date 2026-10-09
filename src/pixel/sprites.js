@@ -80,7 +80,8 @@ export function recede(b, color, t) {
 
 // ── decor standing on roofs ─────────────────────────────────────────────
 
-export function bakeDecor(type, variant, pal) {
+// classic: the sign as it was before the clarity pass (panel at torso height)
+export function bakeDecor(type, variant, pal, { classic = false } = {}) {
   const metal = tones(mix(pal.roof, [120, 130, 145], 0.45), pal)
   const dark = pack(mix(pal.shadow, [25, 25, 35], 0.3))
   if (type === 'tank') {
@@ -152,11 +153,16 @@ export function bakeDecor(type, variant, pal) {
   if (type === 'sign') {
     const brand = BRANDS[Math.floor(variant * BRANDS.length)]
     const w = brand.length * 8 + 12
-    const b = new PixelBuffer(w, 34)
-    const bgs = [[20, 18, 30], ACCENT, [240, 236, 228], [30, 90, 140]]
+    // The panel stands on tall posts so its bottom clears the runner's head
+    // (25 px): lettering never sits behind her torso. Action red is kept for
+    // things she can use, so no red boards.
+    const H = classic ? 34 : 48
+    const b = new PixelBuffer(w, H)
+    const bgs = classic ? [[20, 18, 30], ACCENT, [240, 236, 228], [30, 90, 140]] : [[20, 18, 30], [70, 34, 58], [200, 196, 188], [30, 90, 140]]
     const bg = bgs[Math.floor(variant * 97) % bgs.length]
-    const fg = bg === bgs[2] ? [20, 18, 30] : [255, 248, 240]
-    b.rect(4, 18, 2, 16, dark); b.rect(w - 6, 18, 2, 16, dark)
+    const fg = bg === bgs[2] ? [20, 18, 30] : classic ? [255, 248, 240] : [222, 216, 210]
+    b.rect(4, 18, 2, H - 18, dark); b.rect(w - 6, 18, 2, H - 18, dark)
+    if (!classic) { b.rect(3, 26, w - 6, 1, dark) }
     b.rect(0, 0, w, 20, dark)
     b.rect(1, 1, w - 2, 18, pack(bg))
     drawText(b, brand, 6, 5, pack(fg), 2)

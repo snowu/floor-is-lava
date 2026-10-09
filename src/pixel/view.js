@@ -730,7 +730,7 @@ export class PixelView {
       for (const d of this.hide.decor ? [] : v.decor) {
         const bucket = Math.floor(d.v * 8) / 8
         const material = equipmentLight(pal, this.sx(d.x), v.lights)
-        const cv = this.sprite(`c${c.id}:d:${d.x}:${d.type}:${bucket}`, `${ver}:${material.light}`, () => this.classic ? recede(bakeDecor(d.type, bucket, material), pal.mid, 0.32) : recede(bakeDecor(d.type, bucket, material), mix(pal.mid, pal.haze, 0.5), DECOR_RECEDE))
+        const cv = this.sprite(`c${c.id}:d:${d.x}:${d.type}:${bucket}`, `${ver}:${material.light}`, () => this.classic ? recede(bakeDecor(d.type, bucket, material, { classic: true }), pal.mid, 0.32) : recede(bakeDecor(d.type, bucket, material), mix(pal.mid, pal.haze, 0.5), DECOR_RECEDE))
         const back = clamp((-d.z - 4) / depth, 0, 1)
         const bx = this.sx(d.x) - (cv.width >> 1)
         const by = this.sy(c.roof) - Math.round(back * (v.roofH - 3)) - cv.height
