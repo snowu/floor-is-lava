@@ -85,6 +85,8 @@ Anything you can use is painted runner-vision red. Puddles and broken neon refle
 
 ## Development
 
+The game plays offline. A service worker caches the whole game and its fonts the first time you open it online; after that, the page or the installed home-screen app starts without a network, with records and settings intact. Update checks simply wait until you're back online.
+
 Installed apps check for new releases on launch, every minute while visible, and when returning to the app or reconnecting. A **NEW VERSION AVAILABLE / UPDATE NOW** prompt appears on the menu, pause screen or results; it never reloads an active run automatically. The version label also has a manual **CHECK UPDATES** button. Updating preserves saved records and settings. Existing installations need one normal refresh to receive this checker.
 
 Production builds emit `version.json` and embed the same release ID in the game. GitHub Pages uses the deployment commit as the ID, so every deployment is discoverable even without changing the package version. Local builds use the Git commit, with `PACKET_LOSS_BUILD_ID` available for testing distinct releases. Update checks are disabled in the development server; use `npm run build` and `npm run preview` to test them.
