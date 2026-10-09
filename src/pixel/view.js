@@ -1014,6 +1014,10 @@ export class PixelView {
   // only rebuilt when the runner rasterizes.
   haloTint(color) {
     const src = this.haloCanvas, out = this.haloTinted
+    // only recolour when the runner re-rasterizes or the district shifts
+    const key = css(color)
+    if (key === this.haloKey) return out
+    this.haloKey = key
     if (out.width !== src.width || out.height !== src.height) { out.width = src.width; out.height = src.height }
     const c = out.getContext('2d')
     c.globalCompositeOperation = 'copy'
@@ -1070,6 +1074,7 @@ export class PixelView {
           const buf = r.raster()
           toCanvas(buf, this.runnerCanvas)
           toCanvas(halo(buf), this.haloCanvas)
+          this.haloKey = null
           this.lastBuf = buf
         }
       }
