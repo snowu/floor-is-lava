@@ -10,16 +10,16 @@ import { CITY, bakeTower, bakeFog, bakeFacade } from './city.js'
 import { bakeBillboard, specFor, inks, billboardLight, drawTicker } from './billboard.js'
 import { drawBig, bigW } from './art.js'
 import { bakeObstacle, lipOf, bakePipe, bakePipeFront, pipeFrame, bakeFence, drawFenceLive } from './obstacles.js'
+import { drawDrone, drawWreck, drawLaser, drawLaserSpill, drawShard, SHARD, SECURITY as LASER } from './security.js'
 import { PHYS, HEIST } from '../sim/config.js'
 import { createRng } from '../sim/rng.js'
 
 // Internal resolution: 270px tall in landscape; portrait screens get a taller
 // canvas instead of a letterboxed strip. Module-level so the bakers share it.
 let H = 270
-const SHARD = [41, 243, 255]
-const LASER = [255, 47, 160]
-const TRIPPED = [255, 170, 40]
 const HULL = [26, 24, 38]
+// how far roof equipment that isn't an obstacle fades toward the skyline
+const DECOR_RECEDE = 0.5
 const CUE = [41, 243, 255]
 const CUE_IDLE = [150, 146, 176]
 
@@ -42,6 +42,8 @@ export class PixelView {
 
     this.setRunner('courier')
     this.runnerCanvas = document.createElement('canvas')
+    this.haloCanvas = document.createElement('canvas')
+    this.haloTinted = document.createElement('canvas')
     this.rasterClock = 0
     this.after = []
     this.afterClock = 0
@@ -75,6 +77,11 @@ export class PixelView {
     this.popups = []
     this.blend = 0
     this.rebakeAll = false
+    // clarity checks (dev and art lab): leave out the runner or everything
+    // the runner interacts with, to measure how each stands off the scene
+    this.hide = { runner: false, course: false, decor: false }
+    // classic: the look before the clarity pass, for side-by-side checks
+    this.classic = false
 
     window.addEventListener('resize', () => this.resize())
     this.resize()
@@ -305,6 +312,13 @@ export class PixelView {
   districtName(d) { return districtName(d) }
 
   // Which runner outfit to draw.
+  setClassic(on) {
+    if (on === this.classic) return
+    this.classic = on
+    this.cache.clear()
+    this.rebakeAll = true
+  }
+
   setRunner(id) {
     if (id === this.runnerId) return
     this.runnerId = id
@@ -398,6 +412,8 @@ export class PixelView {
       this.stepPoint = { x: s.rx, y: s.ry, speed: s.p.speed }
       this.runner.update(s.dt, s.p, s.rx * PPU, s.ry * PPU, s.idle ? 'idle' : null)
       this.updateCamera(s.raw, s)
+      const roof = s.level.roofAt(s.rx)
+      if (roof !== null) this.laneRoof = this.laneRoof === undefined ? roof : damp(this.laneRoof, roof, 6, s.raw)
     }
 
     if (s.mode !== 'paused') this.updateWeather(s.raw, pal)
@@ -406,6 +422,7 @@ export class PixelView {
     this.drawClouds(pal, s.time)
     this.drawLayers(pal)
     ctx.drawImage(this.sprite('haze', pal.version, () => bakeHaze(W, pal)), 0, Math.round(H * 0.62))
+    this.drawLaneHaze(pal)
     this.drawCourse(pal, s)
     this.drawHeist(s, pal)
     this.drawBirds(s.dt, s.rx)
@@ -695,15 +712,25 @@ export class PixelView {
     for (const [c, v] of visible) {
       const x0 = this.sx(c.x0), top = this.sy(c.roof) - v.roofH
       v.signs.forEach((sg, i) => this.drawAd(`c${c.id}:a${i}`, sg.spec, x0 + sg.dx, top + sg.dy, pal))
-      if (v.roofAd) this.drawAd(`c${c.id}:r`, v.roofAd.spec, x0 + v.roofAd.dx, top - v.roofAd.spec.h + 3, pal)
+      if (v.roofAd) {
+        const ad = v.roofAd.spec, ax = x0 + v.roofAd.dx, ay = top - ad.h + 3
+        this.drawAd(`c${c.id}:r`, ad, ax, ay, pal)
+        // boards at the back of the roof stand right behind the runner: a
+        // veil of haze keeps them lit but behind the lane
+        if (!this.classic) {
+          this.ctx.fillStyle = css(pal.haze, 0.3)
+          this.ctx.fillRect(ax, ay, ad.w, ad.h)
+        }
+      }
     }
+    this.shadeFacades(visible, pal)
     this.beams = []
     for (const [c, v] of visible) {
       const depth = Math.max(4, c.depth - 6)
-      for (const d of v.decor) {
+      for (const d of this.hide.decor ? [] : v.decor) {
         const bucket = Math.floor(d.v * 8) / 8
         const material = equipmentLight(pal, this.sx(d.x), v.lights)
-        const cv = this.sprite(`c${c.id}:d:${d.x}:${d.type}:${bucket}`, `${ver}:${material.light}`, () => recede(bakeDecor(d.type, bucket, material), pal.mid, 0.32))
+        const cv = this.sprite(`c${c.id}:d:${d.x}:${d.type}:${bucket}`, `${ver}:${material.light}`, () => this.classic ? recede(bakeDecor(d.type, bucket, material, { classic: true }), pal.mid, 0.32) : recede(bakeDecor(d.type, bucket, material), mix(pal.mid, pal.haze, 0.5), DECOR_RECEDE))
         const back = clamp((-d.z - 4) / depth, 0, 1)
         const bx = this.sx(d.x) - (cv.width >> 1)
         const by = this.sy(c.roof) - Math.round(back * (v.roofH - 3)) - cv.height
@@ -716,6 +743,7 @@ export class PixelView {
           ctx.fillRect(bx + 5, by - 1, 3, 3)
         }
       }
+      if (this.hide.course) continue
       // overhead pipes: the whole pipe (up out of the roof, across, down or
       // into its vent) goes down first; the run over the lane is redrawn in
       // front of the runner later
@@ -725,11 +753,11 @@ export class PixelView {
         const drop = this.sy(c.roof) - this.sy(sd.y0) - 2
         const f = pipeFrame('beam', w, h, drop, sd.id)
         const material = equipmentLight(pal, this.sx(sd.x0) + w / 2, v.lights), litVer = `${ver}:${material.light}`
-        const cv = this.sprite(`c${c.id}:p${sd.id}`, litVer, () => bakePipe('beam', w, h, drop, material, sd.id))
+        const cv = this.sprite(`c${c.id}:p${sd.id}`, litVer, () => bakePipe('beam', w, h, drop, material, sd.id, { legacy: this.classic }))
         const x = this.sx(sd.x0) - f.ox, y = this.sy(sd.y1) - f.oy
         drawContactShadow(ctx, this.sx(sd.x0), this.sy(c.roof), w, pal)
         ctx.drawImage(cv, x, y)
-        const front = this.sprite(`c${c.id}:pf${sd.id}`, litVer, () => bakePipeFront('beam', w, h, drop, material, sd.id))
+        const front = this.sprite(`c${c.id}:pf${sd.id}`, litVer, () => bakePipeFront('beam', w, h, drop, material, sd.id, { legacy: this.classic }))
         this.beams.push({ cv: front, x, y })
       }
       for (const sd of c.solids) {
@@ -752,17 +780,40 @@ export class PixelView {
       }
       for (const q of c.pads ?? []) this.drawPad(q, s.p, t)
     }
+    this.drawNextCue(visible, s, t)
+    if (this.hide.course) return
     // live fences across the roof
     for (const [c, v] of visible) for (const f of c.fences ?? []) this.drawFence(f, t, pal, v.roofH - 3)
     // zip cables
     for (const [c] of visible) {
       for (const z of c.ziplines) {
         const x0 = this.sx(z.ax), y0 = this.sy(z.ay), x1 = this.sx(z.bx), y1 = this.sy(z.by)
-        ctx.fillStyle = css(ACCENT)
         const n = Math.max(1, x1 - x0)
+        const at = (i) => Math.round(y0 + (y1 - y0) * (i / n))
+        if (this.classic) {
+          ctx.fillStyle = css(ACCENT)
+          for (let i = 0; i <= n; i++) {
+            const x = x0 + i
+            if (x < -2 || x > this.W + 2) continue
+            ctx.fillRect(x, at(i), 1, 1)
+          }
+          continue
+        }
+        // One pixel of red reads as a scratch at speed: the cable gets a
+        // dark underside, light running down it toward the far end, and a
+        // glow while it's the next thing in the runner's path.
+        const ahead = (z.ax - s.p.x) / Math.max(6, s.p.speed)
+        const near = s.mode !== 'title' && s.p.x < z.bx - 2 && ahead < 1.6
+        const pulse = near ? 0.5 + 0.5 * Math.sin(t * 12) : 0
         for (let i = 0; i <= n; i++) {
-          const x = x0 + i, y = Math.round(y0 + (y1 - y0) * (i / n))
+          const x = x0 + i
           if (x < -2 || x > this.W + 2) continue
+          const y = at(i)
+          if (near) { ctx.fillStyle = css(ACCENT, 0.12 + 0.12 * pulse); ctx.fillRect(x, y - 2, 1, 5) }
+          ctx.fillStyle = css(mix(ACCENT, [40, 6, 14], 0.5))
+          ctx.fillRect(x, y + 1, 1, 1)
+          const run = ((i - t * 60) % 26 + 26) % 26
+          ctx.fillStyle = run < 3 ? css(mix(ACCENT, [255, 241, 215], 0.6)) : css(ACCENT)
           ctx.fillRect(x, y, 1, 1)
         }
       }
@@ -836,67 +887,31 @@ export class PixelView {
     }
   }
 
-  // Heist layer behind the runner: data shards, security drones, wrecks.
+  // Heist layer behind the runner: data shards, security drones, wrecks,
+  // and the light laser grids throw on the roof.
   drawHeist(s, pal) {
     const { ctx } = this
     const left = this.cam.x - this.W / 2 / PPU - 4, right = this.cam.x + this.W / 2 / PPU + 4
     const t = this.cam.time
     for (const c of s.level.chunksIn(left, right)) {
       if (!c.shards) continue
+      const floor = this.sy(c.roof)
+      for (const l of c.lasers) {
+        const x0 = this.sx(l.x0), x1 = this.sx(l.x1)
+        if (x1 < -8 || x0 > this.W + 8) continue
+        drawLaserSpill(ctx, x0, x1, this.sy((l.y0 + l.y1) / 2), floor, t, { tripped: l.tripped, seed: l.x0 })
+      }
       for (const d of c.drones) {
         if (d.down) continue
         const x = this.sx(d.x)
-        const top = this.sy(d.y + HEIST.DRONE_H) + Math.round(Math.sin(t * 2.3 + d.x) * 1.5)
-        const floor = this.sy(c.roof)
-        // scan cone sweeping the roof
-        const sweep = Math.sin(t * 1.4 + d.x) * 7
-        const cone = d.spotted ? [255, 59, 48] : SHARD
-        ctx.fillStyle = css(cone)
-        for (let y = top + 7; y < floor; y++) {
-          const u = (y - top - 7) / Math.max(1, floor - top - 7)
-          const cx = x + sweep * u
-          const half = 1 + u * 9
-          for (let xx = Math.round(cx - half); xx <= Math.round(cx + half); xx++) {
-            if (dither(xx, y + Math.floor(t * 12), 0.16 + (y === floor - 1 ? 0.4 : 0))) ctx.fillRect(xx, y, 1, 1)
-          }
-        }
-        // hull, rotors, eye
-        ctx.fillStyle = css([8, 6, 14])
-        ctx.fillRect(x - 7, top + 1, 15, 6)
-        ctx.fillStyle = css(HULL)
-        ctx.fillRect(x - 6, top + 2, 13, 4)
-        ctx.fillStyle = css(mix(HULL, [120, 120, 150], 0.4))
-        ctx.fillRect(x - 6, top + 2, 13, 1)
-        const blade = Math.floor(t * 30) & 1
-        ctx.fillStyle = 'rgba(200,210,230,0.7)'
-        ctx.fillRect(x - 9 + blade, top, 5, 1)
-        ctx.fillRect(x + 5 - blade, top, 5, 1)
-        ctx.fillStyle = css([8, 6, 14])
-        ctx.fillRect(x - 6, top + 1, 1, 1)
-        ctx.fillRect(x + 6, top + 1, 1, 1)
-        ctx.fillStyle = Math.sin(t * 10 + d.x) > -0.3 ? css([255, 59, 48]) : css([120, 20, 20])
-        ctx.fillRect(x - 4, top + 4, 2, 2)
-        ctx.fillStyle = css(cone)
-        ctx.fillRect(x - 1, top + 6, 3, 1)
+        if (x < -30 || x > this.W + 30) continue
+        drawDrone(ctx, x, this.sy(d.y), floor, t, { seed: d.x, alarm: d.spotted, cleared: d.passed && !d.spotted })
       }
       for (const sh of c.shards) {
         if (sh.taken) continue
         const x = this.sx(sh.x)
-        const y = this.sy(sh.y) + Math.round(Math.sin(t * 3 + sh.x * 1.7) * 1.5)
         if (x < -6 || x > this.W + 6) continue
-        const k = 0.35 + 0.65 * Math.abs(Math.cos(t * 3.2 + sh.x))
-        ctx.fillStyle = css(SHARD, 0.28)
-        for (let dy = -5; dy <= 5; dy++) {
-          const hw = Math.round((5 - Math.abs(dy)) * k)
-          ctx.fillRect(x - hw, y + dy, hw * 2 + 1, 1)
-        }
-        ctx.fillStyle = css(SHARD)
-        for (let dy = -3; dy <= 3; dy++) {
-          const hw = Math.round((3 - Math.abs(dy)) * k)
-          ctx.fillRect(x - hw, y + dy, hw * 2 + 1, 1)
-        }
-        ctx.fillStyle = '#ffffff'
-        ctx.fillRect(x, y - 1, 1, 2)
+        drawShard(ctx, x, this.sy(sh.y), t, sh.x)
       }
     }
     // shot-down drones tumble into the street
@@ -907,11 +922,7 @@ export class PixelView {
       w.y += w.vy * s.dt
       const x = this.sx(w.x), y = this.sy(w.y)
       if (w.life <= 0 || y > H + 10) return false
-      const tilt = Math.floor(w.life * 8) & 1
-      ctx.fillStyle = css(HULL)
-      ctx.fillRect(x - 6, y - 2 - tilt, 13, 4 + tilt * 2)
-      ctx.fillStyle = css([255, 140, 40])
-      ctx.fillRect(x - 1, y - 1, 2, 2)
+      drawWreck(ctx, x, y, w.life)
       if (Math.random() < 0.5) this.particles.push({ x: w.x, y: w.y, vx: -1 + Math.random() * 2, vy: 1 + Math.random(), life: 0.5, max: 0.5, color: Math.random() < 0.5 ? [255, 200, 90] : [60, 56, 70], size: Math.random() < 0.4 ? 2 : 1 })
       return true
     })
@@ -919,41 +930,13 @@ export class PixelView {
 
   // Laser grids sit in front of the runner so the beam reads across the body.
   drawLasers(s) {
-    const { ctx } = this
     const left = this.cam.x - this.W / 2 / PPU - 4, right = this.cam.x + this.W / 2 / PPU + 4
-    const t = this.cam.time
     for (const c of s.level.chunksIn(left, right)) {
       if (!c.lasers) continue
       for (const l of c.lasers) {
         const x0 = this.sx(l.x0), x1 = this.sx(l.x1)
-        if (x1 < -4 || x0 > this.W + 4) continue
-        const y = this.sy((l.y0 + l.y1) / 2)
-        const floor = this.sy(c.roof)
-        const col = l.tripped ? TRIPPED : LASER
-        // emitter posts
-        for (const px of [x0 - 3, x1]) {
-          ctx.fillStyle = css([8, 6, 14])
-          ctx.fillRect(px, y - 3, 3, floor - y + 3)
-          ctx.fillStyle = css(HULL)
-          ctx.fillRect(px + 1, y - 2, 1, floor - y + 2)
-          ctx.fillStyle = css(col)
-          ctx.fillRect(px, y - 1, 3, 3)
-        }
-        // the beam
-        const on = l.tripped ? Math.floor(t * 6) & 1 : hash(Math.floor(t * 20), l.x0 * 10) > 0.08
-        if (!on) continue
-        const pulse = 0.5 + 0.5 * Math.sin(t * 14 + l.x0)
-        ctx.fillStyle = css(col, 0.18 + 0.12 * pulse)
-        ctx.fillRect(x0, y - 3, x1 - x0, 7)
-        ctx.fillStyle = css(col, 0.5)
-        ctx.fillRect(x0, y - 1, x1 - x0, 3)
-        ctx.fillStyle = css(col)
-        ctx.fillRect(x0, y, x1 - x0, 2)
-        ctx.fillStyle = 'rgba(255,240,250,0.9)'
-        ctx.fillRect(x0, y, x1 - x0, 1)
-        const spark = x0 + Math.floor(hash(Math.floor(t * 30), l.x1) * (x1 - x0))
-        ctx.fillStyle = '#ffffff'
-        ctx.fillRect(spark, y - 1, 2, 3)
+        if (x1 < -8 || x0 > this.W + 8) continue
+        drawLaser(this.ctx, x0, x1, this.sy((l.y0 + l.y1) / 2), this.sy(c.roof), this.cam.time, { tripped: l.tripped, seed: l.x0 })
       }
     }
   }
@@ -999,6 +982,83 @@ export class PixelView {
     }
   }
 
+  // Runner vision: the next obstacle in the runner's path lights up as she
+  // closes in, so the one that matters stands out from the rest of the roof.
+  // Blocks light their red top, pipe banks the strap she slides under.
+  drawNextCue(visible, s, t) {
+    if (this.classic || this.hide.course || s.mode === 'title') return
+    const p = s.p
+    let next = null
+    for (const [c] of visible) {
+      for (const sd of c.solids) {
+        if (sd.kind === 'roof' || sd.kind === 'spring' || sd.x1 < p.x + 0.2) continue
+        if (sd.kind !== 'beam' && sd.y1 <= p.y + PHYS.STEP) continue
+        if (!next || sd.x0 < next.x0) next = sd
+      }
+    }
+    if (!next) return
+    const ahead = (next.x0 - p.x) / Math.max(6, p.speed)       // seconds away
+    const k = clamp(1 - (ahead - 0.35) / 1.1, 0, 1)
+    if (k <= 0) return
+    const { ctx } = this
+    const x0 = this.sx(next.x0), x1 = this.sx(next.x1)
+    const pulse = 0.75 + 0.25 * Math.sin(t * 12)
+    const y = next.kind === 'beam' ? this.sy(next.y0) - 1 : this.sy(next.y1) - lipOf(next.sub)
+    ctx.fillStyle = css(ACCENT, 0.3 * k * pulse)
+    ctx.fillRect(x0 - 3, y - 3, x1 - x0 + 6, 7)
+    ctx.fillStyle = css(mix(ACCENT, [255, 255, 255], 0.6), 0.9 * k)
+    ctx.fillRect(x0 - 1, y - 1, x1 - x0 + 2, 1)
+  }
+
+  // The halo mask, coloured. Recoloured into a second canvas so the mask is
+  // only rebuilt when the runner rasterizes.
+  haloTint(color) {
+    const src = this.haloCanvas, out = this.haloTinted
+    if (out.width !== src.width || out.height !== src.height) { out.width = src.width; out.height = src.height }
+    const c = out.getContext('2d')
+    c.globalCompositeOperation = 'copy'
+    c.drawImage(src, 0, 0)
+    c.globalCompositeOperation = 'source-in'
+    c.fillStyle = css(color)
+    c.fillRect(0, 0, out.width, out.height)
+    c.globalCompositeOperation = 'source-over'
+    return out
+  }
+
+  // The skyline just above the roofline washes toward the haze, so the band
+  // the runner moves through is the calmest part of the picture.
+  drawLaneHaze(pal) {
+    if (this.laneRoof === undefined || this.classic) return
+    const y = this.sy(this.laneRoof)
+    const g = this.ctx.createLinearGradient(0, y - 64, 0, y)
+    g.addColorStop(0, css(pal.haze, 0))
+    g.addColorStop(1, css(pal.haze, 0.42))
+    this.ctx.fillStyle = g
+    this.ctx.fillRect(0, y - 64, this.W, 64)
+  }
+
+  // Lower floors sink into shadow below the lane, so lit windows and facade
+  // ads stay atmosphere instead of pulling the eye off the rooftops. Walls
+  // that rise above the runner's roof keep their light until lane level.
+  shadeFacades(visible, pal) {
+    if (this.classic) return
+    const { ctx } = this
+    const lane = this.laneRoof === undefined ? -Infinity : this.sy(this.laneRoof)
+    for (const [c, v] of visible) {
+      const x = this.sx(c.x0), w = Math.round((c.x1 - c.x0) * PPU)
+      if (x > this.W || x + w < 0) continue
+      const top = Math.max(this.sy(c.roof), lane) + 6
+      if (top >= H) continue
+      const g = ctx.createLinearGradient(0, top, 0, top + 48)
+      g.addColorStop(0, css(pal.shadow, 0))
+      g.addColorStop(1, css(pal.shadow, 0.4))
+      ctx.fillStyle = g
+      ctx.fillRect(x, top, w, 48)
+      ctx.fillStyle = css(pal.shadow, 0.4)
+      ctx.fillRect(x, top + 48, w, H - top - 48)
+    }
+  }
+
   drawRunner(s, pal) {
     const { ctx } = this
     const r = this.runner
@@ -1009,11 +1069,12 @@ export class PixelView {
         if (r.joints) {
           const buf = r.raster()
           toCanvas(buf, this.runnerCanvas)
+          toCanvas(halo(buf), this.haloCanvas)
           this.lastBuf = buf
         }
       }
     }
-    if (!r.joints) return
+    if (!r.joints || this.hide.runner) return
     const roof = s.level.roofAt(s.rx)
     const chunk = s.level.chunks.find((c) => s.rx >= c.x0 && s.rx <= c.x1)
     if (roof !== null) drawRunnerContact(ctx, { x: this.sx(s.rx), y: this.sy(s.ry), floor: this.sy(roof), pal, joints: r.joints, span: chunk && [this.sx(chunk.x0), this.sx(chunk.x1)] })
@@ -1034,7 +1095,14 @@ export class PixelView {
       ctx.globalAlpha = 0.32 - i * 0.09
       ctx.drawImage(a.cv, this.sx(a.wx) - ORIGIN_X, this.sy(a.wy) - ORIGIN_Y)
     })
-    ctx.globalAlpha = 1
+    // a thin halo off the outline keeps the silhouette clear of whatever
+    // the city puts behind it: light on dark districts, dark on bright ones
+    if (!this.classic) {
+      const bright = lum(pal.haze) > 110
+      ctx.globalAlpha = bright ? 0.45 : 0.6
+      ctx.drawImage(this.haloTint(bright ? pal.shadow : mix(pal.rim, [255, 255, 255], 0.55)), x, y)
+      ctx.globalAlpha = 1
+    }
     ctx.drawImage(this.runnerCanvas, x, y)
     if (s.p.state === 'zip') {
       ctx.fillStyle = css(mix(pal.shadow, [20, 20, 30], 0.5))
@@ -1248,6 +1316,22 @@ function bakeAlarm(W) {
     }
   }
   return b
+}
+
+const lum = (c) => 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]
+
+// One pixel around a sprite's silhouette, as an opaque mask.
+function halo(buf) {
+  const out = new PixelBuffer(buf.w, buf.h)
+  const on = pack([255, 255, 255])
+  const solid = (x, y) => x >= 0 && y >= 0 && x < buf.w && y < buf.h && buf.data[y * buf.w + x] >>> 24
+  for (let y = 0; y < buf.h; y++) {
+    for (let x = 0; x < buf.w; x++) {
+      if (solid(x, y)) continue
+      if (solid(x - 1, y) || solid(x + 1, y) || solid(x, y - 1) || solid(x, y + 1)) out.data[y * buf.w + x] = on
+    }
+  }
+  return out
 }
 
 function tint(buf, color) {

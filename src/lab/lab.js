@@ -4,7 +4,8 @@
 import { Level } from '../sim/level.js'
 import { Bot } from '../sim/bot.js'
 import { createPlayer, stepPlayer, bodyHeight } from '../sim/player.js'
-import { PHYS } from '../sim/config.js'
+import { PHYS, HEIST } from '../sim/config.js'
+import { drawDrone, drawLaser, drawLaserSpill, drawShard, SECURITY, ALARM, SHARD } from '../pixel/security.js'
 import { RunnerSprite, RUNNER_STYLES, RUNNERS, ORIGIN_X, ORIGIN_Y } from '../pixel/runner.js'
 import { bakeObstacle, lipOf, bakePipe, bakePipeFront, pipeFrame, bakeFence, drawFenceLive } from '../pixel/obstacles.js'
 import { bakeDecor, recede } from '../pixel/sprites.js'
@@ -23,7 +24,7 @@ import { drawRoofSurface, drawContactShadow, drawRunnerContact, equipmentLight }
 const $ = (id) => document.getElementById(id)
 const runnerName = (id) => RUNNER_STYLES[id].name
 const makeRunner = (id) => new RunnerSprite(id)
-const state = { tickersMaster: false, billboardsMaster: false, runner: 'courier', palette: 1, speed: 1, seed: 20261008, zoom: 2, paused: false, hitboxes: false, grid: false, pipeCount: 3, pipeSlide: false, wet: false }
+const state = { tickersMaster: false, billboardsMaster: false, runner: 'courier', palette: 1, speed: 1, seed: 20261008, zoom: 2, paused: false, hitboxes: false, grid: false, pipeCount: 3, pipeSlide: false, pipesMaster: false, wet: false }
 let water = new RoofWater()
 let motion = new ParkourFX()
 const previewFX = new ParkourFX()
@@ -280,6 +281,7 @@ function frame(now) {
   }
   drawEffectsPreview(pal, dt)
   drawTickerPreview(pal)
+  drawSecuritySheet(time)
 }
 
 // One ticker per channel, found with the world's own generator.
@@ -473,6 +475,147 @@ function drawObstacleSheet() {
   pinPalette(state.palette)
 }
 
+// ── heist security ───────────────────────────────────────────────────────
+
+// Every hazard and pickup state in one strip per district, animated with the
+// lab clock. Positions are screen pixels on a 720×100 strip.
+const SEC_BASE = 84
+const m = (v) => Math.round(v * PPU)
+const SEC_ITEMS = [
+  ...[64, 80, 96].map((x) => ({ type: 'shard', x, y: 0.9 })),
+  ...[128, 144, 160].map((x) => ({ type: 'shard', x, y: 2.9 })),
+  { type: 'laser', x0: 200, len: 2.2, y0: 0.05 },
+  { type: 'laser', x0: 278, len: 2.2, y0: 1.05 },
+  { type: 'laser', x0: 356, len: 2.2, y0: 1.05, tripped: true },
+  { type: 'drone', x: 456 },
+  { type: 'drone', x: 544, alarm: true },
+  { type: 'drone', x: 632, cleared: true },
+]
+let securityStrips = []
+
+function buildSecuritySheet() {
+  const host = $('security')
+  host.replaceChildren()
+  securityStrips = PALETTE_NAMES.map((name, pi) => {
+    pinPalette(pi)
+    const pal = paletteAt(0)
+    const cv = document.createElement('canvas')
+    cv.width = 720; cv.height = 100
+    cv.style.width = `calc(${cv.width}px * var(--zoom))`
+    cv.style.height = `calc(${cv.height}px * var(--zoom))`
+    const back = document.createElement('canvas')
+    back.width = cv.width; back.height = cv.height
+    const bctx = back.getContext('2d')
+    drawSky(bctx, back.width, back.height, pal)
+    bctx.drawImage(toCanvas(bakeFacade({ w: back.width, roofH: 12, style: 0, seed: state.seed, pal, wall: 1 })), 0, SEC_BASE - 12)
+    bctx.drawImage(sampleRunner(pal), 28 - ORIGIN_X, SEC_BASE - ORIGIN_Y)
+    const fig = document.createElement('figure'), cap = document.createElement('figcaption')
+    cap.textContent = name
+    fig.append(cv, cap)
+    host.append(fig)
+    return { cv, ctx: cv.getContext('2d'), back }
+  })
+  pinPalette(state.palette)
+}
+
+function drawSecuritySheet(t) {
+  for (const { ctx, back } of securityStrips) {
+    ctx.drawImage(back, 0, 0)
+    const boxes = []
+    for (const it of SEC_ITEMS) {
+      if (it.type === 'laser') {
+        const x1 = it.x0 + m(it.len), y = SEC_BASE - m(it.y0 + 0.11)
+        drawLaserSpill(ctx, it.x0, x1, y, SEC_BASE, t, { tripped: it.tripped, seed: it.x0 })
+        boxes.push(() => drawLaser(ctx, it.x0, x1, y, SEC_BASE, t, { tripped: it.tripped, seed: it.x0 }))
+        if (state.hitboxes) boxes.push(() => collisionBox(ctx, it.x0, SEC_BASE - m(it.y0 + 0.22), x1 - it.x0, Math.max(2, m(0.22))))
+      } else if (it.type === 'drone') {
+        const bottom = SEC_BASE - m(2.75)
+        drawDrone(ctx, it.x, bottom, SEC_BASE, t, { seed: it.x, alarm: it.alarm, cleared: it.cleared })
+        if (state.hitboxes) boxes.push(() => collisionBox(ctx, it.x - m(HEIST.DRONE_W / 2), bottom - m(HEIST.DRONE_H), m(HEIST.DRONE_W), m(HEIST.DRONE_H)))
+      } else {
+        drawShard(ctx, it.x, SEC_BASE - m(it.y), t, it.x)
+        if (state.hitboxes) { const r = m(HEIST.SHARD_RADIUS); boxes.push(() => collisionBox(ctx, it.x - r, SEC_BASE - m(it.y) - r, r * 2, r * 2)) }
+      }
+    }
+    for (const draw of boxes) draw()
+    gridOn(ctx, 720, 100)
+  }
+}
+
+// ── trace balance ────────────────────────────────────────────────────────
+
+const TRACE_RUNS = [
+  { careful: true, label: 'Careful', color: '#29f3ff' },
+  { careful: false, label: 'Ignores hazards', color: '#ffb347' },
+]
+const traceResults = {}
+
+function runTraceSim() {
+  const seed = state.seed
+  $('trace-run').disabled = true
+  $('trace-status').textContent = `Running seed ${seed}… (about half a minute)`
+  for (const k of Object.keys(traceResults)) delete traceResults[k]
+  drawTraceChart()
+  let left = TRACE_RUNS.length
+  for (const run of TRACE_RUNS) {
+    const worker = new Worker(new URL('./traceWorker.js', import.meta.url), { type: 'module' })
+    worker.onmessage = (e) => {
+      traceResults[run.label] = { ...e.data, ...run }
+      worker.terminate()
+      drawTraceChart()
+      if (--left === 0) { $('trace-run').disabled = false; $('trace-status').textContent = `Seed ${seed}` }
+    }
+    worker.onerror = () => { worker.terminate(); $('trace-run').disabled = false; $('trace-status').textContent = 'The simulation failed; see the console.' }
+    worker.postMessage({ seed, careful: run.careful })
+  }
+}
+
+function drawTraceChart() {
+  const cv = $('trace-chart'), dpr = 2
+  if (cv.width !== 720 * dpr) { cv.width = 720 * dpr; cv.height = 220 * dpr }
+  const ctx = cv.getContext('2d')
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+  const W = 720, H = 220, L = 34, R = 10, T = 22, B = 22
+  ctx.fillStyle = '#141723'; ctx.fillRect(0, 0, W, H)
+  const runs = Object.values(traceResults)
+  const sectors = runs[0]?.sectors ?? Array.from({ length: HEIST.SECTORS + 1 }, (_, i) => i * HEIST.SECTOR_LEN)
+  const end = sectors.at(-1)
+  const px = (x) => L + (x / end) * (W - L - R), py = (v) => T + (1 - v) * (H - T - B)
+  ctx.font = '10px ui-monospace, monospace'
+  for (let i = 0; i < sectors.length - 1; i++) {
+    ctx.fillStyle = i % 2 ? '#181b29' : '#141723'
+    ctx.fillRect(px(sectors[i]), T, px(sectors[i + 1]) - px(sectors[i]), H - T - B)
+    ctx.fillStyle = '#959cad'
+    ctx.fillText(`SECTOR ${i + 1}`, px(sectors[i]) + 6, T - 8)
+  }
+  ctx.strokeStyle = '#272a37'; ctx.lineWidth = 1
+  for (const v of [0, 0.25, 0.5, 0.75, 1]) {
+    ctx.beginPath(); ctx.moveTo(L, py(v) + 0.5); ctx.lineTo(W - R, py(v) + 0.5); ctx.stroke()
+    ctx.fillStyle = '#959cad'; ctx.fillText(`${v * 100}%`, 2, py(v) + 3)
+  }
+  ctx.fillStyle = '#959cad'; ctx.fillText('0 m', L, H - 6); ctx.fillText(`${Math.round(end)} m`, W - R - 40, H - 6)
+  if (!runs.length) {
+    ctx.fillStyle = '#e7e9ef'; ctx.fillText('Press Simulate heist to chart the trace for this seed.', L + 12, H / 2)
+  }
+  const MARK = { traced: '#ff3b30', zap: css(SECURITY), spotted: css(ALARM), takedown: css(SHARD) }
+  for (const r of runs) {
+    ctx.strokeStyle = r.color; ctx.lineWidth = 1.5
+    ctx.beginPath()
+    r.samples.forEach((s, i) => (i ? ctx.lineTo(px(s.x), py(s.trace)) : ctx.moveTo(px(s.x), py(s.trace))))
+    ctx.stroke()
+    for (const mk of r.marks) {
+      ctx.fillStyle = MARK[mk.type]
+      if (mk.type === 'traced') ctx.fillRect(px(mk.x) - 1, T, 2, H - T - B)
+      else {
+        const s = r.samples.find((q) => q.x >= mk.x) ?? r.samples.at(-1)
+        ctx.beginPath(); ctx.arc(px(mk.x), py(s.trace), mk.type === 'takedown' ? 2 : 3, 0, Math.PI * 2); ctx.fill()
+      }
+    }
+  }
+  $('trace-summary').innerHTML = runs.map((r) => `<div class="row"><i style="background:${r.color}"></i><b>${r.label}</b> · ${r.extracted ? 'EXTRACTED' : 'FLATLINED'} with ${r.integrity}/${r.maxIntegrity} integrity in ${r.time.toFixed(0)} s<br>` +
+    `ICE burns <b>${r.stats.burns}</b> · grids tripped <b>${r.stats.zaps}</b> · spotted <b>${r.stats.spotted}</b> · takedowns <b>${r.stats.takedowns}</b> · shards <b>${r.stats.shards}</b> · falls <b>${r.falls}</b></div>`).join('')
+}
+
 // ── controls ─────────────────────────────────────────────────────────────
 
 function seg(host, items, current, onPick) {
@@ -499,7 +642,7 @@ function render() {
 function pick(kind, v) {
   state[kind] = v
   render()
-  if (kind === 'runner') { drawObstacleSheet(); drawPipeSheet() }
+  if (kind === 'runner') { drawObstacleSheet(); drawPipeSheet(); buildSecuritySheet() }
 }
 
 const NOTES = {
@@ -535,7 +678,7 @@ function drawPipeSheet() {
     const cv = document.createElement('canvas')
     cv.width = 240; cv.height = 104
     const ctx = cv.getContext('2d'), w = count === 3 ? 38 : 28, h = 6, drop = 14
-    const options = { count }
+    const options = { count, legacy: state.pipesMaster }
     const f = pipeFrame('beam', w, h, drop, state.seed, options)
     const laneX = 90 - w / 2
     const x = laneX - f.ox, y = 76 - drop - h - f.oy
@@ -547,7 +690,7 @@ function drawPipeSheet() {
     if (state.hitboxes) collisionBox(ctx, laneX, 76 - drop - h, w, h)
     gridOn(ctx, cv.width, cv.height)
     const fig = document.createElement('figure'), cap = document.createElement('figcaption')
-    cap.textContent = `${count} parallel pipes / rear vent · scenery`
+    cap.textContent = `${count} parallel pipes / rear vent · ${state.pipesMaster ? 'master' : 'red band and strap at head height'}`
     fig.append(cv, cap)
     host.append(fig)
   }
@@ -666,6 +809,7 @@ function redrawSheets() {
   drawPipeSheet()
   drawScenerySheet()
   drawLightingSheet()
+  buildSecuritySheet()
 }
 
 // The same lighting functions as the game, with identical dry/wet geometry.
@@ -738,6 +882,13 @@ $('pipe-count').addEventListener('change', () => { state.pipeCount = Number($('p
 for (const [id, type] of [['fx-landing', 'landslide'], ['fx-launch', 'spring'], ['fx-pickup', 'shard']]) {
   $(id).addEventListener('click', () => previewFX.event(type, { x: 0, y: 0 }, { quality: 1, y: type === 'shard' ? 2 : 0 }))
 }
+$('trace-run').addEventListener('click', runTraceSim)
+$('pipe-compare').addEventListener('click', () => {
+  state.pipesMaster = !state.pipesMaster
+  $('pipe-compare').setAttribute('aria-pressed', String(state.pipesMaster))
+  $('pipe-compare').textContent = state.pipesMaster ? 'Show proposed version' : 'Show master version'
+  drawPipeSheet()
+})
 $('ticker-compare').addEventListener('click', () => {
   state.tickersMaster = !state.tickersMaster
   $('ticker-compare').setAttribute('aria-pressed', String(state.tickersMaster))
@@ -768,4 +919,5 @@ pinPalette(state.palette)
 render()
 reset()
 redrawSheets()
+drawTraceChart()
 requestAnimationFrame(frame)

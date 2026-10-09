@@ -238,7 +238,7 @@ function airHandler(f, pal, profiles) {
 // Orthographic, head-on camera: parallel pipes keep a constant width and
 // never converge. X is bank width, Y is height, Z goes away from the player.
 // Cylindrical geometry supplies the rounded elbow shading and occlusion.
-function endOnPipes(f, w, h, pal, metal) {
+function endOnPipes(f, w, h, pal, metal, legacy = false) {
   const result = new PixelBuffer(f.W, f.H)
   const zbuffer = new Float64Array(f.W * f.H).fill(Infinity)
   const roofDepth = new Float64Array(f.W * f.H).fill(Infinity)
@@ -248,11 +248,16 @@ function endOnPipes(f, w, h, pal, metal) {
   const tilt = 0.08, cos = Math.sqrt(1 - tilt * tilt)
   const height = (base - f.oy - h / 2) / cos
   const length = 42, R = 3
+  // The run you duck under heads straight away from the camera, so end-on it
+  // has no area. Everything from the collision band up is painted action red
+  // instead, and the risers below it sink back, so the bank reads as a red
+  // bar at head height with room underneath.
+  const band = height - h / 2
   const project = (v) => {
     const depth = v.z * cos - v.y * tilt
     return { x: v.x, y: base - (v.y * cos + v.z * tilt), z: depth, roofZ: v.z }
   }
-  const color = (normal, paint, straightRun, collar, contact) => {
+  const color = (normal, paint, straightRun, collar, contact, low = false) => {
     const magnitude = Math.hypot(...normal)
     const [nx, ny, nz] = normal.map((n) => n / magnitude)
     // A broad lit face, a narrow glint and a cool shadow side describe the
@@ -269,6 +274,7 @@ function endOnPipes(f, w, h, pal, metal) {
     if (reflection > 0.94) shaded = mix(shaded, [246, 247, 240], paint ? 0.18 : collar ? 0.48 : 0.76)
     // Contact shadow below the elbow socket and beside the roof mounting.
     if (contact) shaded = mix(shaded, shadow, 0.38)
+    if (low) shaded = mix(shaded, shadow, 0.5)
     return pack(mix(shaded, pal.mid, 0.03))
   }
   const triangle = (a, b, c, ink) => {
@@ -302,9 +308,12 @@ function endOnPipes(f, w, h, pal, metal) {
       const normal = a.normal.map((n, axis) => (n + b.normal[axis] + c.normal[axis] + d.normal[axis]) / 4)
       const upright = path[i].dy === 1 && path[i + 1].dy === 1
       const midY = (path[i].y + path[i + 1].y) / 2
-      const paint = !collar && upright && midY >= height - R - 2 && midY < height - R - 1
-      const contact = !collar && upright && (midY < 4 || midY >= height - R - 1)
-      const ink = color(normal, paint, path[i].dy === 0, collar, contact)
+      const paint = legacy
+        ? !collar && upright && midY >= height - R - 2 && midY < height - R - 1
+        : !collar && path[i].dy > 0.3 && midY >= band - 1
+      const contact = !collar && upright && (midY < 4 || (legacy && midY >= height - R - 1))
+      const low = !legacy && !collar && upright && midY < band - 2
+      const ink = color(normal, paint, path[i].dy === 0, collar, contact, low)
       triangle(a.vertex, b.vertex, c.vertex, ink)
       triangle(a.vertex, c.vertex, d.vertex, ink)
     }
@@ -327,6 +336,23 @@ function endOnPipes(f, w, h, pal, metal) {
     tube(x, [{ y: 1, z: 0, dy: 1, dz: 0 }, { y: 3, z: 0, dy: 1, dz: 0 }], f.r + 0.8, true)
     tube(x, [{ y: height, z: length - 2, dy: 0, dz: 1 }, { y: height, z: length, dy: 0, dz: 1 }], f.r + 0.6, true)
   }
+  // A clamp strap ties the bank together along the underside of the band:
+  // one unbroken red edge to slide beneath, in front of the runner.
+  if (!legacy) {
+    const first = Math.round(center - (f.count - 1) / 2 * (f.bankW / f.count)) + 0.5
+    const last = Math.round(center + (f.count - 1) / 2 * (f.bankW / f.count)) + 0.5
+    const y = Math.round(base - band * cos)
+    const x0 = Math.floor(first - f.r - 1), x1 = Math.ceil(last + f.r + 1)
+    for (let x = x0; x < x1; x++) {
+      for (const [dy, c] of [[-1, pack(mix(ACCENT, [255, 241, 215], 0.35))], [0, pack(ACCENT)], [1, pack(mix(ACCENT, [40, 6, 14], 0.45))]]) {
+        const index = (y + dy) * f.W + x
+        if (index < 0 || index >= zbuffer.length) continue
+        zbuffer[index] = -1
+        roofDepth[index] = 0
+        result.set(x, y + dy, c)
+      }
+    }
+  }
   // The runner occupies a plane through the bank. Near faces (including
   // the complete risers) cover her; the rear run and AC remain behind her.
   const near = new PixelBuffer(f.W, f.H)
@@ -345,7 +371,7 @@ export function bakePipeLayers(sub, w, h, drop, pal, seed, options = {}) {
   // Preserve the approved AC pixel art behind every pipe bank.
   const ports = Array.from({ length: f.count }, (_, i) => ({ cy: f.oy + h / 2 - (f.count - 1 - i) * 9 }))
   back.blit(airHandler(f, pal, ports), f.unitX - 1, -1)
-  const pipe = endOnPipes(f, w, h, pal, metal)
+  const pipe = endOnPipes(f, w, h, pal, metal, options.legacy)
   back.blit(pipe.full, -1, -1)
   front.blit(pipe.near, -1, -1)
   return { back, front }

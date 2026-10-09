@@ -6,8 +6,9 @@ import { createPlayer, stepPlayer } from '../src/sim/player.js'
 import { PHYS, HEIST, setPhysMods } from '../src/sim/config.js'
 import { createRng } from '../src/sim/rng.js'
 import { CHROME, rollOffer, chromeEffects, countOf } from '../src/sim/chrome.js'
-import { HeistState, heistOptions } from '../src/sim/heist.js'
+import { HeistState, heistOptions, HazardProbe, traceRate } from '../src/sim/heist.js'
 import { ScoreKeeper } from '../src/sim/score.js'
+import { simulateHeist } from '../src/sim/heistSim.js'
 
 const NONE = { jump: false, jumpPressed: false, down: false, downPressed: false }
 
@@ -184,6 +185,31 @@ describe('heist state', () => {
     expect(net.trace).toBeCloseTo(HEIST.TRACE_AFTER_BURN)
   })
 
+  it('builds trace slower at speed, and clean moves knock it back', () => {
+    expect(traceRate(0, HEIST.TRACE_FLOW_SPEED)).toBeCloseTo(traceRate(0, PHYS.SPEED_MIN) * (1 - HEIST.TRACE_FLOW_HIDE))
+    expect(traceRate(4, PHYS.SPEED_MIN)).toBeGreaterThan(traceRate(0, PHYS.SPEED_MIN))
+    const net = new HeistState(1)
+    net.trace = 0.5
+    net.move('vault')
+    expect(net.trace).toBeCloseTo(0.5 - HEIST.TRACE_MOVE)
+    // repeatable on any flat roof, so no jam
+    net.move('slidejump')
+    net.move('jump')
+    expect(net.trace).toBeCloseTo(0.5 - HEIST.TRACE_MOVE)
+  })
+
+  it('probes hazards without tripping them', () => {
+    const lasers = [{ id: 'l', x0: 0.5, x1: 2, y0: 1.05, y1: 1.27, tripped: false }]
+    const drones = [{ id: 'd', x: 1, y: 2.75, down: false, passed: false }]
+    const level = { chunksIn: () => [{ lasers, drones }] }
+    const probe = new HazardProbe()
+    expect(probe.cost(createPlayer(1, 0), level)).toBe(3)
+    expect(probe.cost(createPlayer(2, 0), level)).toBe(2)   // ran under the scan
+    expect(probe.cost(createPlayer(2, 0), level)).toBe(0)   // each judged once
+    expect(lasers[0].tripped).toBe(false)
+    expect(drones[0].passed).toBe(false)
+  })
+
   it('runs a street doc: repair, reroll and install', () => {
     const net = new HeistState(4)
     net.integrity = 1
@@ -211,29 +237,14 @@ describe('heist state', () => {
 })
 
 describe('heist traversal', () => {
-  it('the autopilot clears a full heist and picks up shards on the way', () => {
-    const level = new Level(31337, heistOptions())
-    const net = new HeistState(31337)
-    const bot = new Bot(level)
-    level.ensure(200)
-    let p = createPlayer(0, level.roofAt(0))
-    const events = []
-    let falls = 0
-    const end = HEIST.SECTORS * HEIST.SECTOR_LEN
-    for (let i = 0; i < 120 * 400 && !(level.finish && p.x > level.finish.x); i++) {
-      level.ensure(p.x + 200)
-      events.length = 0
-      stepPlayer(p, bot.input(p), PHYS.FIXED_DT, level, events)
-      net.step(PHYS.FIXED_DT, p, level, events)
-      if (!p.alive) {
-        falls++
-        const r = level.roofStartBehind(p.x)
-        p = createPlayer(r.x, r.y)
-      }
-      level.prune(p.x - 90)
-    }
-    expect(p.x).toBeGreaterThan(end - 100)
-    expect(falls).toBeLessThanOrEqual(2)
-    expect(net.stats.shards).toBeGreaterThan(20)
-  }, 60000)
+  it('a careful autopilot extracts from a full heist with no chrome', () => {
+    const run = simulateHeist(31337)
+    expect(run.extracted).toBe(true)
+    expect(run.falls).toBeLessThanOrEqual(2)
+    expect(run.stats.shards).toBeGreaterThan(20)
+    // flow, not luck: dodging the hazards keeps the trace from ever burning
+    expect(run.stats.zaps + run.stats.spotted).toBeLessThanOrEqual(4)
+    expect(run.stats.takedowns).toBeGreaterThan(5)
+    expect(run.stats.burns).toBe(0)
+  }, 90000)
 })

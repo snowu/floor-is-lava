@@ -3,6 +3,7 @@
 
 import { PHYS } from './config.js'
 import { stepPlayer, clonePlayer, isDoomed, padUnder } from './player.js'
+import { HazardProbe } from './heist.js'
 
 const PENALTY_HORIZON = 1.2
 const NONE = { jump: false, jumpPressed: false, down: false, downPressed: false }
@@ -53,8 +54,9 @@ function reflex(p, level) {
   return NONE
 }
 
-function simulate(start, plan, level, ticks, dt) {
+function simulate(start, plan, level, ticks, dt, heist = false) {
   const p = clonePlayer(start)
+  const probe = heist ? new HazardProbe() : null
   let penalty = 0
   let trouble = Infinity
   const events = []
@@ -68,6 +70,7 @@ function simulate(start, plan, level, ticks, dt) {
         if (e.type === 'hardland' || e.type === 'bonk' || e.type === 'trip' || e.type === 'shock') penalty += 3
         if (e.type === 'clamber') penalty += 0.5
       }
+      if (probe) penalty += probe.cost(p, level)
     }
     if (penalty > 0) trouble = Math.min(trouble, i * dt)
     if (isDoomed(p, level)) return { ok: false, x: p.x, penalty, trouble: Math.min(trouble, i * dt) }
@@ -85,8 +88,10 @@ function better(a, b) {
 }
 
 export class Bot {
-  constructor(level, { horizon = 2.2, dt = PHYS.FIXED_DT, decideEvery = 3 } = {}) {
+  // heist: also steer clear of laser grids and under-drone scans
+  constructor(level, { horizon = 2.2, dt = PHYS.FIXED_DT, decideEvery = 3, heist = false } = {}) {
     this.level = level
+    this.heist = heist
     this.dt = dt
     this.ticks = Math.round(horizon / dt)
     this.decideEvery = decideEvery
@@ -104,7 +109,7 @@ export class Bot {
     if (this.counter++ % this.decideEvery !== 0) return reflex(p, this.level)
 
     this.level.ensure(p.x + 120)
-    const idle = simulate(p, PLANS[0], this.level, this.ticks, this.dt)
+    const idle = simulate(p, PLANS[0], this.level, this.ticks, this.dt, this.heist)
     const clean = (r) => r.ok && r.penalty === 0
     if (clean(idle)) return reflex(p, this.level)
 
@@ -112,12 +117,12 @@ export class Bot {
     // wait, keep running.
     const wait = this.decideEvery * 2
     for (let i = 1; i < PLANS.length; i++) {
-      if (clean(simulate(p, [[wait, {}], ...PLANS[i]], this.level, this.ticks, this.dt))) return reflex(p, this.level)
+      if (clean(simulate(p, [[wait, {}], ...PLANS[i]], this.level, this.ticks, this.dt, this.heist))) return reflex(p, this.level)
     }
 
     let best = { result: idle, plan: PLANS[0] }
     for (let i = 1; i < PLANS.length; i++) {
-      const result = simulate(p, PLANS[i], this.level, this.ticks, this.dt)
+      const result = simulate(p, PLANS[i], this.level, this.ticks, this.dt, this.heist)
       if (better(result, best.result)) best = { result, plan: PLANS[i] }
     }
     if (best.plan === PLANS[0]) return reflex(p, this.level)

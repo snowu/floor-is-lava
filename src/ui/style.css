@@ -127,7 +127,8 @@ kbd {
 .toasts { position: absolute; left: 50%; bottom: 22%; transform: translateX(-50%); display: flex; flex-direction: column-reverse; align-items: center; gap: 4px; }
 .toast { font: italic 800 26px/1 var(--cond); letter-spacing: 0.08em; text-shadow: 0 2px 12px rgba(0, 0, 0, 0.35); animation: toast 1.1s ease-out forwards; }
 .toast small { font-size: 0.6em; color: var(--red); margin-left: 6px; text-shadow: none; }
-@keyframes toast { 0% { opacity: 0; transform: translateY(10px) scale(0.9); } 15% { opacity: 1; transform: none; } 70% { opacity: 1; } 100% { opacity: 0; transform: translateY(-14px); } }
+/* toasts stack, so they fade in place: sliding would run them into each other */
+@keyframes toast { 0% { opacity: 0; transform: scale(0.9); } 15% { opacity: 1; transform: none; } 70% { opacity: 1; } 100% { opacity: 0; transform: scale(0.96); } }
 
 .touch-zones { position: absolute; inset: 0; display: none; transition: opacity 0.6s; }
 body.touch .touch-zones { display: flex; }
@@ -205,6 +206,8 @@ body.pixel .dist { font: 700 40px/1 'Pixelify Sans', monospace; text-shadow: -2p
 body.pixel .dist small { font: 400 14px/1 'Silkscreen', monospace; }
 body.pixel .sub, body.pixel .meter-label { font: 400 11px/1 'Silkscreen', monospace; letter-spacing: 0.04em; text-shadow: 2px 2px 0 rgba(0, 0, 0, 0.6); }
 body.pixel .icon-btn { backdrop-filter: none; -webkit-backdrop-filter: none; box-shadow: 4px 4px 0 rgba(0, 0, 0, 0.35); font-family: 'Silkscreen', monospace; }
+/* facade billboards run behind the meters, so they get the score chip's plate */
+body.pixel .hud-bl { padding: 8px 10px 9px; margin: -8px 0 0 -10px; background: var(--glass); box-shadow: inset 0 -2px 0 var(--cyan), 4px 4px 0 rgba(0, 0, 0, 0.35); }
 body.pixel .speed i { transform: none; box-shadow: inset 0 -2px 0 rgba(0, 0, 0, 0.25); }
 body.pixel .focus { height: 6px; }
 body.pixel .banner { font: 400 18px/1 'Silkscreen', monospace; letter-spacing: 0.12em; text-shadow: 3px 3px 0 rgba(0, 0, 0, 0.6); }
@@ -322,6 +325,9 @@ body.pixel .banner { color: #eef6ff; text-shadow: -2px 0 var(--pink), 2px 0 var(
 .trace-wrap.hot .trace { box-shadow: 0 0 0 2px var(--red), 0 0 14px rgba(255, 59, 48, 0.7); animation: pulse-px 0.5s steps(2) infinite; }
 .trace-wrap.hot .trace i { background: repeating-linear-gradient(90deg, var(--red) 0 6px, #8a1410 6px 8px); }
 .trace-wrap.hot .trace-label, .trace-wrap.hot .trace-label b { color: var(--red); }
+/* a clean move just jammed the trace */
+.trace-wrap.jam .trace { box-shadow: 0 0 0 2px var(--cyan), 0 0 10px rgba(41, 243, 255, 0.6); }
+.trace-wrap.jam .trace-label b { color: var(--cyan); }
 
 .chrome-row { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 8px; max-width: 280px; }
 .chrome-row i {
@@ -482,3 +488,7 @@ body.pixel .rotate { white-space: normal; text-align: center; width: max-content
 .app-release button:focus-visible, .app-update button:focus-visible { outline: 2px solid #fff; outline-offset: 3px; }
 .app-update button:disabled, .app-release button:disabled { opacity: .55; cursor: wait; }
 @media (max-width: 600px) { .app-update { gap: 12px; padding: 12px; } .app-update strong, .app-update p, .app-update button { font-size: 10px; } }
+/* the version label takes that corner while paused */
+body:has(#paused:not(.is-hidden)) .hud-bl { visibility: hidden; }
+.clarity-badge { position: fixed; z-index: 50; top: 50%; right: 0; padding: 6px 10px; font: 400 11px/1 'Silkscreen', monospace; color: #05040d; background: #29f3ff; pointer-events: none; }
+.clarity-badge:empty { display: none; }

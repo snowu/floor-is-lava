@@ -22,6 +22,7 @@ export function createPlayer(x, y) {
     jumpHoldActive: false,
     jumpHoldT: 0,
     rollTimer: 0,
+    slideChain: false,    // the current slide began as a landing slide
     coyote: 0,
     airJumps: PHYS.AIR_JUMPS,
     climbUsed: false,
@@ -90,7 +91,8 @@ function landSlide(p, events, off, edge, early) {
   const quality = timing * (0.25 + 0.75 * pace)
   const info = { quality, timing, slow: p.speed < landSlideSpeed(), side: early ? 'early' : 'late' }
   setState(p, 'slide')
-  if (quality < PHYS.LANDSLIDE_MIN) {
+  p.slideChain = quality >= PHYS.LANDSLIDE_MIN
+  if (!p.slideChain) {
     emit(events, 'slide', p, info)
     return
   }
@@ -535,6 +537,7 @@ export function stepPlayer(p, input, dt, level, events) {
         startClimb(p, p.wall, events)
       } else if (input.downPressed && p.wall && p.wall.kind === 'beam') {
         setState(p, 'slide')
+        p.slideChain = false
         p.speed = PHYS.STUMBLE_SPEED
         emit(events, 'slide', p)
       } else if (!findSupport(p, solids)) {
@@ -606,7 +609,9 @@ function stepGround(p, input, dt, solids, events, level) {
     }
   }
   if (p.jumpBuffer > 0 && canJump && hasHeadroom(p, solids)) {
-    startJump(p, PHYS.JUMP_V, events, st === 'slide' ? 'slidejump' : 'jump')
+    // only a jump out of a landing slide continues the chain; out of a plain
+    // slide it's an ordinary jump, so slide-jumping a flat roof farms nothing
+    startJump(p, PHYS.JUMP_V, events, st === 'slide' && p.slideChain ? 'slidejump' : 'jump')
     stepAir(p, input, dt, solids, null, events)
     return
   }
@@ -614,6 +619,7 @@ function stepGround(p, input, dt, solids, events, level) {
     if (p.softLanded && p.t <= PHYS.LANDSLIDE_POST) landSlide(p, events, p.t, PHYS.LANDSLIDE_POST, false)
     else {
       setState(p, 'slide')
+      p.slideChain = false
       emit(events, 'slide', p)
     }
   }

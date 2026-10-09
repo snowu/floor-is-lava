@@ -15,7 +15,7 @@ const HINTS = {
   spring: { key: 'Hit the red ramp to <b>LAUNCH</b>', touch: 'Hit the red ramp to <b>LAUNCH</b>' },
   pad: { key: 'Tall wall — <kbd>SPACE</kbd> on the red <b>PAD</b> to clear it', touch: 'Tall wall — <b>JUMP</b> on the red <b>PAD</b> to clear it' },
   focus: { key: 'Focus charged — <kbd>E</kbd> to <b>SLOW TIME</b>', touch: 'Focus charged — tap <b>◎</b> to <b>SLOW TIME</b>' },
-  heist: { key: 'Keep moving to jam the <b>TRACE</b> · grab <b>SHARDS</b> for creds', touch: 'Keep moving to jam the <b>TRACE</b> · grab <b>SHARDS</b> for creds' },
+  heist: { key: 'Speed and clean moves jam the <b>TRACE</b> · stay out of <b>MAGENTA</b>', touch: 'Speed and clean moves jam the <b>TRACE</b> · stay out of <b>MAGENTA</b>' },
   laserLow: { key: 'Low <b>LASER</b> — <kbd>SPACE</kbd> to jump it', touch: 'Low <b>LASER</b> — tap <b>RIGHT</b> to jump it' },
   laserHigh: { key: 'High <b>LASER</b> — <kbd>S</kbd> to slide under', touch: 'High <b>LASER</b> — tap <b>LEFT</b> to slide under' },
   drone: { key: 'Security <b>DRONE</b> — jump into it for a <b>TAKEDOWN</b>, never run under it', touch: 'Security <b>DRONE</b> — jump into it for a <b>TAKEDOWN</b>, never run under it' },
@@ -208,7 +208,14 @@ export class Hud {
 
   update({ score, speed, focus, focusActive, focusReady, time, progress, lives, combo, sub, trace }) {
     if (trace !== undefined) {
+      const prev = this.last.trace
       this.set('trace', Math.round(Math.min(1, trace) * 100), (v) => {
+        // flash on a drop the size of a clean move, not on the reset at an uplink
+        if (prev !== undefined && prev - v >= 2 && v > 0) {
+          this.el.trace.classList.add('jam')
+          clearTimeout(this.jamTimer)
+          this.jamTimer = setTimeout(() => this.el.trace.classList.remove('jam'), 260)
+        }
         this.el.traceFill.style.width = `${v}%`
         this.el.traceVal.textContent = `${v}%`
         this.el.trace.classList.toggle('hot', v >= 75)

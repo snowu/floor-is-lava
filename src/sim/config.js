@@ -99,9 +99,11 @@ export const HEIST = {
   SECTORS: 5,
   SECTOR_LEN: 450,
   INTEGRITY: 3,
-  TRACE_RATE: 0.022,     // per second, before moves pull it back down
+  TRACE_RATE: 0.022,     // per second at a jog, before moves pull it back down
   TRACE_PER_SECTOR: 0.25,
-  TRACE_MOVE: 0.014,     // each clean move jams the trace a little
+  TRACE_FLOW_SPEED: 15,  // m/s: at this pace and above, speed hides you best
+  TRACE_FLOW_HIDE: 0.5,  // share of the build-up that full speed hides
+  TRACE_MOVE: 0.04,      // each clean move jams the trace
   TRACE_SHARD: 0.004,
   TRACE_ZAP: 0.22,
   TRACE_SPOT: 0.14,

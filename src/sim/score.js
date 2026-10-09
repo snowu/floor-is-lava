@@ -31,6 +31,7 @@ export class ScoreKeeper {
     this.mult = 0         // chain length, capped
     this.timer = 0        // time left to extend the chain
     this.moves = []       // names in the current chain (for display)
+    this.slides = 0       // plain slides in the current chain
     this.bestCombo = 0
     this.lastX = null
     this.log = []         // banked/lost results for the HUD
@@ -49,6 +50,9 @@ export class ScoreKeeper {
       if (this.mult > 0) { this.combo += base; this.timer = this.window }
       return null
     }
+    // a plain slide can be pressed anywhere: it grows a chain once, after
+    // that it only adds its points
+    if (type === 'slide' && this.slides++ > 0) { this.combo += base * speedFactor(speed); return null }
     this.combo += base * speedFactor(speed)
     this.mult = Math.min(MAX_MULT, this.mult + 1)
     this.timer = this.window
@@ -76,6 +80,7 @@ export class ScoreKeeper {
   }
 
   reset() {
+    this.slides = 0
     this.combo = 0
     this.mult = 0
     this.timer = 0
