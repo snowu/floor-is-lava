@@ -6,10 +6,12 @@ import { RoofWater } from './water.js'
 import { bakeLightHalo, drawLightHalo, drawSteam, ParkourFX } from './effects.js'
 import { drawRoofSurface, drawContactShadow, drawRunnerContact, equipmentLight } from './roof.js'
 import { PPU, bakeDecor, bakeBird, bakeCloud, bakeCar, recede, outlined } from './sprites.js'
-import { CITY, bakeTower, bakeFog, bakeFacade } from './city.js'
+import { CITY, bakeTower } from './city.js'
+import { Baker } from './baker.js'
+import { runJob } from './bakes.js'
 import { bakeBillboard, specFor, inks, billboardLight, drawTicker } from './billboard.js'
 import { drawBig, bigW } from './art.js'
-import { bakeObstacle, lipOf, bakePipe, bakePipeFront, pipeFrame, bakeFence, drawFenceLive } from './obstacles.js'
+import { bakeObstacle, lipOf, pipeFrame, bakeFence, drawFenceLive } from './obstacles.js'
 import { drawDrone, drawWreck, drawLaser, drawLaserSpill, drawShard, SHARD, SECURITY as LASER } from './security.js'
 import { PHYS, HEIST } from '../sim/config.js'
 import { createRng } from '../sim/rng.js'
@@ -58,6 +60,11 @@ export class PixelView {
     this.cam = { x: 0, y: 0, lead: 6, floor: -Infinity, trauma: 0, time: 0 }
     this.cache = new Map()
     this.budget = 0
+    // facades, fog and mist bake on a worker so a frame never waits on one
+    this.baker = new Baker((key, version, buf) => {
+      const hit = this.cache.get(key)
+      if (hit?.version !== version) this.cache.set(key, { canvas: toCanvas(buf, hit?.canvas), version })
+    })
     this.views = new Map()
     this.birds = []
     this.particles = []
@@ -113,6 +120,7 @@ export class PixelView {
     this.cache.delete('vignette')
     this.cache.delete('alarm')
     for (const key of [...this.cache.keys()]) if (key.startsWith('fog')) this.cache.delete(key)
+    for (const L of this.layers) L.fog = null
   }
 
   // ── cached sprites, re-baked when the palette steps ─────────────────────
@@ -126,12 +134,62 @@ export class PixelView {
     return canvas
   }
 
+  // A sprite baked on the worker: the cached canvas when it's current;
+  // otherwise the bake is queued and the stale canvas (or null, if there is
+  // none yet) comes back meanwhile. A crossfade re-bakes everything at once
+  // here, and so does a browser without workers.
+  later(key, version, job) {
+    const hit = this.cache.get(key)
+    if (hit?.version === version) return hit.canvas
+    if (!this.baker.ready || this.budget === Infinity) return this.sprite(key, version, () => runJob(job()))
+    this.baker.want(key, version, job())
+    return hit?.canvas ?? null
+  }
+
+  // the same, but bakes here and now if there is nothing to show yet
+  now(key, version, job) {
+    return this.later(key, version, job) ?? this.sprite(key, version, () => runJob(job()))
+  }
+
+  // Light the building's signs throw on its roof, in screen pixels.
+  chunkLights(c, v, pal) {
+    const lights = v.signs.map((sg) => ({ x: this.sx(c.x0) + sg.dx + sg.spec.w / 2, w: sg.spec.w, color: billboardLight(sg.spec, pal), strength: 0.35 }))
+    if (v.roofAd) lights.push({ x: this.sx(c.x0) + v.roofAd.dx + v.roofAd.spec.w / 2, w: v.roofAd.spec.w, color: billboardLight(v.roofAd.spec, pal, this.cam.time), strength: 1 })
+    return lights
+  }
+
+  // An overhead pipe bank: where it sits, the light on it, and its two
+  // layers (the whole bank, and the run that's drawn over the runner).
+  pipeOf(c, sd, pal, lights) {
+    const w = Math.max(2, Math.round((sd.x1 - sd.x0) * PPU)), h = Math.max(2, Math.round((sd.y1 - sd.y0) * PPU))
+    const drop = this.sy(c.roof) - this.sy(sd.y0) - 2
+    const material = equipmentLight(pal, this.sx(sd.x0) + w / 2, lights)
+    const args = ['beam', w, h, drop, material, sd.id, { legacy: this.classic }]
+    return {
+      w, h, drop, version: `${pal.version}:${material.light}`,
+      back: () => ['pipe', args], front: () => ['pipeFront', args],
+    }
+  }
+
+  facadeJob(c, v, pal) {
+    return ['facade', [{ w: Math.round((c.x1 - c.x0) * PPU), roofH: v.roofH, style: c.style, seed: c.seed, pal, wall: v.wall, accentCap: v.cap }]]
+  }
+
+  wallJob(c, e, pal) {
+    const panel = c.wallruns[0]
+    const rh = 6
+    const m0 = rh + 5 + Math.round((e.top - panel.y1) * PPU)
+    const m1 = rh + 5 + Math.round((e.top - panel.y0 + 0.4) * PPU)
+    return ['facade', [{ w: Math.round((e.x1 - e.x0) * PPU), roofH: rh, style: (c.seed >> 3) % 2 === 0 ? 0 : 2, seed: c.seed + 5, pal, wall: 2, mural: [m0, m1] }]]
+  }
+
   // ── course binding ──────────────────────────────────────────────────────
 
   bind(level) {
     this.water = new RoofWater()
     this.effects = new ParkourFX()
     for (const key of [...this.cache.keys()]) if (key.startsWith('c') || key.startsWith('L') || key.startsWith('bb')) this.cache.delete(key)
+    this.baker.drop((key) => key.startsWith('c'))
     this.views.clear()
     this.birds = []
     this.particles = []
@@ -178,6 +236,7 @@ export class PixelView {
   removeChunk(c) {
     this.views.delete(c)
     for (const key of [...this.cache.keys()]) if (key.startsWith(`c${c.id}:`)) this.cache.delete(key)
+    this.baker.drop((key) => key.startsWith(`c${c.id}:`))
     this.birds = this.birds.filter((b) => b.chunk !== c)
   }
 
@@ -426,7 +485,7 @@ export class PixelView {
     this.drawSky(pal, s.time)
     this.drawClouds(pal, s.time)
     this.drawLayers(pal)
-    ctx.drawImage(this.sprite('haze', pal.version, () => bakeHaze(W, pal)), 0, Math.round(H * 0.62))
+    ctx.drawImage(this.now('haze', `${pal.version}:${W}x${H}`, () => ['haze', [W, H, pal]]), 0, Math.round(H * 0.62))
     this.drawLaneHaze(pal)
     this.drawCourse(pal, s)
     this.drawHeist(s, pal)
@@ -447,10 +506,10 @@ export class PixelView {
     this.drawWeather(s, pal)
     this.drawSpeedLines(s, pal)
     // vignette and scanlines in one pass (the alarm carries its own scanlines)
-    ctx.drawImage(this.sprite('vignette', pal.version, () => bakeVignette(W, pal)), 0, 0)
+    ctx.drawImage(this.now('vignette', `${pal.version}:${W}x${H}`, () => ['vignette', [W, H, pal]]), 0, 0)
     if (s.trace > 0.7) {
       ctx.globalAlpha = Math.min(1, (s.trace - 0.7) / 0.3) * (0.55 + 0.45 * Math.sin(s.time * 9))
-      ctx.drawImage(this.sprite('alarm', 0, () => bakeAlarm(W)), 0, 0)
+      ctx.drawImage(this.now('alarm', `${W}x${H}`, () => ['alarm', [W, H]]), 0, 0)
       ctx.globalAlpha = 1
     }
     if (s.focusVis > 0.02) this.postFocus(s.focusVis)
@@ -493,7 +552,7 @@ export class PixelView {
 
   drawSky(pal, time) {
     const { ctx } = this
-    ctx.drawImage(this.sprite('sky', pal.version, () => bakeSky(this.W, pal)), 0, 0)
+    ctx.drawImage(this.now('sky', `${pal.version}:${this.W}x${H}`, () => ['sky', [this.W, H, pal]]), 0, 0)
     const wet = this.weather.rain
     if (wet > 0.02) {
       // overcast: the sky dulls toward the haze
@@ -559,8 +618,11 @@ export class PixelView {
       }
       // rain thickens the fog between layers, washing the skyline into haze
       const wet = Math.round(this.weather.rain * 4) / 4
-      const fog = this.sprite(`fog${li}:${wet}`, pal.version, () => bakeFog(this.W, H, 70, pal, (CITY.fog + CITY.rainFog * wet) * (1 - li * 0.3)))
-      this.ctx.drawImage(fog, 0, base - 60)
+      // while a new density bakes, the last one stays up
+      const fogKey = `fog${li}:${wet}`, fogVer = `${pal.version}:${this.W}x${H}`
+      const fogJob = () => ['fog', [this.W, H, 70, pal, (CITY.fog + CITY.rainFog * wet) * (1 - li * 0.3)]]
+      L.fog = this.later(fogKey, fogVer, fogJob) ?? L.fog ?? this.now(fogKey, fogVer, fogJob)
+      this.ctx.drawImage(L.fog, 0, base - 60)
       if (li === 0) this.drawCars(pal)
     }
     // in the rain the whole skyline recedes behind a veil; the course stays crisp
@@ -686,17 +748,29 @@ export class PixelView {
       const v = this.views.get(c)
       if (v) visible.push([c, v])
     }
+    // the next screen of buildings bakes in the background before it shows
+    if (this.baker.ready && this.budget !== Infinity) {
+      for (const c of level.chunksIn(right, right + this.W / PPU)) {
+        const v = this.views.get(c)
+        if (!v) continue
+        this.later(`c${c.id}:b`, ver, () => this.facadeJob(c, v, pal))
+        for (const e of c.extras) if (e.type === 'wallrunWall') this.later(`c${c.id}:wall`, ver, () => this.wallJob(c, e, pal))
+        if (this.hide.course || !c.solids.some((sd) => sd.kind === 'beam')) continue
+        const lights = this.chunkLights(c, v, pal)
+        for (const sd of c.solids) {
+          if (sd.kind !== 'beam') continue
+          const pipe = this.pipeOf(c, sd, pal, lights)
+          this.later(`c${c.id}:p${sd.id}`, pipe.version, pipe.back)
+          this.later(`c${c.id}:pf${sd.id}`, pipe.version, pipe.front)
+        }
+      }
+    }
     // wall-run walls behind the gap
     for (const [c] of visible) {
       for (const e of c.extras) {
         if (e.type !== 'wallrunWall') continue
-        const panel = c.wallruns[0]
-        const w = Math.round((e.x1 - e.x0) * PPU)
-        const rh = 6
-        const m0 = rh + 5 + Math.round((e.top - panel.y1) * PPU)
-        const m1 = rh + 5 + Math.round((e.top - panel.y0 + 0.4) * PPU)
-        const cv = this.sprite(`c${c.id}:wall`, ver, () => bakeFacade({ w, roofH: rh, style: (c.seed >> 3) % 2 === 0 ? 0 : 2, seed: c.seed + 5, pal, wall: 2, mural: [m0, m1] }))
-        ctx.drawImage(cv, this.sx(e.x0), this.sy(e.top) - rh)
+        const cv = this.now(`c${c.id}:wall`, ver, () => this.wallJob(c, e, pal))
+        ctx.drawImage(cv, this.sx(e.x0), this.sy(e.top) - 6)
       }
     }
     // zipline poles behind everything in the lane
@@ -713,11 +787,9 @@ export class PixelView {
     // buildings, then what stands on them
     for (const [c, v] of visible) {
       const w = Math.round((c.x1 - c.x0) * PPU)
-      const cv = this.sprite(`c${c.id}:b`, ver, () => bakeFacade({ w, roofH: v.roofH, style: c.style, seed: c.seed, pal, wall: v.wall, accentCap: v.cap }))
+      const cv = this.now(`c${c.id}:b`, ver, () => this.facadeJob(c, v, pal))
       ctx.drawImage(cv, this.sx(c.x0), this.sy(c.roof) - v.roofH)
-      const lights = v.signs.map((sg) => ({ x: this.sx(c.x0) + sg.dx + sg.spec.w / 2, w: sg.spec.w, color: billboardLight(sg.spec, pal), strength: 0.35 }))
-      if (v.roofAd) lights.push({ x: this.sx(c.x0) + v.roofAd.dx + v.roofAd.spec.w / 2, w: v.roofAd.spec.w, color: billboardLight(v.roofAd.spec, pal, this.cam.time), strength: 1 })
-      v.lights = lights
+      const lights = (v.lights = this.chunkLights(c, v, pal))
       drawRoofSurface(ctx, { x: this.sx(c.x0), y: this.sy(c.roof), w, depth: v.roofH, seed: c.seed, pal, wet: this.weather.wet, rain: this.weather.rain, time: this.cam.time, lights })
     }
     // advertising on the facades, and billboards standing on the roofs
@@ -762,15 +834,13 @@ export class PixelView {
       // front of the runner later
       for (const sd of c.solids) {
         if (sd.kind !== 'beam') continue
-        const w = Math.max(2, Math.round((sd.x1 - sd.x0) * PPU)), h = Math.max(2, Math.round((sd.y1 - sd.y0) * PPU))
-        const drop = this.sy(c.roof) - this.sy(sd.y0) - 2
-        const f = pipeFrame('beam', w, h, drop, sd.id)
-        const material = equipmentLight(pal, this.sx(sd.x0) + w / 2, v.lights), litVer = `${ver}:${material.light}`
-        const cv = this.sprite(`c${c.id}:p${sd.id}`, litVer, () => bakePipe('beam', w, h, drop, material, sd.id, { legacy: this.classic }))
+        const pipe = this.pipeOf(c, sd, pal, v.lights)
+        const f = pipeFrame('beam', pipe.w, pipe.h, pipe.drop, sd.id)
+        const cv = this.now(`c${c.id}:p${sd.id}`, pipe.version, pipe.back)
         const x = this.sx(sd.x0) - f.ox, y = this.sy(sd.y1) - f.oy
-        drawContactShadow(ctx, this.sx(sd.x0), this.sy(c.roof), w, pal)
+        drawContactShadow(ctx, this.sx(sd.x0), this.sy(c.roof), pipe.w, pal)
         ctx.drawImage(cv, x, y)
-        const front = this.sprite(`c${c.id}:pf${sd.id}`, litVer, () => bakePipeFront('beam', w, h, drop, material, sd.id, { legacy: this.classic }))
+        const front = this.now(`c${c.id}:pf${sd.id}`, pipe.version, pipe.front)
         this.beams.push({ cv: front, x, y })
       }
       for (const sd of c.solids) {
@@ -793,7 +863,6 @@ export class PixelView {
       }
       for (const q of c.pads ?? []) this.drawPad(q, s.p, t)
     }
-    this.drawNextCue(visible, s, t)
     if (this.hide.course) return
     // live fences across the roof
     for (const [c, v] of visible) for (const f of c.fences ?? []) this.drawFence(f, t, pal, v.roofH - 3)
@@ -1008,34 +1077,6 @@ export class PixelView {
     }
   }
 
-  // Runner vision: the next obstacle in the runner's path lights up as she
-  // closes in, so the one that matters stands out from the rest of the roof.
-  // Blocks light their red top, pipe banks the strap she slides under.
-  drawNextCue(visible, s, t) {
-    if (this.classic || this.hide.course || s.mode === 'title') return
-    const p = s.p
-    let next = null
-    for (const [c] of visible) {
-      for (const sd of c.solids) {
-        if (sd.kind === 'roof' || sd.kind === 'spring' || sd.x1 < p.x + 0.2) continue
-        if (sd.kind !== 'beam' && sd.y1 <= p.y + PHYS.STEP) continue
-        if (!next || sd.x0 < next.x0) next = sd
-      }
-    }
-    if (!next) return
-    const ahead = (next.x0 - p.x) / Math.max(6, p.speed)       // seconds away
-    const k = clamp(1 - (ahead - 0.35) / 1.1, 0, 1)
-    if (k <= 0) return
-    const { ctx } = this
-    const x0 = this.sx(next.x0), x1 = this.sx(next.x1)
-    const pulse = 0.75 + 0.25 * Math.sin(t * 12)
-    const y = next.kind === 'beam' ? this.sy(next.y0) - 1 : this.sy(next.y1) - lipOf(next.sub)
-    ctx.fillStyle = css(ACCENT, 0.3 * k * pulse)
-    ctx.fillRect(x0 - 3, y - 3, x1 - x0 + 6, 7)
-    ctx.fillStyle = css(mix(ACCENT, [255, 255, 255], 0.6), 0.9 * k)
-    ctx.fillRect(x0 - 1, y - 1, x1 - x0 + 2, 1)
-  }
-
   // The halo mask, coloured. Recoloured into a second canvas so the mask is
   // only rebuilt when the runner rasterizes.
   haloTint(color) {
@@ -1180,8 +1221,10 @@ export class PixelView {
 
   drawMist(pal, time) {
     const top = this.sy(-4)
-    if (top >= H) return
-    const cv = this.sprite('mist', pal.version, () => bakeMist(this.W, pal))
+    // asked for every frame, so it's baked before the camera ever drops to it
+    const version = `${pal.version}:${this.W}`
+    if (top >= H) { this.later('mist', version, () => ['mist', [this.W, pal]]); return }
+    const cv = this.now('mist', version, () => ['mist', [this.W, pal]])
     this.ctx.drawImage(cv, 0, top)
     const bottom = top + cv.height
     if (bottom < H) {
@@ -1286,109 +1329,6 @@ export class PixelView {
     }
     this.ctx.putImageData(img, 0, 0)
   }
-}
-
-// ── whole-screen bakes ─────────────────────────────────────────────────────
-
-function bakeSky(W, pal) {
-  const b = new PixelBuffer(W, H)
-  const horizon = Math.round(H * 0.66)
-  const bands = pal.sky
-  const n = bands.length
-  for (let y = 0; y < H; y++) {
-    const t = Math.min(0.9999, y / horizon) * (n - 1)
-    const i = Math.floor(t), f = t - i
-    for (let x = 0; x < W; x++) {
-      let c
-      if (y >= horizon) c = bands[n - 1]
-      else c = dither(x, y, (f - 0.55) / 0.45) ? bands[Math.min(n - 1, i + 1)] : bands[i]
-      b.data[y * W + x] = pack(c)
-    }
-  }
-  if (pal.sunSize > 0) {
-    const cx = pal.sunX * W, cy = pal.sunY * H, r = pal.sunSize
-    for (let y = Math.floor(cy - r * 3); y < cy + r * 3; y++) {
-      for (let x = Math.floor(cx - r * 3); x < cx + r * 3; x++) {
-        const d = Math.hypot(x + 0.5 - cx, y + 0.5 - cy)
-        const idx = y * W + x
-        if (x < 0 || y < 0 || x >= W || y >= H) continue
-        if (d < r) {
-          let c = pal.sun
-          if (pal.moon && hash(Math.floor(x / 3), Math.floor(y / 3)) < 0.18) c = mix(pal.sun, pal.sky[2], 0.35)
-          // sunsets slice the disc with horizontal gaps
-          if (!pal.moon && y > cy + r * 0.25 && ((y - Math.floor(cy)) % 5 === 0)) continue
-          b.data[idx] = pack(c)
-        } else if (d < r * 1.6 && dither(x, y, 0.5 * (1 - (d - r) / (r * 0.6)))) {
-          b.data[idx] = pack(mix(pal.sun, pal.sky[Math.min(n - 1, Math.floor(y / horizon * (n - 1)))], 0.55))
-        } else if (d < r * 3) {
-          const c = b.data[idx], air = [c & 255, (c >>> 8) & 255, (c >>> 16) & 255]
-          b.data[idx] = pack(mix(air, pal.sun, (1 - (d - r) / (r * 2)) ** 2 * 0.16))
-        }
-      }
-    }
-  }
-  return b
-}
-
-function bakeHaze(W, pal) {
-  const h = H - Math.round(H * 0.62)
-  const b = new PixelBuffer(W, h)
-  const c = pack(pal.haze)
-  for (let y = 0; y < h; y++) for (let x = 0; x < W; x++) if (dither(x, y, (y / h) * 1.3 - 0.15)) b.data[y * W + x] = c
-  return b
-}
-
-function bakeMist(W, pal) {
-  const h = 20 * PPU
-  const b = new PixelBuffer(W, h)
-  const haze = pack(pal.haze), lava = pack(pal.lava), lavaD = pack(mix(pal.lava, pal.haze, 0.5))
-  for (let y = 0; y < h; y++) {
-    const t = y / h
-    for (let x = 0; x < W; x++) {
-      let c = 0
-      if (dither(x, y, t * 2.2)) c = haze
-      if (t > 0.55 && dither(x, y, (t - 0.55) * 2.6)) c = lavaD
-      if (t > 0.75 && dither(x, y, (t - 0.75) * 4)) c = lava
-      b.data[y * W + x] = c
-    }
-  }
-  return b
-}
-
-// Every other row is darkened by 7% (the CRT scanlines). Baked into the
-// full-screen overlays so they cost one draw instead of a rect per row.
-const SCAN_ALPHA = 18
-const SCAN = pack([0, 0, 0], SCAN_ALPHA)
-const scanned = (c) => pack(mix(c, [0, 0, 0], SCAN_ALPHA / 255))
-
-function bakeVignette(W, pal) {
-  const b = new PixelBuffer(W, H)
-  const shade = mix(pal.shadow, [0, 0, 0], 0.4)
-  const c = pack(shade), cs = scanned(shade)
-  for (let y = 0; y < H; y++) {
-    for (let x = 0; x < W; x++) {
-      const dx = (x / W - 0.5) * 2, dy = (y / H - 0.5) * 2
-      const r = Math.sqrt(dx * dx * 0.7 + dy * dy)
-      if (dither(x, y, (r - 1.05) * 1.6)) b.data[y * W + x] = y & 1 ? cs : c
-      else if (y & 1) b.data[y * W + x] = SCAN
-    }
-  }
-  return b
-}
-
-// Red alarm edges for a trace about to fill. It goes over the scanlines, so
-// it darkens its own odd rows to match.
-function bakeAlarm(W) {
-  const b = new PixelBuffer(W, H)
-  const red = [255, 40, 30]
-  const c = pack(red), cs = scanned(red)
-  for (let y = 0; y < H; y++) {
-    for (let x = 0; x < W; x++) {
-      const e = Math.min(x, W - 1 - x, y, H - 1 - y)
-      if (dither(x, y, 0.7 - e / 26)) b.data[y * W + x] = y & 1 ? cs : c
-    }
-  }
-  return b
 }
 
 const lum = (c) => 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]
