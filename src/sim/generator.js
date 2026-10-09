@@ -13,7 +13,7 @@ export const OBSTACLE_TYPES = ['vent', 'highbox', 'beam', 'housing']
 const TUTORIAL = [
   { obstacles: ['vent'], gap: 'jump', dh: [0, 0.5], hints: { vent: 'vault', gap: 'jump' } },
   { obstacles: ['beam'], gap: 'jump', dh: [-5.5, -5], hints: { beam: 'slide', gap: 'roll' } },
-  { obstacles: ['housing'], gap: 'climb', hints: { housing: 'grab', gap: 'climb' } },
+  { obstacles: ['housing'], gap: 'climb', hints: { housing: 'grab' } },  // the pad hint covers the wall
   { obstacles: [], gap: 'wallrun', hints: { gap: 'wallrun' } },
   { obstacles: ['highbox'], gap: 'zip', hints: { gap: 'zip' } },
   { obstacles: ['vent'], gap: 'spring', hints: { gap: 'spring' } },
@@ -220,10 +220,8 @@ export class CourseGenerator {
         width = rng.range(1.5, 3.2)
         entryClear = 8
         chunk.extras.push({ type: 'ledge', x: x1 + width, y: round(roof + dh) })
-        // tall walls get a jump pad at the edge: hit it with a jump and you clear the wall
-        if (dh >= WORLD.PAD_MIN_DH) {
-          chunk.pads.push({ x0: round(x1 - WORLD.PAD_LEN - 0.1), x1: round(x1 - 0.1), y: roof, wallX: round(x1 + width), top: round(roof + dh) })
-        }
+        // every climb wall gets a jump pad at the edge: hit it with a jump and you clear the wall
+        chunk.pads.push({ x0: round(x1 - WORLD.PAD_LEN - 0.1), x1: round(x1 - 0.1), y: roof, wallX: round(x1 + width), top: round(roof + dh) })
         break
       }
       case 'wallrun': {

@@ -14,6 +14,7 @@ export function createPlayer(x, y) {
     x, y,
     vy: 0,
     speed: PHYS.SPEED_START,
+    momentum: PHYS.SPEED_START,
     state: 'run',
     t: 0,
     alive: true,
@@ -27,6 +28,8 @@ export function createPlayer(x, y) {
     airJumps: PHYS.AIR_JUMPS,
     climbUsed: false,
     climbT: 0,
+    padLaunch: false,     // airborne off a jump pad
+    coyotePad: null,      // the pad just run off, still good for a late jump
     wall: null,
     kin: null,
     panel: null,
@@ -133,11 +136,14 @@ function gainSpeed(p, amount) {
   p.speed = Math.min(PHYS.SPEED_MAX, p.speed + amount)
 }
 
+// Below the floor (a fresh start, or most of the speed you just lost) you
+// catch up fast; above it, the climb to top speed tapers off.
 function accelerate(p, dt) {
-  if (p.speed < PHYS.SPEED_MIN) {
-    p.speed = Math.min(PHYS.SPEED_MIN, p.speed + PHYS.RECOVER_ACCEL * dt)
+  const floor = Math.min(PHYS.SPEED_MAX, Math.max(PHYS.SPEED_MIN, p.momentum * PHYS.MOMENTUM_KEEP))
+  if (p.speed < floor) {
+    p.speed = Math.min(floor, p.speed + PHYS.RECOVER_ACCEL * dt)
   } else {
-    const headroom = 1 - 0.6 * (p.speed - PHYS.SPEED_MIN) / (PHYS.SPEED_MAX - PHYS.SPEED_MIN)
+    const headroom = 1 - PHYS.ACCEL_FALLOFF * (p.speed - PHYS.SPEED_MIN) / (PHYS.SPEED_MAX - PHYS.SPEED_MIN)
     p.speed = Math.min(PHYS.SPEED_MAX, p.speed + PHYS.ACCEL * headroom * dt)
   }
 }
@@ -197,14 +203,25 @@ function startJump(p, vy, events, type = 'jump') {
   p.jumpHoldActive = true
   p.jumpHoldT = 0
   p.support = null
+  p.coyotePad = null
   setState(p, 'air')
   emit(events, type, p)
 }
 
-// The jump pad the runner is standing on, if any.
-export function padUnder(p, level) {
+// The jump pad the runner is standing on, if any; `slack` also counts one
+// just run off the end of.
+export function padUnder(p, level, slack = 0) {
   if (!level?.padsIn) return null
-  for (const q of level.padsIn(p.x, p.x)) if (p.x >= q.x0 && p.x <= q.x1 && Math.abs(p.y - q.y) < 0.05) return q
+  for (const q of level.padsIn(p.x - slack, p.x)) if (p.x >= q.x0 && p.x <= q.x1 + slack && Math.abs(p.y - q.y) < 0.05) return q
+  return null
+}
+
+// The pad you'll run onto while a jump press is still buffered: the press
+// waits for it, so jumping a touch early still counts.
+function padAhead(p, level) {
+  if (!level?.padsIn) return null
+  const reach = p.x + p.speed * p.jumpBuffer
+  for (const q of level.padsIn(p.x, reach)) if (q.x0 > p.x && q.x0 <= reach && Math.abs(p.y - q.y) < 0.05) return q
   return null
 }
 
@@ -218,7 +235,9 @@ function padJump(p, q, events) {
   p.jumpBuffer = 0
   p.jumpHoldActive = false
   p.coyote = 0
+  p.coyotePad = null
   p.support = null
+  p.padLaunch = true
   gainSpeed(p, PHYS.BONUS_PAD)
   setState(p, 'air')
   emit(events, 'padjump', p)
@@ -241,19 +260,25 @@ function startKinematic(p, state, kin) {
   setState(p, state)
 }
 
+// Up and over a ledge. Out of a pad jump it's a quick step that keeps all
+// your speed; a grab keeps most of it; out of a climb you start from the
+// bottom, and momentum brings you back up.
 function startMantle(p, s, events) {
   const hw = PHYS.W / 2
+  const step = p.padLaunch
   p.x = s.x0 - hw
+  const speed = p.state === 'climb' ? PHYS.SPEED_MIN : step ? p.speed : p.speed * PHYS.MANTLE_KEEP
   startKinematic(p, 'mantle', {
     ex: s.x0 + hw + 0.05,
     ey: s.y1,
-    T: PHYS.MANTLE_TIME,
+    T: step ? PHYS.PAD_MANTLE_TIME : PHYS.MANTLE_TIME,
     mode: 'mantle',
     end: 'run',
   })
-  p.speed = Math.max(PHYS.SPEED_MIN * 0.85, p.speed * 0.8)
+  p.speed = Math.max(PHYS.SPEED_MIN, speed)
   p.wall = null
-  emit(events, 'grab', p, { top: s.y1 })
+  p.padLaunch = false
+  emit(events, 'grab', p, { top: s.y1, step })
 }
 
 function startClimb(p, s, events) {
@@ -264,6 +289,7 @@ function startClimb(p, s, events) {
   p.climbUsed = true
   p.jumpBuffer = 0
   p.speed = 0
+  p.padLaunch = false
   setState(p, 'climb')
   emit(events, 'climb', p)
 }
@@ -276,6 +302,8 @@ function land(p, s, events) {
   p.airJumps = PHYS.AIR_JUMPS
   p.jumpHoldActive = false
   p.support = s
+  p.padLaunch = false
+  p.coyotePad = null
   if (s.kind === 'spring') {
     launchSpring(p, s, events)
     return
@@ -424,7 +452,8 @@ function airFace(p, s, input, events) {
     startMantle(p, s, events)
     return
   }
-  if (input.jump && !p.climbUsed) {
+  // in the air there's nowhere to go but up: a wall too tall to grab is climbed
+  if (!p.climbUsed) {
     startClimb(p, s, events)
     return
   }
@@ -510,6 +539,7 @@ function stepKinematic(p, dt) {
 export function stepPlayer(p, input, dt, level, events) {
   if (!p.alive) return
   p.t += dt
+  p.momentum = Math.max(p.speed, (p.momentum ?? p.speed) - PHYS.MOMENTUM_DECAY * dt)
   if (input.jumpPressed) p.jumpBuffer = PHYS.JUMP_BUFFER
   else p.jumpBuffer = Math.max(0, p.jumpBuffer - dt)
   if (input.downPressed && !isGrounded(p)) p.rollTimer = PHYS.ROLL_WINDOW
@@ -601,14 +631,16 @@ function stepGround(p, input, dt, solids, events, level) {
       return
     }
   }
+  let early = false
   if (p.jumpBuffer > 0 && st !== 'stumble') {
-    const pad = padUnder(p, level)
+    const pad = padUnder(p, level, PHYS.W)
     if (pad) {
       padJump(p, pad, events)
       return
     }
+    early = padAhead(p, level) !== null
   }
-  if (p.jumpBuffer > 0 && canJump && hasHeadroom(p, solids)) {
+  if (p.jumpBuffer > 0 && canJump && !early && hasHeadroom(p, solids)) {
     // only a jump out of a landing slide continues the chain; out of a plain
     // slide it's an ordinary jump, so slide-jumping a flat roof farms nothing
     startJump(p, PHYS.JUMP_V, events, st === 'slide' && p.slideChain ? 'slidejump' : 'jump')
@@ -633,6 +665,7 @@ function stepGround(p, input, dt, solids, events, level) {
   const support = findSupport(p, solids)
   if (!support) {
     p.coyote = PHYS.COYOTE
+    p.coyotePad = st === 'stumble' ? null : padUnder(p, level, PHYS.W)
     p.support = null
     setState(p, 'air')
     p.vy = 0
@@ -648,7 +681,8 @@ function stepGround(p, input, dt, solids, events, level) {
 
 function stepAir(p, input, dt, solids, level, events) {
   if (p.coyote > 0 && p.jumpBuffer > 0) {
-    startJump(p, PHYS.JUMP_V, events)
+    if (p.coyotePad) padJump(p, p.coyotePad, events)
+    else startJump(p, PHYS.JUMP_V, events)
   } else if (p.jumpBuffer > 0 && p.airJumps > 0 && p.state === 'air') {
     p.airJumps--
     startJump(p, Math.max(p.vy, PHYS.AIR_JUMP_V), events, 'airjump')

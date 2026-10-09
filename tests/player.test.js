@@ -136,6 +136,26 @@ describe('player physics', () => {
     expect(p.y).toBeCloseTo(4.8, 3)
   })
 
+  it('climbs a wall it jumps into without holding jump', () => {
+    const p = createPlayer(0, 0)
+    p.speed = 12
+    const level = world([{ x0: -10, x1: 6, y1: 0 }, { x0: 8, x1: 1000, y1: 4.6 }])
+    const events = run(p, level, 3, (q, i) => (i === Math.round(0.4 / PHYS.FIXED_DT) ? { ...NONE, jump: true, jumpPressed: true } : NONE))
+    expect(events).toContain('climb')
+    expect(p.y).toBeCloseTo(4.6, 3)
+    expect(p.alive).toBe(true)
+  })
+
+  it('wins most of its speed back quickly after a setback', () => {
+    const p = createPlayer(0, 0)
+    p.speed = p.momentum = 16
+    // a trip drops it to stumbling pace; a couple of seconds later it's close to where it was
+    const level = world([{ x0: -10, x1: 1000, y1: 0 }, { kind: 'block', x0: 6, x1: 7, y0: 0, y1: 1 }])
+    expect(run(p, level, 0.6)).toContain('trip')
+    run(p, level, 2)
+    expect(p.speed).toBeGreaterThan(16 * PHYS.MOMENTUM_KEEP - 0.5)
+  })
+
   it('wall-runs across a panel and can kick off it', () => {
     const p = createPlayer(0, 0)
     p.speed = 10
@@ -307,10 +327,22 @@ describe('player physics', () => {
       }
     })
 
-    it('leaves you to grab the ledge when you jump before the pad', () => {
-      const p = createPlayer(4, 0)
+    it('holds a slightly early press for the pad, and takes one just past it', () => {
+      for (const at of [7.2, 10.1]) {
+        const p = createPlayer(4, 0)
+        p.speed = PHYS.SPEED_MAX
+        const events = run(p, level(), 2, tapAt(at))
+        expect(events).toContain('padjump')
+        expect(events).not.toContain('climb')
+        expect(p.y).toBeCloseTo(4.4, 2)
+        expect(p.speed).toBeGreaterThanOrEqual(PHYS.SPEED_MAX - 0.01)
+      }
+    })
+
+    it('leaves you to grab the ledge when you jump well before the pad', () => {
+      const p = createPlayer(2, 0)
       p.speed = PHYS.SPEED_MAX
-      const events = run(p, level(), 2, tapAt(7.5))
+      const events = run(p, level(), 2, tapAt(5))
       expect(events).not.toContain('padjump')
       expect(events.some((e) => e === 'grab' || e === 'climb')).toBe(true)
     })

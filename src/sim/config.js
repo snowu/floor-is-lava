@@ -8,7 +8,7 @@ export const PHYS = {
   W: 0.6,
   H: 1.8,
   H_LOW: 0.9,
-  REACH: 0.45,          // hands above head when grabbing a ledge
+  REACH: 0.7,           // hands above head when grabbing a ledge
   STEP: 0.3,            // ledges this small are walked over
 
   // gravity and jumping
@@ -26,8 +26,13 @@ export const PHYS = {
   SPEED_START: 7,
   SPEED_MIN: 9,
   SPEED_MAX: 17,
-  ACCEL: 0.42,
+  ACCEL: 1.3,
+  ACCEL_FALLOFF: 0.85,  // share of ACCEL gone by top speed: the last km/h come from moves
   RECOVER_ACCEL: 7,
+  // momentum: after a setback, speed comes back quickly to this share of what
+  // you had; the memory of it fades at MOMENTUM_DECAY m/s per second
+  MOMENTUM_KEEP: 0.85,
+  MOMENTUM_DECAY: 0.6,
 
   // ground moves
   SLIDE_TIME: 0.7,
@@ -48,6 +53,7 @@ export const PHYS = {
   CLAMBER_MAX: 2.1,
   VAULT_STEP_TIME: 0.22,
   MANTLE_TIME: 0.32,
+  MANTLE_KEEP: 0.95,    // speed kept through a ledge grab
 
   // walls
   CLIMB_V: 10,
@@ -75,6 +81,7 @@ export const PHYS = {
   BONUS_PAD: 0.3,
   PAD_CLEAR: 0.5,       // how far above the wall top a pad jump carries you
   PAD_MAX_V: 24,
+  PAD_MANTLE_TIME: 0.18, // a pad jump that meets the wall below its top steps up it
 }
 
 export const WORLD = {
@@ -85,8 +92,7 @@ export const WORLD = {
   STREET_Y: -70,
   DIFFICULTY_DISTANCE: 3500,
   FENCE_H: 2.6,         // electrified fences: only a full, well-timed jump clears one
-  PAD_MIN_DH: 3.8,      // climb walls at least this tall get a jump pad before the gap
-  PAD_LEN: 1.4,         // pad length at the roof edge
+  PAD_LEN: 2.6,         // jump pad length at the roof edge before every climb wall
 }
 
 export const RUN = {
@@ -99,11 +105,11 @@ export const HEIST = {
   SECTORS: 5,
   SECTOR_LEN: 450,
   INTEGRITY: 3,
-  TRACE_RATE: 0.022,     // per second at a jog, before moves pull it back down
+  TRACE_RATE: 0.027,     // per second at a jog, before moves pull it back down
   TRACE_PER_SECTOR: 0.25,
-  TRACE_FLOW_SPEED: 15,  // m/s: at this pace and above, speed hides you best
+  TRACE_FLOW_SPEED: 16,  // m/s: at this pace and above, speed hides you best
   TRACE_FLOW_HIDE: 0.5,  // share of the build-up that full speed hides
-  TRACE_MOVE: 0.04,      // each clean move jams the trace
+  TRACE_MOVE: 0.03,      // each clean move jams the trace
   TRACE_SHARD: 0.004,
   TRACE_ZAP: 0.22,
   TRACE_SPOT: 0.14,
