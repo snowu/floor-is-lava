@@ -1,0 +1,207 @@
+// Render benchmarks: drives the real game in headless Chromium on a fixed
+// clock, and measures what each frame asks of the canvas.
+//
+//   npm run bench                 run every scenario, print work and timing
+//   npm run bench:check           fail if the work counters went over budget
+//   npm run bench -- --update     write the current counters as the budget
+//   npm run bench -- --only=rain  run the scenarios whose name matches
+//   npm run bench -- --root=../other-checkout   benchmark another checkout
+//
+// Two kinds of numbers come out:
+//
+// - Work per frame (canvas calls, colour parses, gradients, state saves,
+//   readbacks, sprite bakes, cached canvases). Time, input and randomness
+//   are all pinned, so these come out the same on any machine. They are
+//   what the check gates on: bench/baseline.json holds the budget.
+// - Time per frame with the CPU throttled 4x (roughly a mid-range phone).
+//   Headless Chromium rasterizes on the CPU and machines differ, so time is
+//   reported for comparison between runs on the same machine, never gated.
+import { createServer } from 'vite'
+import { chromium } from 'playwright'
+import { readFileSync, writeFileSync } from 'node:fs'
+import { resolve, dirname } from 'node:path'
+import { fileURLToPath } from 'node:url'
+
+const here = dirname(fileURLToPath(import.meta.url))
+const args = Object.fromEntries(process.argv.slice(2).map((a) => {
+  const [k, v = 'true'] = a.replace(/^--/, '').split('=')
+  return [k, v]
+}))
+const root = resolve(args.root ?? resolve(here, '..'))
+const BASELINE = resolve(here, 'baseline.json')
+// how far a counter may drift over its budget before the check fails
+const TOLERANCE = 0.1
+
+// mode: index into the title menu (0 heist, 1 endless); view: viewport size
+const LANDSCAPE = [844, 390], PORTRAIT = [390, 844]
+const SCENARIOS = [
+  { name: 'title', mode: null, view: LANDSCAPE },
+  { name: 'endless', mode: 1, view: LANDSCAPE },
+  { name: 'endless-rain', mode: 1, view: LANDSCAPE, rain: true },
+  { name: 'heist', mode: 0, view: LANDSCAPE },
+  { name: 'heist-rain-portrait', mode: 0, view: PORTRAIT, rain: true },
+  // the trace alarm and focus (a full-canvas readback) on top
+  { name: 'heist-alarm-focus', mode: 0, view: LANDSCAPE, trace: true, focus: true },
+  // a long run: sprites for scenery that has scrolled away must not pile up
+  { name: 'endless-long', mode: 1, view: LANDSCAPE, frames: 3600, warm: 60, timed: false },
+]
+
+// Runs in the page before any game code: pins time, randomness and timers,
+// and turns audio off (it consumes randomness on its own schedule).
+function pinWorld() {
+  let seed = 1
+  window.__seed = (v) => { seed = v }
+  Math.random = () => { seed = (seed * 16807) % 2147483647; return (seed - 1) / 2147483646 }
+  window.AudioContext = undefined
+  window.webkitAudioContext = undefined
+  const realNow = performance.now.bind(performance)
+  let now = 0, rafs = [], timers = [], id = 0
+  performance.now = () => now
+  window.requestAnimationFrame = (f) => { rafs.push(f); return rafs.length }
+  window.setTimeout = (f, ms = 0) => { timers.push({ id: ++id, at: now + ms, f }); return id }
+  window.clearTimeout = (t) => { timers = timers.filter((x) => x.id !== t) }
+  window.setInterval = () => 0
+  window.__tick = () => {
+    now += 1000 / 60
+    const due = timers.filter((t) => t.at <= now)
+    timers = timers.filter((t) => t.at > now)
+    for (const t of due) if (typeof t.f === 'function') t.f()
+    const fs = rafs
+    rafs = []
+    for (const f of fs) f(now)
+  }
+  window.__realNow = realNow
+}
+
+// Runs in the page: counts what the game asks of 2D canvases.
+function countWork() {
+  const P = CanvasRenderingContext2D.prototype
+  const work = (window.__work = { main: {}, offscreen: {} })
+  const bump = (ctx, k) => {
+    const into = ctx.canvas.classList.contains('pixel-canvas') ? work.main : work.offscreen
+    into[k] = (into[k] ?? 0) + 1
+  }
+  const methods = ['fillRect', 'drawImage', 'save', 'clip', 'createLinearGradient', 'getImageData', 'putImageData']
+  for (const m of methods) {
+    const o = P[m]
+    P[m] = function (...a) { bump(this, m); return o.apply(this, a) }
+  }
+  for (const prop of ['fillStyle', 'globalCompositeOperation']) {
+    const d = Object.getOwnPropertyDescriptor(P, prop)
+    Object.defineProperty(P, prop, { get: d.get, set(v) { bump(this, `${prop}=`); d.set.call(this, v) } })
+  }
+}
+
+async function runScenario(browser, base, sc) {
+  const ctx = await browser.newContext({ viewport: { width: sc.view[0], height: sc.view[1] }, deviceScaleFactor: 3, isMobile: true, hasTouch: true })
+  const page = await ctx.newPage()
+  const errors = []
+  page.on('pageerror', (e) => errors.push(e.message))
+  await page.addInitScript(pinWorld)
+  await page.addInitScript(countWork)
+  await page.goto(`${base}?seed=12345`)
+  await page.waitForFunction(() => window.__game)
+  await page.evaluate(async (sc) => {
+    const G = window.__game
+    window.__seed(7)
+    if (sc.mode !== null) {
+      const { Bot } = await import('/packet-loss/src/sim/bot.js')
+      G.start(sc.mode)
+      G.g.bot = new Bot(G.g.level)
+    }
+    const w = G.view.weather
+    Object.assign(w, { ready: true, rain: sc.rain ? 1 : 0, target: sc.rain ? 1 : 0, wet: sc.rain ? 1 : 0, clock: 1e9 })
+  }, sc)
+  const frames = sc.frames ?? 600, warm = sc.warm ?? 120
+  const cdp = await ctx.newCDPSession(page)
+  if (sc.timed !== false) await cdp.send('Emulation.setCPUThrottlingRate', { rate: 4 })
+  const result = await page.evaluate(({ sc, frames, warm }) => {
+    const G = window.__game, v = G.view
+    const hold = () => {
+      if (sc.trace && G.g.heist) G.g.heist.trace = 0.9
+      if (sc.focus && G.g.mode === 'run') { G.g.focusActive = true; G.g.focus = 1 }
+    }
+    for (let i = 0; i < warm; i++) { hold(); window.__tick() }
+    window.__work.main = {}
+    window.__work.offscreen = {}
+    const times = []
+    for (let i = 0; i < frames; i++) {
+      hold()
+      const t0 = window.__realNow()
+      window.__tick()
+      v.ctx.getImageData(0, 0, 1, 1)   // flush, so rasterizing is timed too
+      times.push(window.__realNow() - t0)
+    }
+    const per = (o) => Object.fromEntries(Object.entries(o).map(([k, n]) => [k, +(n / frames).toFixed(2)]))
+    const main = per(window.__work.main)
+    main.getImageData = +(main.getImageData - 1).toFixed(2)   // minus our flush
+    times.sort((a, b) => a - b)
+    return {
+      main,
+      offscreen: per(window.__work.offscreen),
+      cache: v.cache.size,
+      mode: G.g.mode,
+      x: Math.round(G.g.player.x),
+      ms: { avg: times.reduce((a, b) => a + b, 0) / times.length, p50: times[times.length >> 1], p95: times[Math.floor(times.length * 0.95)] },
+    }
+  }, { sc, frames, warm })
+  await ctx.close()
+  if (errors.length) throw new Error(`${sc.name}: page errors\n${errors.join('\n')}`)
+  return result
+}
+
+// The numbers the budget covers, flattened.
+function counters(r) {
+  const out = {}
+  for (const [k, n] of Object.entries(r.main)) out[`canvas.${k}`] = n
+  for (const [k, n] of Object.entries(r.offscreen)) out[`offscreen.${k}`] = n
+  out.cachedSprites = r.cache
+  return out
+}
+
+const server = await createServer({ root, configFile: resolve(root, 'vite.config.js'), logLevel: 'error', server: { port: 0, strictPort: false } })
+await server.listen()
+const base = server.resolvedUrls.local[0]
+const browser = await chromium.launch()
+const results = {}
+try {
+  for (const sc of SCENARIOS) {
+    if (args.only && !sc.name.includes(args.only)) continue
+    results[sc.name] = await runScenario(browser, base, sc)
+    const r = results[sc.name]
+    const c = counters(r)
+    const main = Object.entries(r.main).filter(([, n]) => n >= 0.05).map(([k, n]) => `${k} ${n}`).join(', ')
+    console.log(`\n${sc.name}  (${r.mode} at x=${r.x})`)
+    if (sc.timed !== false) console.log(`  time @4x CPU   avg ${r.ms.avg.toFixed(2)} ms  p50 ${r.ms.p50.toFixed(2)}  p95 ${r.ms.p95.toFixed(2)}`)
+    console.log(`  canvas/frame   ${main}`)
+    console.log(`  bakes/frame    ${c['offscreen.putImageData'] ?? 0}   cached sprites ${r.cache}`)
+  }
+} finally {
+  await browser.close()
+  await server.close()
+}
+
+if (args.update) {
+  const old = (() => { try { return JSON.parse(readFileSync(BASELINE, 'utf8')) } catch { return {} } })()
+  for (const [name, r] of Object.entries(results)) old[name] = counters(r)
+  writeFileSync(BASELINE, `${JSON.stringify(old, null, 2)}\n`)
+  console.log(`\nbudget written to ${BASELINE}`)
+}
+
+if (args.check) {
+  const budget = JSON.parse(readFileSync(BASELINE, 'utf8'))
+  const over = []
+  for (const [name, r] of Object.entries(results)) {
+    const b = budget[name]
+    if (!b) { over.push(`${name}: no budget (run npm run bench -- --update)`); continue }
+    for (const [k, n] of Object.entries(counters(r))) {
+      const limit = (b[k] ?? 0) * (1 + TOLERANCE) + 0.5
+      if (n > limit) over.push(`${name}: ${k} ${n} per frame, budget ${b[k] ?? 0}`)
+    }
+  }
+  if (over.length) {
+    console.error(`\nOver budget:\n  ${over.join('\n  ')}\n\nIf the extra work is worth it, raise the budget with: npm run bench -- --update`)
+    process.exit(1)
+  }
+  console.log('\nAll scenarios within budget.')
+}
