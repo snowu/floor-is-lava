@@ -395,6 +395,11 @@ body.ios-browser .ios-tip { display: block; }
 body.pixel .rotate { white-space: normal; text-align: center; width: max-content; max-width: calc(100vw - 32px); line-height: 1.5; }
 @media (orientation: portrait) {
   .ios-tip { top: max(14px, env(safe-area-inset-top)); bottom: auto; left: 16px; right: auto; }
+  /* the rotate hint gets its own row above the version label, and the title
+     card ends above both instead of running under them */
+  .rotate { bottom: calc(56px + env(safe-area-inset-bottom)); }
+  #title.screen { padding-bottom: calc(112px + env(safe-area-inset-bottom)); }
+  #title .card { max-height: 100%; overflow-y: auto; overscroll-behavior: contain; }
 }
 
 /* Laptop-height screens: the title card splits into two columns so it fits. */
