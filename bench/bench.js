@@ -13,9 +13,14 @@
 //   readbacks, sprite bakes, cached canvases). Time, input and randomness
 //   are all pinned, so these come out the same on any machine. They are
 //   what the check gates on: bench/baseline.json holds the budget.
-// - Time per frame with the CPU throttled 4x (roughly a mid-range phone).
-//   Headless Chromium rasterizes on the CPU and machines differ, so time is
-//   reported for comparison between runs on the same machine, never gated.
+// - Time per frame with the CPU throttled 4x (roughly a mid-range phone),
+//   including the worst frame. Headless Chromium rasterizes on the CPU and
+//   machines differ, so time is reported for comparison between runs on the
+//   same machine, never gated. A plain run yields between frames like the
+//   game does, so sprites baked on the worker arrive in the background.
+//   --check and --update run frames back to back instead, so the counters
+//   don't depend on when the worker finishes; their timings are pessimistic
+//   (anything the worker would have baked is baked on the main thread).
 import { createServer } from 'vite'
 import { chromium } from 'playwright'
 import { readFileSync, writeFileSync } from 'node:fs'
@@ -55,6 +60,8 @@ function pinWorld() {
   window.AudioContext = undefined
   window.webkitAudioContext = undefined
   const realNow = performance.now.bind(performance)
+  const realTimeout = window.setTimeout.bind(window)
+  window.__yield = () => new Promise((r) => realTimeout(r, 4))
   let now = 0, rafs = [], timers = [], id = 0
   performance.now = () => now
   window.requestAnimationFrame = (f) => { rafs.push(f); return rafs.length }
@@ -92,7 +99,7 @@ function countWork() {
   }
 }
 
-async function runScenario(browser, base, sc) {
+async function runScenario(browser, base, sc, pace) {
   const ctx = await browser.newContext({ viewport: { width: sc.view[0], height: sc.view[1] }, deviceScaleFactor: 3, isMobile: true, hasTouch: true })
   const page = await ctx.newPage()
   const errors = []
@@ -115,17 +122,18 @@ async function runScenario(browser, base, sc) {
   const frames = sc.frames ?? 600, warm = sc.warm ?? 120
   const cdp = await ctx.newCDPSession(page)
   if (sc.timed !== false) await cdp.send('Emulation.setCPUThrottlingRate', { rate: 4 })
-  const result = await page.evaluate(({ sc, frames, warm }) => {
+  const result = await page.evaluate(async ({ sc, frames, warm, pace }) => {
     const G = window.__game, v = G.view
     const hold = () => {
       if (sc.trace && G.g.heist) G.g.heist.trace = 0.9
       if (sc.focus && G.g.mode === 'run') { G.g.focusActive = true; G.g.focus = 1 }
     }
-    for (let i = 0; i < warm; i++) { hold(); window.__tick() }
+    for (let i = 0; i < warm; i++) { hold(); window.__tick(); if (pace) await window.__yield() }
     window.__work.main = {}
     window.__work.offscreen = {}
     const times = []
     for (let i = 0; i < frames; i++) {
+      if (pace) await window.__yield()
       hold()
       const t0 = window.__realNow()
       window.__tick()
@@ -142,9 +150,9 @@ async function runScenario(browser, base, sc) {
       cache: v.cache.size,
       mode: G.g.mode,
       x: Math.round(G.g.player.x),
-      ms: { avg: times.reduce((a, b) => a + b, 0) / times.length, p50: times[times.length >> 1], p95: times[Math.floor(times.length * 0.95)] },
+      ms: { avg: times.reduce((a, b) => a + b, 0) / times.length, p50: times[times.length >> 1], p95: times[Math.floor(times.length * 0.95)], max: times.at(-1), slow: times.filter((t) => t > 33.4).length },
     }
-  }, { sc, frames, warm })
+  }, { sc, frames, warm, pace })
   await ctx.close()
   if (errors.length) throw new Error(`${sc.name}: page errors\n${errors.join('\n')}`)
   return result
@@ -167,12 +175,12 @@ const results = {}
 try {
   for (const sc of SCENARIOS) {
     if (args.only && !sc.name.includes(args.only)) continue
-    results[sc.name] = await runScenario(browser, base, sc)
+    results[sc.name] = await runScenario(browser, base, sc, !args.check && !args.update)
     const r = results[sc.name]
     const c = counters(r)
     const main = Object.entries(r.main).filter(([, n]) => n >= 0.05).map(([k, n]) => `${k} ${n}`).join(', ')
     console.log(`\n${sc.name}  (${r.mode} at x=${r.x})`)
-    if (sc.timed !== false) console.log(`  time @4x CPU   avg ${r.ms.avg.toFixed(2)} ms  p50 ${r.ms.p50.toFixed(2)}  p95 ${r.ms.p95.toFixed(2)}`)
+    if (sc.timed !== false) console.log(`  time @4x CPU   avg ${r.ms.avg.toFixed(2)} ms  p50 ${r.ms.p50.toFixed(2)}  p95 ${r.ms.p95.toFixed(2)}  worst ${r.ms.max.toFixed(1)}  frames over 33 ms: ${r.ms.slow}`)
     console.log(`  canvas/frame   ${main}`)
     console.log(`  bakes/frame    ${c['offscreen.putImageData'] ?? 0}   cached sprites ${r.cache}`)
   }

@@ -377,12 +377,25 @@ export function bakePipeLayers(sub, w, h, drop, pal, seed, options = {}) {
   return { back, front }
 }
 
+// The back and front layers come out of one render, and the view asks for
+// them one after the other: keep the last render instead of doing it twice.
+let lastLayers = null
+// the bake worker gets a fresh copy of the palette with every job
+const samePal = (a, b) => a === b || (a.version !== undefined && a.version === b.version && String(a.light) === String(b.light))
+function pipeLayers(sub, w, h, drop, pal, seed, options) {
+  const legacy = !!options.legacy
+  const l = lastLayers
+  if (l && l.sub === sub && l.w === w && l.h === h && l.drop === drop && samePal(l.pal, pal) && l.seed === seed && l.legacy === legacy && l.count === options.count) return l.layers
+  lastLayers = { sub, w, h, drop, pal, seed, legacy, count: options.count, layers: bakePipeLayers(sub, w, h, drop, pal, seed, options) }
+  return lastLayers.layers
+}
+
 export function bakePipe(sub, w, h, drop, pal, seed, options = {}) {
-  return bakePipeLayers(sub, w, h, drop, pal, seed, options).back
+  return pipeLayers(sub, w, h, drop, pal, seed, options).back
 }
 
 export function bakePipeFront(sub, w, h, drop, pal, seed, options = {}) {
-  return bakePipeLayers(sub, w, h, drop, pal, seed, options).front
+  return pipeLayers(sub, w, h, drop, pal, seed, options).front
 }
 
 function rooftop(sub, w, h, pal, seed) {

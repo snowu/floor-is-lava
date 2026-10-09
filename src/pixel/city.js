@@ -241,12 +241,13 @@ export function bakeFacade({ w, roofH, style, seed, pal, wall, accentCap, mural 
       b.rect(wx, wy, ww, wh, t.deep)
       const on = runs[k]
       const blind = on && hash(k, f, seed + 42) < 0.3
+      const pane = on && hash(k, f, seed + 43) < 0.15 ? altC : litC
       for (let y = 1; y < wh; y++) {
         for (let x = 1; x < ww; x++) {
           const px = wx + x, py = wy + y
           let c
           if (on) {
-            c = y > wh * 0.65 ? roomC : hash(k, f, seed + 43) < 0.15 ? altC : litC
+            c = y > wh * 0.65 ? roomC : pane
             if (y === 2 && x > 2 && x < ww - 2) c = lampC
             if (blind && y < wh * 0.4) c = t.deep
             lit[py * w + px] = 1
@@ -328,15 +329,41 @@ export function bakeFacade({ w, roofH, style, seed, pal, wall, accentCap, mural 
   if (L.fade > 0) {
     const sink = mix(pal.shadow, pal.haze, 0.25)
     const start = bodyTop + 16, span = 110
+    // a facade only uses a few dozen colours, so each darkened colour is
+    // worked out once instead of once per pixel
+    const sunk = new Map()
     for (let y = start; y < H; y++) {
-      const k = Math.min(1, (y - start) / span) * L.fade * 6
+      const step = Math.round(Math.min(1, (y - start) / span) * L.fade * 6)
+      if (!step) continue
+      let lastKey = -1, out = 0
       for (let x = 0; x < w; x++) {
         const i = y * w + x
-        const step = Math.round(k)
-        if (!step) continue
-        const amt = (step / 6) * (lit[i] ? 0.6 : 0.9)
-        b.data[i] = pack(mix(unpack(b.data[i]), sink, amt))
+        const key = b.data[i] * 16 + step * 2 + lit[i]
+        if (key !== lastKey) {
+          lastKey = key
+          out = sunk.get(key)
+          if (out === undefined) sunk.set(key, out = pack(mix(unpack(b.data[i]), sink, (step / 6) * (lit[i] ? 0.6 : 0.9))))
+        }
+        b.data[i] = out
       }
+    }
+  }
+  return b
+}
+
+// Haze over the lava streets, with the glow rising out of it.
+export function bakeMist(W, pal) {
+  const h = 20 * PPU
+  const b = new PixelBuffer(W, h)
+  const haze = pack(pal.haze), lava = pack(pal.lava), lavaD = pack(mix(pal.lava, pal.haze, 0.5))
+  for (let y = 0; y < h; y++) {
+    const t = y / h
+    for (let x = 0; x < W; x++) {
+      let c = 0
+      if (dither(x, y, t * 2.2)) c = haze
+      if (t > 0.55 && dither(x, y, (t - 0.55) * 2.6)) c = lavaD
+      if (t > 0.75 && dither(x, y, (t - 0.75) * 4)) c = lava
+      b.data[y * W + x] = c
     }
   }
   return b
