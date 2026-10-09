@@ -22,6 +22,11 @@ const HULL = [26, 24, 38]
 const DECOR_RECEDE = 0.5
 const CUE = [41, 243, 255]
 const CUE_IDLE = [150, 146, 176]
+const DROP_NEAR_RGB = [210, 235, 245], DROP_FAR_RGB = [170, 200, 215]
+const DROP_NEAR = css(DROP_NEAR_RGB, 0.75), DROP_FAR = css(DROP_FAR_RGB, 0.45)
+const ZIP_UNDER = css(mix(ACCENT, [40, 6, 14], 0.5))
+const ZIP_CABLE = css(ACCENT)
+const ZIP_GLINT = css(mix(ACCENT, [255, 241, 215], 0.6))
 
 const damp = (a, b, rate, dt) => a + (b - a) * (1 - Math.exp(-rate * dt))
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v))
@@ -126,7 +131,7 @@ export class PixelView {
   bind(level) {
     this.water = new RoofWater()
     this.effects = new ParkourFX()
-    for (const key of [...this.cache.keys()]) if (key.startsWith('c')) this.cache.delete(key)
+    for (const key of [...this.cache.keys()]) if (key.startsWith('c') || key.startsWith('L') || key.startsWith('bb')) this.cache.delete(key)
     this.views.clear()
     this.birds = []
     this.particles = []
@@ -441,14 +446,13 @@ export class PixelView {
     this.drawMist(pal, s.time)
     this.drawWeather(s, pal)
     this.drawSpeedLines(s, pal)
+    // vignette and scanlines in one pass (the alarm carries its own scanlines)
     ctx.drawImage(this.sprite('vignette', pal.version, () => bakeVignette(W, pal)), 0, 0)
     if (s.trace > 0.7) {
       ctx.globalAlpha = Math.min(1, (s.trace - 0.7) / 0.3) * (0.55 + 0.45 * Math.sin(s.time * 9))
       ctx.drawImage(this.sprite('alarm', 0, () => bakeAlarm(W)), 0, 0)
       ctx.globalAlpha = 1
     }
-    ctx.fillStyle = 'rgba(0,0,0,0.07)'
-    for (let y = 1; y < H; y += 2) ctx.fillRect(0, y, W, 1)
     if (s.focusVis > 0.02) this.postFocus(s.focusVis)
     if (this.glitchAmt > 0.01) this.postGlitch(this.glitchAmt)
     this.glitchAmt = Math.max(0, this.glitchAmt - s.raw * 2.2)
@@ -498,12 +502,14 @@ export class PixelView {
     }
     const stars = pal.stars * (1 - wet)
     if (stars > 0.05) {
-      for (let i = 0; i < 70; i++) {
-        const x = Math.floor(hash(i, 1) * this.W), y = Math.floor(hash(i, 2) * H * 0.5)
-        const tw = Math.sin(time * (1 + hash(i, 3) * 3) + i)
-        if (tw < 0.2 - stars * 0.6) continue
-        ctx.fillStyle = tw > 0.8 ? '#ffffff' : '#c9c3ff'
-        ctx.fillRect(x, y, 1, 1)
+      // one pass per colour; stars never overlap, so the order is free
+      for (const bright of [false, true]) {
+        ctx.fillStyle = bright ? '#ffffff' : '#c9c3ff'
+        for (let i = 0; i < 70; i++) {
+          const tw = Math.sin(time * (1 + hash(i, 3) * 3) + i)
+          if (tw < 0.2 - stars * 0.6 || (tw > 0.8) !== bright) continue
+          ctx.fillRect(Math.floor(hash(i, 1) * this.W), Math.floor(hash(i, 2) * H * 0.5), 1, 1)
+        }
       }
     }
   }
@@ -515,7 +521,7 @@ export class PixelView {
     const f = 0.03
     const off = this.camPX * f + time * 2
     if (C.cursor === null || C.cursor < off - 200) C.cursor = off - 60
-    while (C.items.length && C.items[0].u + C.items[0].w - off < -40) C.items.shift()
+    while (C.items.length && C.items[0].u + C.items[0].w - off < -40) this.cache.delete(`cl${C.items.shift().seed}`)
     while (C.cursor - off < this.W + 40) {
       const w = C.rng.int(30, 80), h = C.rng.int(10, 22)
       C.cursor += C.rng.range(30, 140) / density
@@ -535,7 +541,9 @@ export class PixelView {
       const off = this.camPX * L.f
       const base = Math.round(H * 0.7 + L.offset + (this.camPY / PPU - 8) * PPU * L.fy)
       if (L.cursor === null || L.cursor < off - 200) L.cursor = off - 40
-      while (L.items.length && L.items[0].u + L.items[0].w - off < -20) L.items.shift()
+      // towers that scroll off take their sprites with them, or a long run
+      // keeps a canvas for every building it ever passed
+      while (L.items.length && L.items[0].u + L.items[0].w - off < -20) this.forgetTower(li, L.items.shift().seed)
       while (L.cursor - off < this.W + 40) {
         const w = L.rng.int(...L.w)
         L.cursor += L.rng.int(...L.gap)
@@ -560,6 +568,11 @@ export class PixelView {
       this.ctx.fillStyle = css(mix(pal.haze, pal.sky[pal.sky.length - 1], 0.4), this.weather.rain * 0.32)
       this.ctx.fillRect(0, 0, this.W, H)
     }
+  }
+
+  forgetTower(li, seed) {
+    this.cache.delete(`L${li}:${seed}`)
+    for (const f of ['halo', 0, 1, 2]) this.cache.delete(`bb${seed}:${f}`)
   }
 
   // Billboards on skyline towers: on top, hung off a side, or across the face.
@@ -805,16 +818,29 @@ export class PixelView {
         const ahead = (z.ax - s.p.x) / Math.max(6, s.p.speed)
         const near = s.mode !== 'title' && s.p.x < z.bx - 2 && ahead < 1.6
         const pulse = near ? 0.5 + 0.5 * Math.sin(t * 12) : 0
-        for (let i = 0; i <= n; i++) {
-          const x = x0 + i
-          if (x < -2 || x > this.W + 2) continue
-          const y = at(i)
-          if (near) { ctx.fillStyle = css(ACCENT, 0.12 + 0.12 * pulse); ctx.fillRect(x, y - 2, 1, 5) }
-          ctx.fillStyle = css(mix(ACCENT, [40, 6, 14], 0.5))
-          ctx.fillRect(x, y + 1, 1, 1)
-          const run = ((i - t * 60) % 26 + 26) % 26
-          ctx.fillStyle = run < 3 ? css(mix(ACCENT, [255, 241, 215], 0.6)) : css(ACCENT)
-          ctx.fillRect(x, y, 1, 1)
+        // Drawn in layers, one rect per stretch of cable at the same height:
+        // the columns don't overlap, so this paints the same pixels as going
+        // pixel by pixel, for a few calls instead of hundreds.
+        const i0 = Math.max(0, -2 - x0), i1 = Math.min(n, this.W + 2 - x0)
+        if (i1 < i0) continue
+        const spans = (dy, h) => {
+          for (let i = i0; i <= i1;) {
+            const y = at(i)
+            let j = i + 1
+            while (j <= i1 && at(j) === y) j++
+            ctx.fillRect(x0 + i, y + dy, j - i, h)
+            i = j
+          }
+        }
+        if (near) { ctx.fillStyle = css(ACCENT, 0.12 + 0.12 * pulse); spans(-2, 5) }
+        ctx.fillStyle = ZIP_UNDER
+        spans(1, 1)
+        ctx.fillStyle = ZIP_CABLE
+        spans(0, 1)
+        // light running down the cable
+        ctx.fillStyle = ZIP_GLINT
+        for (let i = i0; i <= i1; i++) {
+          if (((i - t * 60) % 26 + 26) % 26 < 3) ctx.fillRect(x0 + i, at(i), 1, 1)
         }
       }
     }
@@ -1034,11 +1060,24 @@ export class PixelView {
   drawLaneHaze(pal) {
     if (this.laneRoof === undefined || this.classic) return
     const y = this.sy(this.laneRoof)
-    const g = this.ctx.createLinearGradient(0, y - 64, 0, y)
-    g.addColorStop(0, css(pal.haze, 0))
-    g.addColorStop(1, css(pal.haze, 0.42))
+    // the gradient is built once per palette at the origin and moved into place
+    const g = this.gradient('lane', pal, 64, css(pal.haze, 0), css(pal.haze, 0.42))
+    this.ctx.translate(0, y)
     this.ctx.fillStyle = g
-    this.ctx.fillRect(0, y - 64, this.W, 64)
+    this.ctx.fillRect(0, -64, this.W, 64)
+    this.ctx.translate(0, -y)
+  }
+
+  // A vertical gradient from 0 to h, cached per palette.
+  gradient(name, pal, h, from, to) {
+    this.gradients ??= new Map()
+    const hit = this.gradients.get(name)
+    if (hit && hit.pal === pal) return hit.g
+    const g = this.ctx.createLinearGradient(0, name === 'lane' ? -h : 0, 0, name === 'lane' ? 0 : h)
+    g.addColorStop(0, from)
+    g.addColorStop(1, to)
+    this.gradients.set(name, { pal, g })
+    return g
   }
 
   // Lower floors sink into shadow below the lane, so lit windows and facade
@@ -1048,17 +1087,18 @@ export class PixelView {
     if (this.classic) return
     const { ctx } = this
     const lane = this.laneRoof === undefined ? -Infinity : this.sy(this.laneRoof)
+    const solid = css(pal.shadow, 0.4)
+    const grad = this.gradient('facade', pal, 48, css(pal.shadow, 0), solid)
     for (const [c, v] of visible) {
       const x = this.sx(c.x0), w = Math.round((c.x1 - c.x0) * PPU)
       if (x > this.W || x + w < 0) continue
       const top = Math.max(this.sy(c.roof), lane) + 6
       if (top >= H) continue
-      const g = ctx.createLinearGradient(0, top, 0, top + 48)
-      g.addColorStop(0, css(pal.shadow, 0))
-      g.addColorStop(1, css(pal.shadow, 0.4))
-      ctx.fillStyle = g
-      ctx.fillRect(x, top, w, 48)
-      ctx.fillStyle = css(pal.shadow, 0.4)
+      ctx.translate(0, top)
+      ctx.fillStyle = grad
+      ctx.fillRect(x, 0, w, 48)
+      ctx.translate(0, -top)
+      ctx.fillStyle = solid
       ctx.fillRect(x, top + 48, w, H - top - 48)
     }
   }
@@ -1121,6 +1161,7 @@ export class PixelView {
   drawParticles(dt, pal) {
     const { ctx } = this
     const keep = []
+    const dust = css(pal.dust)
     for (const q of this.particles) {
       q.life -= dt
       if (q.life <= 0) continue
@@ -1128,7 +1169,8 @@ export class PixelView {
       q.y += q.vy * dt
       q.vx *= 1 - dt * 3
       q.vy = q.vy * (1 - dt * 2) - dt * 2
-      ctx.fillStyle = css(q.color || pal.dust)
+      const style = q.color ? (q.style ??= css(q.color)) : dust
+      ctx.fillStyle = style
       if (q.life / q.max < 0.35 && dither(Math.round(q.x * 7), Math.round(q.y * 7), 0.5)) continue
       ctx.fillRect(this.sx(q.x), this.sy(q.y), q.size, q.size)
       keep.push(q)
@@ -1164,16 +1206,32 @@ export class PixelView {
     if (this.drops.length > n) this.drops.length = n
     while (this.drops.length < n) this.drops.push({ x: Math.random() * this.W, y: Math.random() * H, v: 260 + Math.random() * 160, near: Math.random() < 0.3 })
     const drift = -(s.p.speed * PPU * 0.5 + 30)
+    // Most drops are nowhere near a sign: those go out in two batches, and
+    // only drops inside a lamp's glow get a colour of their own.
     for (const d of this.drops) {
       d.y += d.v * s.dt
       d.x += drift * s.dt * (d.near ? 1.4 : 1)
       if (d.y > H || d.x < -4) { d.y = -4; d.x = Math.random() * (this.W + 60) }
-      let color = d.near ? [210, 235, 245] : [170, 200, 215]
-      for (const lamp of this.lamps) {
-        const distance = Math.hypot((d.x - lamp.x) / lamp.w, (d.y - lamp.y) / lamp.h)
-        if (distance < 1) color = mix(color, lamp.color, (1 - distance) * pal.night * 0.7)
+    }
+    const lit = []
+    for (let pass = 0; pass < 2; pass++) {
+      const near = pass === 1
+      ctx.fillStyle = near ? DROP_NEAR : DROP_FAR
+      for (const d of this.drops) {
+        if (d.near !== near) continue
+        let color = null
+        for (const lamp of this.lamps) {
+          if (Math.abs(d.x - lamp.x) >= lamp.w || Math.abs(d.y - lamp.y) >= lamp.h) continue
+          const distance = Math.hypot((d.x - lamp.x) / lamp.w, (d.y - lamp.y) / lamp.h)
+          if (distance < 1) color = mix(color ?? (near ? DROP_NEAR_RGB : DROP_FAR_RGB), lamp.color, (1 - distance) * pal.night * 0.7)
+        }
+        if (color) lit.push(d, color)
+        else ctx.fillRect(Math.round(d.x), Math.round(d.y), 1, near ? 4 : 3)
       }
-      ctx.fillStyle = css(color, d.near ? 0.75 : 0.45)
+    }
+    for (let i = 0; i < lit.length; i += 2) {
+      const d = lit[i]
+      ctx.fillStyle = css(lit[i + 1], d.near ? 0.75 : 0.45)
       ctx.fillRect(Math.round(d.x), Math.round(d.y), 1, d.near ? 4 : 3)
     }
     this.lightningClock -= s.raw
@@ -1297,27 +1355,37 @@ function bakeMist(W, pal) {
   return b
 }
 
+// Every other row is darkened by 7% (the CRT scanlines). Baked into the
+// full-screen overlays so they cost one draw instead of a rect per row.
+const SCAN_ALPHA = 18
+const SCAN = pack([0, 0, 0], SCAN_ALPHA)
+const scanned = (c) => pack(mix(c, [0, 0, 0], SCAN_ALPHA / 255))
+
 function bakeVignette(W, pal) {
   const b = new PixelBuffer(W, H)
-  const c = pack(mix(pal.shadow, [0, 0, 0], 0.4))
+  const shade = mix(pal.shadow, [0, 0, 0], 0.4)
+  const c = pack(shade), cs = scanned(shade)
   for (let y = 0; y < H; y++) {
     for (let x = 0; x < W; x++) {
       const dx = (x / W - 0.5) * 2, dy = (y / H - 0.5) * 2
       const r = Math.sqrt(dx * dx * 0.7 + dy * dy)
-      if (dither(x, y, (r - 1.05) * 1.6)) b.data[y * W + x] = c
+      if (dither(x, y, (r - 1.05) * 1.6)) b.data[y * W + x] = y & 1 ? cs : c
+      else if (y & 1) b.data[y * W + x] = SCAN
     }
   }
   return b
 }
 
-// Red alarm edges for a trace about to fill.
+// Red alarm edges for a trace about to fill. It goes over the scanlines, so
+// it darkens its own odd rows to match.
 function bakeAlarm(W) {
   const b = new PixelBuffer(W, H)
-  const c = pack([255, 40, 30])
+  const red = [255, 40, 30]
+  const c = pack(red), cs = scanned(red)
   for (let y = 0; y < H; y++) {
     for (let x = 0; x < W; x++) {
       const e = Math.min(x, W - 1 - x, y, H - 1 - y)
-      if (dither(x, y, 0.7 - e / 26)) b.data[y * W + x] = c
+      if (dither(x, y, 0.7 - e / 26)) b.data[y * W + x] = y & 1 ? cs : c
     }
   }
   return b
