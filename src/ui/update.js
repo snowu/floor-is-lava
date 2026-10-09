@@ -117,9 +117,15 @@ export function installAppUpdates({ canShow }) {
   badge.textContent = import.meta.env.DEV ? 'DEV' : `v${APP_RELEASE.version}`
   const checker = createUpdateChecker({ onChange: render })
   let shown = null
+  // The version line and the update notice live inside whichever screen's
+  // card is showing, as its footer: pinned to a corner of the viewport they
+  // landed on the card's buttons wherever a card reached that corner.
+  const host = () => document.querySelector('.screen:not(.is-hidden) .card')
   function render() {
     const safe = canShow()
     shown = safe
+    const card = host()
+    if (safe && card && release.parentElement !== card) card.append(notice, release)
     release.hidden = !safe
     notice.hidden = !safe || !checker.state.pending
     status.textContent = checker.state.status
@@ -140,5 +146,5 @@ export function installAppUpdates({ canShow }) {
   }
   for (const element of [release, notice]) element.addEventListener('keydown', e => e.stopPropagation())
   render()
-  return { sync() { if (shown !== canShow()) render() } }
+  return { sync() { if (shown !== canShow() || (shown && release.parentElement !== host())) render() } }
 }
