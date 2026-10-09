@@ -236,6 +236,17 @@ describe('heist state', () => {
   })
 })
 
+describe('chrome balance', () => {
+  it('lets Ghost Protocol ease the trace without switching it off', () => {
+    // a careful runner with two Ghosts still feels the trace late in the run
+    const late = (run) => Math.max(...run.samples.filter((s) => s.sector >= 3).map((s) => s.trace))
+    const plain = simulateHeist(31337)
+    const ghosted = simulateHeist(31337, { chrome: ['ghost', 'ghost'] })
+    expect(late(ghosted)).toBeLessThan(late(plain) - 0.2)
+    expect(late(ghosted)).toBeGreaterThan(0.4)
+  }, 90000)
+})
+
 describe('heist traversal', () => {
   it('a careful autopilot extracts from a full heist with no chrome', () => {
     const run = simulateHeist(31337)
