@@ -95,7 +95,8 @@ export function toCanvas(buf, canvas) {
   const c = canvas || document.createElement('canvas')
   if (c.width !== buf.w || c.height !== buf.h) { c.width = buf.w; c.height = buf.h }
   const ctx = c.getContext('2d')
-  const img = new ImageData(new Uint8ClampedArray(buf.data.buffer.slice(0)), buf.w, buf.h)
+  // putImageData copies the pixels, so the buffer can be handed over as is
+  const img = new ImageData(new Uint8ClampedArray(buf.data.buffer, buf.data.byteOffset, buf.data.byteLength), buf.w, buf.h)
   ctx.putImageData(img, 0, 0)
   return c
 }

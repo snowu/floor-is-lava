@@ -126,7 +126,19 @@ export function billboardLight(s, pal, time = 0) {
 
 // ── palettes ─────────────────────────────────────────────────────────────
 
+// Signs ask for their inks every frame (for the light they throw), so the
+// result is kept per ad and palette.
+const inkCache = new WeakMap()
+
 export function inks(a, pal) {
+  const hit = inkCache.get(a)
+  if (hit?.pal === pal) return hit.inks
+  const c = inksFor(a, pal)
+  inkCache.set(a, { pal, inks: c })
+  return c
+}
+
+function inksFor(a, pal) {
   const hue = mix(pal.neon[a.hue % pal.neon.length], [148, 163, 177], 0.2)
   const other = mix(pal.neon[(a.hue + 1) % pal.neon.length], hue, 0.65)
   return {

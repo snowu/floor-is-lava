@@ -1,0 +1,24 @@
+name: Render budget
+
+# Fails when a change makes a frame ask more of the canvas than
+# bench/baseline.json allows. See bench/bench.js for what is counted.
+on:
+  pull_request:
+  push:
+    branches: [master]
+
+permissions:
+  contents: read
+
+jobs:
+  bench:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npm run bench:check

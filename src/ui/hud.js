@@ -206,6 +206,8 @@ export class Hud {
 
   // ── per-frame ───────────────────────────────────────────────────────────
 
+  // Bars that move every frame scale instead of changing width, so they
+  // repaint without a layout.
   update({ score, speed, focus, focusActive, focusReady, time, progress, lives, combo, sub, trace }) {
     if (trace !== undefined) {
       const prev = this.last.trace
@@ -223,7 +225,7 @@ export class Hud {
     }
     if (score !== undefined) this.set('score', Math.floor(score), (v) => { this.el.score.textContent = v.toLocaleString() })
     if (time !== undefined) this.set('timer', Math.floor(time * 100), () => { this.el.timer.textContent = formatTime(time) })
-    if (progress !== undefined) this.set('progress', Math.round(progress * 400), (v) => { this.el.progress.style.width = `${v / 4}%` })
+    if (progress !== undefined) this.set('progress', Math.round(progress * 400), (v) => { this.el.progress.style.transform = `scaleX(${v / 400})` })
     if (sub !== undefined) this.set('sub', sub, (v) => { this.el.subB.textContent = v })
     if (lives !== undefined) this.set('lives', lives, (n) => [...this.el.lives.children].forEach((c, i) => c.classList.toggle('lost', i >= n)))
     this.set('speedVal', Math.round(speed * 3.6), (v) => { this.el.speedVal.textContent = `${v} KM/H` })
@@ -232,7 +234,7 @@ export class Hud {
       s.classList.toggle('on', i < n)
       s.classList.toggle('hot', i < n && i >= SEGMENTS - 3)
     }))
-    this.set('focus', Math.round(focus * 100), (v) => { this.el.focusFill.style.width = `${v}%` })
+    this.set('focus', Math.round(focus * 100), (v) => { this.el.focusFill.style.transform = `scaleX(${v / 100})` })
     this.set('focusState', `${focusActive}${focusReady}`, () => {
       this.el.focus.classList.toggle('active', focusActive)
       this.el.focus.classList.toggle('ready', focusReady && !focusActive)
@@ -244,7 +246,7 @@ export class Hud {
         this.set('comboPts', Math.floor(combo.points), (v) => { this.el.comboPts.textContent = v.toLocaleString() })
         this.set('comboMult', combo.mult, (v) => { this.el.comboMult.textContent = `×${v}` })
         this.set('comboMoves', combo.moves, (v) => { this.el.comboMoves.textContent = v })
-        this.set('comboFill', Math.round(combo.timer * 100), (v) => { this.el.comboFill.style.width = `${v}%` })
+        this.set('comboFill', Math.round(combo.timer * 100), (v) => { this.el.comboFill.style.transform = `scaleX(${v / 100})` })
       }
     }
   }

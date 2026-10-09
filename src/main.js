@@ -945,9 +945,7 @@ function frame(now) {
         ...base,
         score: s.total,
         lives: n ? n.integrity : g.lives,
-        sub: n
-          ? `¢ ${n.creds.toLocaleString()} · SECTOR ${n.sector + 1}/${HEIST.SECTORS}`
-          : `${Math.floor(distance).toLocaleString()} M · ${name.toUpperCase()}`,
+        sub: subLine(n, Math.floor(distance), name),
         combo: { mult: s.mult, points: s.pending, moves: s.moves.join(' · '), timer: s.timer / s.window },
         trace: n?.trace,
         progress: n ? Math.min(1, Math.max(0, cur.x) / g.level.finish.x) : undefined,
@@ -965,6 +963,20 @@ function frame(now) {
     focus: g.focusVis,
     playing: g.mode === 'run',
   })
+}
+
+// The HUD's second line, rebuilt only when what it shows changes:
+// toLocaleString is too slow to call every frame on a phone.
+let subKey = '', subText = ''
+function subLine(n, metres, name) {
+  const key = n ? `h${n.creds}:${n.sector}` : `${metres}:${name}`
+  if (key !== subKey) {
+    subKey = key
+    subText = n
+      ? `¢ ${n.creds.toLocaleString()} · SECTOR ${n.sector + 1}/${HEIST.SECTORS}`
+      : `${metres.toLocaleString()} M · ${name.toUpperCase()}`
+  }
+  return subText
 }
 
 function smoothstep(x, a, b) {

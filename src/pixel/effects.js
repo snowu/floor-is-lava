@@ -12,11 +12,13 @@ export function bakeLightHalo(w, h, color) {
 }
 
 export function drawLightHalo(ctx, halo, x, y, strength = 1) {
-  ctx.save()
+  // put back just the two settings it touches: cheaper than save/restore
+  const op = ctx.globalCompositeOperation, alpha = ctx.globalAlpha
   ctx.globalCompositeOperation = 'screen'
   ctx.globalAlpha = strength
   ctx.drawImage(halo, Math.round(x - halo.width / 2), Math.round(y - halo.height / 2))
-  ctx.restore()
+  ctx.globalCompositeOperation = op
+  ctx.globalAlpha = alpha
 }
 
 export function drawSteam(ctx, x, y, seed, time, pal) {

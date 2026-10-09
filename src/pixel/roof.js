@@ -2,8 +2,15 @@
 // with occasional falling drops and tiny impacts; the front edge stays clear.
 import { css, hash, mix } from './pixels.js'
 
+// Puddles only depend on the building, so they're worked out once per roof.
+const puddleCache = new Map()
+
 export function roofPuddles(seed, w, depth) {
-  const patches = []
+  const key = `${seed}:${w}:${depth}`
+  let patches = puddleCache.get(key)
+  if (patches) return patches
+  if (puddleCache.size > 64) puddleCache.clear()
+  puddleCache.set(key, patches = [])
   if (depth < 7) return patches
   // Most roof sections stay empty; a rare patch sits away from the edges.
   for (let i = 0; i < Math.ceil(w / 210); i++) {
@@ -96,8 +103,17 @@ export function equipmentLight(pal, x, lights) {
     if (strength > strongest) { strongest = strength; color = light.color }
   }
   const amount = Math.floor(strongest * 4) / 4 * pal.night * 0.4
-  return amount ? { ...pal, light: mix(pal.light, color, amount) } : pal
+  if (!amount) return pal
+  // the same lit palette comes back every frame, so keep one per tint
+  const key = `${color}:${amount}`
+  let lit = litCache.get(pal)
+  if (!lit) litCache.set(pal, lit = new Map())
+  let material = lit.get(key)
+  if (!material) lit.set(key, material = { ...pal, light: mix(pal.light, color, amount) })
+  return material
 }
+
+const litCache = new WeakMap()
 
 export function drawRunnerContact(ctx, { x, y, floor, pal, joints, span }) {
   const above = floor - y
