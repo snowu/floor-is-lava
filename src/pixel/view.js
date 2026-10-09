@@ -788,11 +788,32 @@ export class PixelView {
     for (const [c] of visible) {
       for (const z of c.ziplines) {
         const x0 = this.sx(z.ax), y0 = this.sy(z.ay), x1 = this.sx(z.bx), y1 = this.sy(z.by)
-        ctx.fillStyle = css(ACCENT)
         const n = Math.max(1, x1 - x0)
+        const at = (i) => Math.round(y0 + (y1 - y0) * (i / n))
+        if (this.classic) {
+          ctx.fillStyle = css(ACCENT)
+          for (let i = 0; i <= n; i++) {
+            const x = x0 + i
+            if (x < -2 || x > this.W + 2) continue
+            ctx.fillRect(x, at(i), 1, 1)
+          }
+          continue
+        }
+        // One pixel of red reads as a scratch at speed: the cable gets a
+        // dark underside, light running down it toward the far end, and a
+        // glow while it's the next thing in the runner's path.
+        const ahead = (z.ax - s.p.x) / Math.max(6, s.p.speed)
+        const near = s.mode !== 'title' && s.p.x < z.bx - 2 && ahead < 1.6
+        const pulse = near ? 0.5 + 0.5 * Math.sin(t * 12) : 0
         for (let i = 0; i <= n; i++) {
-          const x = x0 + i, y = Math.round(y0 + (y1 - y0) * (i / n))
+          const x = x0 + i
           if (x < -2 || x > this.W + 2) continue
+          const y = at(i)
+          if (near) { ctx.fillStyle = css(ACCENT, 0.12 + 0.12 * pulse); ctx.fillRect(x, y - 2, 1, 5) }
+          ctx.fillStyle = css(mix(ACCENT, [40, 6, 14], 0.5))
+          ctx.fillRect(x, y + 1, 1, 1)
+          const run = ((i - t * 60) % 26 + 26) % 26
+          ctx.fillStyle = run < 3 ? css(mix(ACCENT, [255, 241, 215], 0.6)) : css(ACCENT)
           ctx.fillRect(x, y, 1, 1)
         }
       }
