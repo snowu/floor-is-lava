@@ -202,6 +202,8 @@ body.pixel .stats b { font: 700 26px/1 'Pixelify Sans', monospace; }
 body.pixel .stats span { font: 400 10px/1 'Silkscreen', monospace; color: #8fa0c8; letter-spacing: 0.04em; }
 
 body.pixel .chip { backdrop-filter: none; -webkit-backdrop-filter: none; border-left-width: 6px; box-shadow: inset 0 -2px 0 var(--cyan), 4px 4px 0 rgba(0, 0, 0, 0.35); }
+/* the trial clock sits on open sky, which can be as bright as Smog Noon's: same plate */
+body.pixel .timer { padding: 5px 12px 3px; background: var(--glass); box-shadow: inset 0 -2px 0 var(--cyan), 4px 4px 0 rgba(0, 0, 0, 0.35); }
 body.pixel .dist { font: 700 40px/1 'Pixelify Sans', monospace; text-shadow: -2px 0 rgba(41, 243, 255, 0.6), 2px 0 rgba(255, 47, 160, 0.6); }
 body.pixel .dist small { font: 400 14px/1 'Silkscreen', monospace; }
 body.pixel .sub, body.pixel .meter-label { font: 400 11px/1 'Silkscreen', monospace; letter-spacing: 0.04em; text-shadow: 2px 2px 0 rgba(0, 0, 0, 0.6); }
