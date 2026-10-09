@@ -9,8 +9,9 @@ import { createPlayer, stepPlayer } from './player.js'
 import { HeistState, heistOptions } from './heist.js'
 
 // careful: the autopilot steers around lasers and drone scans; otherwise it
-// runs the course as if they weren't there. every: seconds between samples.
-export function simulateHeist(seed, { careful = true, every = 0.25, maxTime = 600 } = {}) {
+// runs the course as if they weren't there. chrome: ids installed one per
+// uplink, in order. every: seconds between samples.
+export function simulateHeist(seed, { careful = true, chrome = [], every = 0.25, maxTime = 600 } = {}) {
   const level = new Level(seed, heistOptions())
   level.ensure(HEIST.SECTORS * HEIST.SECTOR_LEN + 120)
   const net = new HeistState(seed)
@@ -29,7 +30,10 @@ export function simulateHeist(seed, { careful = true, every = 0.25, maxTime = 60
       net.move(e.type)
       if (e.type === 'zap' || e.type === 'spotted' || e.type === 'traced' || e.type === 'takedown') marks.push({ type: e.type, x: p.x, t })
     }
-    if (net.sector < level.checkpoints.length && p.x >= level.checkpoints[net.sector].x) net.advance()
+    if (net.sector < level.checkpoints.length && p.x >= level.checkpoints[net.sector].x) {
+      net.advance()
+      if (chrome[net.sector - 1]) net.install(chrome[net.sector - 1])
+    }
     if (!p.alive) {
       falls++
       net.hurt()
@@ -39,7 +43,7 @@ export function simulateHeist(seed, { careful = true, every = 0.25, maxTime = 60
     }
     level.prune(p.x - 90)
     if (t >= nextSample) {
-      samples.push({ x: p.x, t, trace: Math.min(1, net.trace), speed: p.speed })
+      samples.push({ x: p.x, t, trace: Math.min(1, net.trace), speed: p.speed, sector: net.sector })
       nextSample += every
     }
   }
