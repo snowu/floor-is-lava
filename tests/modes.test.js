@@ -67,6 +67,19 @@ describe('combo scoring', () => {
     expect(s.mult).toBe(0)
   })
 
+  it('lets plain slides grow a chain only once', () => {
+    const s = new ScoreKeeper()
+    for (let i = 0; i < 6; i++) { s.event('slide', 12); s.event('jump', 12) }
+    expect(s.mult).toBe(1)
+    // and the window isn't kept open by sliding on the spot
+    let result = null
+    for (let t = 0; t < COMBO_WINDOW + 0.1 && !result; t += 0.05) result = s.update(0.05, p(1))
+    expect(result).toBe('bank')
+    // a new chain counts its first slide again
+    s.event('slide', 12)
+    expect(s.mult).toBe(1)
+  })
+
   it('caps the multiplier and rewards speed', () => {
     const slow = new ScoreKeeper(), fast = new ScoreKeeper()
     for (let i = 0; i < 20; i++) { slow.event('vault', 9); fast.event('vault', 17) }

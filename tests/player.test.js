@@ -221,6 +221,27 @@ describe('player physics', () => {
       for (const r of [sloppy, slow]) expect(Math.abs(r.after - r.before)).toBeLessThan(0.05)
     })
 
+    it('continues the chain only out of a landing slide', () => {
+      // jump out of a perfect landing slide: a slide jump
+      const p = createPlayer(0, 0)
+      p.speed = PHYS.SPEED_MAX - 1
+      const events = []
+      for (let i = 0; i < step(1.2); i++) {
+        const input = i === touchdown + 12 ? { ...NONE, jump: true, jumpPressed: true } : hop(touchdown)(p, i)
+        stepPlayer(p, input, PHYS.FIXED_DT, flat(), events)
+      }
+      const types = events.map((e) => e.type)
+      expect(types).toContain('landslide')
+      expect(types).toContain('slidejump')
+      // out of a plain slide pressed on flat roof, it's an ordinary jump
+      const q = createPlayer(0, 0)
+      q.speed = 12
+      const plain = run(q, flat(), 1, (_, i) => (i === 5 ? { ...NONE, down: true, downPressed: true } : i === 30 ? { ...NONE, jump: true, jumpPressed: true } : NONE))
+      expect(plain).toContain('slide')
+      expect(plain).not.toContain('slidejump')
+      expect(plain).toContain('jump')
+    })
+
     it('holds speed through a whole slide', () => {
       const p = createPlayer(0, 0)
       p.speed = 12
