@@ -788,8 +788,12 @@ export class PixelView {
       }
       for (const e of c.extras) {
         if (e.type !== 'ledge') continue
-        ctx.fillStyle = css(ACCENT)
-        ctx.fillRect(this.sx(e.x), this.sy(e.y), 5, 2)
+        if (this.classic) {
+          ctx.fillStyle = css(ACCENT)
+          ctx.fillRect(this.sx(e.x), this.sy(e.y), 5, 2)
+          continue
+        }
+        this.drawLedge(e, c, s.p, t)
       }
       for (const q of c.pads ?? []) this.drawPad(q, s.p, t)
     }
@@ -1005,6 +1009,33 @@ export class PixelView {
       const x = this.sx(b.x), y = this.sy(b.y) - (b.flying ? 0 : b.back + 2)
       if (x < -6 || x > this.W + 6 || y < -6 || y > H) continue
       this.ctx.drawImage(this.birdFrames[frame], x, y)
+    }
+  }
+
+  // A wall to grab and climb: its ledge gets a red lip and the face you climb
+  // a red edge that fades toward the roof, pulsing while it's the next
+  // thing in the runner's path. A 5 px tick was easy to miss beside the pad.
+  drawLedge(e, c, p, t) {
+    const { ctx } = this
+    const x = this.sx(e.x), top = this.sy(e.y)
+    if (x < -16 || x > this.W + 4) return
+    const face = Math.max(0, this.sy(c.roof) - top)
+    const ahead = (e.x - p.x) / Math.max(6, p.speed)
+    const near = p.x < e.x && ahead < 1.6
+    const pulse = near ? 0.5 + 0.5 * Math.sin(t * 12) : 0
+    if (near) {
+      ctx.fillStyle = css(ACCENT, 0.18 + 0.14 * pulse)
+      ctx.fillRect(x - 2, top - 3, 15, 6)
+    }
+    ctx.fillStyle = css(mix(ACCENT, [255, 241, 215], 0.45))
+    ctx.fillRect(x, top - 1, 12, 1)
+    ctx.fillStyle = css(ACCENT)
+    ctx.fillRect(x, top, 12, 2)
+    // the edge fades in three steps: one rect each, not one per pixel
+    const step = Math.ceil((face - 2) / 3)
+    for (let i = 0; i < 3 && step > 0; i++) {
+      ctx.fillStyle = css(ACCENT, 0.9 - i * 0.3)
+      ctx.fillRect(x, top + 2 + i * step, 1, Math.min(step, face - 2 - i * step))
     }
   }
 
