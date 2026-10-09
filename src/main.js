@@ -925,7 +925,8 @@ function frame(now) {
     landCue: g.mode === 'run' ? landCue(cur) : null,
   })
 
-  if (['run', 'respawn', 'countdown', 'finish', 'flatline'].includes(g.mode)) {
+  // the street doc opens over the HUD, so it keeps updating behind it
+  if (['run', 'respawn', 'countdown', 'finish', 'flatline', 'shop'].includes(g.mode)) {
     const name = view.districtName(g.heist ? g.heist.sector * 1500 : paletteD)
     const base = {
       speed: cur.speed,
@@ -951,7 +952,7 @@ function frame(now) {
         progress: n ? Math.min(1, Math.max(0, cur.x) / g.level.finish.x) : undefined,
       })
     }
-    if (name !== g.district) {
+    if (name !== g.district && g.mode !== 'shop') {
       g.district = name
       hud.district(g.heist ? `SECTOR ${g.heist.sector + 1} · ${name}` : name)
     }
