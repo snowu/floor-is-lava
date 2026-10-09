@@ -18,25 +18,71 @@ export function buildUpdateUrl(href, id) {
   return url.href
 }
 
-export function createUpdateChecker({ current = APP_RELEASE, base = BASE, href = location.href, fetcher = fetch, navigate = url => location.replace(url), onChange = () => {} } = {}) {
+// A timeout signal, for browsers without AbortSignal.timeout (Safari < 16).
+function timeoutSignal(ms) {
+  if (typeof AbortSignal.timeout === 'function') return AbortSignal.timeout(ms)
+  const controller = new AbortController()
+  setTimeout(() => controller.abort(new DOMException('Timed out', 'TimeoutError')), ms)
+  return controller.signal
+}
+
+class CheckError extends Error {
+  constructor(message, transient = false) { super(message); this.transient = transient }
+}
+
+// What to tell the player when a check fails. Only an offline device is told
+// to go online: anything else names what went wrong, so a failure is never
+// mistaken for a lost connection.
+function explain(error, online) {
+  if (!online) return 'You’re offline. Updates are checked when you reconnect.'
+  if (error instanceof CheckError) return error.message
+  if (error?.name === 'TimeoutError' || error?.name === 'AbortError') return 'The update server didn’t answer in time. Try again.'
+  return 'Couldn’t reach the update server. Try again.'
+}
+
+export function createUpdateChecker({ current = APP_RELEASE, base = BASE, href = location.href, fetcher = fetch, navigate = url => location.replace(url), onChange = () => {}, online = () => navigator.onLine !== false, retryDelay = 1500 } = {}) {
   const state = { pending: null, checking: false, updating: false, status: '' }
   const notify = () => onChange(state)
-  async function check(manual = false) {
-    if (state.checking || state.updating) return
-    state.checking = true
-    if (manual) state.status = 'Checking…'
-    notify()
+  let inflight = null, report = false
+  async function fetchRelease() {
+    const response = await fetcher(`${base}version.json?t=${Date.now()}`, { cache: 'no-store', signal: timeoutSignal(8000) })
+    if (!response.ok) throw new CheckError(`The update server returned ${response.status ?? 'an error'}. Try again shortly.`)
+    const release = readRelease(await response.json())
+    if (!release) throw new CheckError('The release file was incomplete. Try again shortly.')
+    return release
+  }
+  async function run() {
     try {
-      const response = await fetcher(`${base}version.json?t=${Date.now()}`, { cache: 'no-store', signal: AbortSignal.timeout(8000) })
-      if (!response.ok) throw new Error('Release unavailable')
-      const release = readRelease(await response.json())
-      if (!release) throw new Error('Invalid release')
+      let release
+      try { release = await fetchRelease() } catch (error) {
+        // a network hiccup or timeout gets one more try; a bad answer doesn't
+        if (error instanceof CheckError || !online()) throw error
+        await new Promise(done => setTimeout(done, retryDelay))
+        release = await fetchRelease()
+      }
       state.pending = isNewerBuild(current, release) ? release : null
       state.status = state.pending ? 'New version available' : 'Up to date'
-    } catch {
-      // A failed check never removes an already-discovered update.
-      if (manual) state.status = 'Can’t check right now. Try again online.'
-    } finally { state.checking = false; notify() }
+    } catch (error) {
+      // A failed check never removes an already-discovered update, and only
+      // a check the player asked for reports its failure.
+      if (report) state.status = explain(error, online())
+    } finally { state.checking = false; inflight = null; report = false; notify() }
+  }
+  // A manual check during an automatic one joins it and reports its outcome.
+  function check(manual = false) {
+    if (state.updating) return Promise.resolve()
+    if (manual) { report = true; state.status = 'Checking…' }
+    if (inflight) { notify(); return inflight }
+    state.checking = true
+    notify()
+    inflight = run()
+    return inflight
+  }
+  // Coming back online: drop a stale offline message and check once the
+  // connection has settled (phones report "online" a moment early).
+  function reconnected() {
+    if (state.status.startsWith('You’re offline')) { state.status = ''; notify() }
+    setTimeout(() => void check(), retryDelay)
   }
 
   async function apply() {
@@ -58,7 +104,7 @@ export function createUpdateChecker({ current = APP_RELEASE, base = BASE, href =
     } catch { state.status = 'Update couldn’t download. Try again online.' }
     finally { state.updating = false; notify() }
   }
-  return { state, check, apply }
+  return { state, check, apply, reconnected }
 }
 
 export function installAppUpdates({ canShow }) {
@@ -77,7 +123,8 @@ export function installAppUpdates({ canShow }) {
     release.hidden = !safe
     notice.hidden = !safe || !checker.state.pending
     status.textContent = checker.state.status
-    checkButton.disabled = checker.state.checking || checker.state.updating
+    // stays live during automatic checks: a press joins the one in flight
+    checkButton.disabled = checker.state.updating
     button.disabled = checker.state.updating
     button.textContent = checker.state.updating ? 'UPDATING…' : 'UPDATE NOW'
     document.getElementById('update-message').textContent = checker.state.updating ? 'Downloading the new version…' : checker.state.status.startsWith('Update ') ? checker.state.status : 'A new version of Packet Loss is ready.'
@@ -87,7 +134,7 @@ export function installAppUpdates({ canShow }) {
   if (!import.meta.env.DEV) {
     void checker.check()
     setInterval(() => { if (!document.hidden) void checker.check() }, 60000)
-    window.addEventListener('online', () => void checker.check())
+    window.addEventListener('online', () => checker.reconnected())
     window.addEventListener('focus', () => void checker.check())
     document.addEventListener('visibilitychange', () => { if (!document.hidden) void checker.check() })
   }

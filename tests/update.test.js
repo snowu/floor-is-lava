@@ -5,9 +5,9 @@ const current = { id: 'old-build', version: '1.0.0', builtAt: '2026-10-08T12:00:
 const next = { ...current, id: 'new-build', builtAt: '2026-10-08T13:00:00Z' }
 const json = value => ({ ok: true, json: async () => value })
 const page = id => ({ ok: true, text: async () => `<head><meta name="packet-loss-build" content="${id}" /></head>` })
-function setup(fetcher) {
+function setup(fetcher, { online = () => true } = {}) {
   const navigate = vi.fn()
-  return { ...createUpdateChecker({ current, base: '/packet-loss/', href: 'https://snowu.github.io/packet-loss/?seed=123#game', fetcher, navigate }), navigate }
+  return { ...createUpdateChecker({ current, base: '/packet-loss/', href: 'https://snowu.github.io/packet-loss/?seed=123#game', fetcher, navigate, online, retryDelay: 0 }), navigate }
 }
 
 describe('release discovery', () => {
@@ -22,14 +22,17 @@ describe('release discovery', () => {
   })
   it('bypasses cached release metadata and retains an update after an offline check', async () => {
     const fetcher = vi.fn().mockResolvedValueOnce(json(next)).mockRejectedValueOnce(new TypeError('offline'))
-    const checker = setup(fetcher)
+    let online = true
+    const checker = setup(fetcher, { online: () => online })
     await checker.check()
     expect(fetcher.mock.calls[0][0]).toMatch(/^\/packet-loss\/version.json\?t=/)
     expect(fetcher.mock.calls[0][1].cache).toBe('no-store')
     expect(checker.state.pending).toEqual(next)
+    online = false
     await checker.check(true)
     expect(checker.state.pending).toEqual(next)
-    expect(checker.state.status).toContain('Try again online')
+    expect(checker.state.status).toContain('offline')
+    expect(fetcher).toHaveBeenCalledTimes(2)   // no retry while offline
     expect(checker.navigate).not.toHaveBeenCalled()
   })
   it('reports up-to-date and malformed or unsuccessful release checks', async () => {
@@ -37,8 +40,9 @@ describe('release discovery', () => {
     await checker.check(true)
     expect(checker.state.status).toBe('Up to date')
     await checker.check(true)
-    expect(checker.state.status).toContain('Can’t check')
+    expect(checker.state.status).toContain('incomplete')
     await checker.check(true)
+    expect(checker.state.status).toContain('returned')
     expect(checker.state.checking).toBe(false)
     expect(checker.state.pending).toBeNull()
   })
@@ -47,10 +51,50 @@ describe('release discovery', () => {
     const fetcher = vi.fn(() => new Promise(done => { resolve = done }))
     const checker = setup(fetcher)
     const check = checker.check()
-    await checker.check()
+    const again = checker.check()
     expect(fetcher).toHaveBeenCalledTimes(1)
     resolve(json(next))
-    await check
+    await Promise.all([check, again])
+    expect(fetcher).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('honest failures', () => {
+  it('never blames the connection while online, and retries a network hiccup once', async () => {
+    const fetcher = vi.fn().mockRejectedValueOnce(new TypeError('Load failed')).mockResolvedValueOnce(json(current))
+    const checker = setup(fetcher)
+    await checker.check(true)
+    expect(fetcher).toHaveBeenCalledTimes(2)
+    expect(checker.state.status).toBe('Up to date')
+    const failing = setup(vi.fn().mockRejectedValue(new TypeError('Load failed')))
+    await failing.check(true)
+    expect(failing.state.status).not.toContain('online')
+    expect(failing.state.status).toContain('Couldn’t reach')
+  })
+  it('names a timeout', async () => {
+    const err = Object.assign(new Error('t'), { name: 'TimeoutError' })
+    const checker = setup(vi.fn().mockRejectedValue(err))
+    await checker.check(true)
+    expect(checker.state.status).toContain('didn’t answer')
+  })
+  it('lets a manual check join an automatic one and report its result', async () => {
+    let resolve
+    const fetcher = vi.fn(() => new Promise(done => { resolve = done }))
+    const checker = setup(fetcher)
+    checker.state.status = 'You’re offline. Updates are checked when you reconnect.'
+    const auto = checker.check()
+    const manual = checker.check(true)
+    expect(checker.state.status).toBe('Checking…')
+    resolve(json(current))
+    await Promise.all([auto, manual])
+    expect(fetcher).toHaveBeenCalledTimes(1)
+    expect(checker.state.status).toBe('Up to date')
+  })
+  it('clears a stale offline message on reconnect', async () => {
+    const checker = setup(vi.fn().mockResolvedValue(json(current)))
+    checker.state.status = 'You’re offline. Updates are checked when you reconnect.'
+    checker.reconnected()
+    expect(checker.state.status).toBe('')
   })
 })
 
