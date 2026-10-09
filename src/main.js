@@ -16,6 +16,7 @@ import { PALETTE_NAMES, pinPalette } from './pixel/palette.js'
 import { RUNNERS, RUNNER_STYLES } from './pixel/runner.js'
 import { localLab } from './lab/local.js'
 import { installAppUpdates } from './ui/update.js'
+import { installOffline } from './ui/offline.js'
 
 const DEMO_SEED = 20261007
 const TOAST = {
@@ -951,6 +952,7 @@ view.onStep = (kind) => {
 }
 
 toTitle()
+installOffline()
 const appUpdates = installAppUpdates({ canShow: () => !artLabOpen && ['title', 'paused', 'over'].includes(g.mode) })
 requestAnimationFrame(frame)
 if (import.meta.env.DEV) window.__game = { g, view, start, newRun, landCue }

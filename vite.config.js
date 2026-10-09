@@ -12,6 +12,15 @@ if (!id) {
 }
 const release = { id, version, builtAt }
 
+// The offline service worker: src/sw.js with the release and the files to
+// precache filled in. The art lab only runs locally, so it stays out.
+const PUBLIC = ['./', 'manifest.webmanifest', 'icon-192.png', 'icon-512.png', 'apple-touch-icon.png']
+export function serviceWorker(releaseId, files) {
+  const precache = [...PUBLIC, ...files.filter((f) => !['index.html', 'lab.html', 'version.json', 'sw.js'].includes(f) && !/(^|\/)lab[-.]/.test(f) && !f.endsWith('.map'))]
+  const source = readFileSync(new URL('./src/sw.js', import.meta.url), 'utf8')
+  return `self.__RELEASE__ = ${JSON.stringify(releaseId)}\nself.__PRECACHE__ = ${JSON.stringify(precache)}\n${source}`
+}
+
 export default defineConfig({
   base: '/packet-loss/',
   define: { __APP_RELEASE__: JSON.stringify(release) },
@@ -21,8 +30,9 @@ export default defineConfig({
     transformIndexHtml(html) {
       return html.replace('<head>', `<head>\n    <meta name="packet-loss-build" content="${id.replace(/[^a-zA-Z0-9._:-]/g, '')}" />`)
     },
-    generateBundle() {
+    generateBundle(_, bundle) {
       this.emitFile({ type: 'asset', fileName: 'version.json', source: JSON.stringify(release) })
+      this.emitFile({ type: 'asset', fileName: 'sw.js', source: serviceWorker(release.id, Object.keys(bundle)) })
     },
   }],
   build: {
